@@ -5,6 +5,8 @@ from pathlib import Path
 
 import typer
 from rich.console import Console
+import shutil
+
 from rich.prompt import IntPrompt
 
 from .exporter.excel import export_bundle_to_excel
@@ -95,32 +97,27 @@ def _fetch_one_period(
     if bundle is None:
         raise RuntimeError(f"所有数据源均失败：{last_err}")
 
-    # PDF
+    # PDF（不用日期文件夹，用文件名区分）
     pdf_url = None
     pdf_path = None
+    pdf_title = None
     pdf_note = None
     if want_pdf:
-        pdf_dir = out_dir / "pdf" / code6 / period_end.strftime("%Y%m%d")
-        pdf_res = find_and_download_period_pdf(code6=code6, period_end=period_end, out_dir=pdf_dir)
+        pdf_root = out_dir / "pdf"
+        pdf_file = pdf_root / f"{code6}_{period_end.strftime('%Y%m%d')}.pdf"
+        pdf_res = find_and_download_period_pdf(code6=code6, period_end=period_end, out_path=pdf_file)
         if pdf_res.ok:
             pdf_url = pdf_res.url
             pdf_path = pdf_res.local_path
+            pdf_title = pdf_res.title
         else:
             pdf_note = pdf_res.note
             pdf_url = pdf_res.url
+            pdf_title = pdf_res.title
 
-    # 将 PDF 信息附加到三张表（每张表都带一列，方便你单独看）
-    def add_pdf_cols(df):
-        df2 = df.copy()
-        if want_pdf:
-            df2["PDF链接"] = pdf_url
-            df2["PDF本地路径"] = pdf_path
-            df2["PDF备注"] = pdf_note
-        return df2
-
-    bs = add_pdf_cols(bundle.balance_sheet)
-    inc = add_pdf_cols(bundle.income_statement)
-    cf = add_pdf_cols(bundle.cashflow_statement)
+    bs = bundle.balance_sheet
+    inc = bundle.income_statement
+    cf = bundle.cashflow_statement
 
     fname = f"{code6}_{bundle.statement_type}_{period_end.strftime('%Y%m%d')}.xlsx"
     out_path = out_dir / fname
@@ -130,6 +127,11 @@ def _fetch_one_period(
         "provider": bundle.provider,
         "provider_requested_order": [getattr(p, 'name', str(p)) for p in providers],
         "requested_statement_type": statement_type,
+        "report_period_end": period_end.strftime("%Y-%m-%d"),
+        "pdf_title": pdf_title,
+        "pdf_url": pdf_url,
+        "pdf_local_path": pdf_path,
+        "pdf_note": pdf_note,
     })
     if used_provider and getattr(used_provider, "name", None) == "akshare":
         # 若用户请求合并但实际拿到母公司（或相反），在 meta 里说明
@@ -137,7 +139,22 @@ def _fetch_one_period(
         if detected:
             meta["statement_type_note"] = f"Sina 类型字段: {detected}"
 
-    export_bundle_to_excel(out_path, bs, inc, cf, meta)
+    export_bundle_to_excel(
+        out_path,
+        balance_sheet=bs,
+        income_statement=inc,
+        cashflow_statement=cf,
+        meta=meta,
+        title_info={
+            "code6": code6,
+            "ts_code": ts_code,
+            "period_end": period_end.strftime("%Y-%m-%d"),
+            "statement_type": bundle.statement_type,
+            "provider": bundle.provider,
+            "pdf_url": pdf_url,
+            "pdf_path": pdf_path,
+        },
+    )
 
     return out_path
 
@@ -171,6 +188,12 @@ def fetch(
     cfg = ProviderConfig(provider=provider, prefer_order=["tushare", "akshare"], tushare_token=tushare_token)
     providers = build_providers(cfg)
 
+    # 每次提取前删除之前的数据（输出目录）
+    out_dir = out_dir.resolve()
+    if str(out_dir) in {"/", str(Path.cwd().resolve())} or out_dir.name in {"", ".", ".."}:
+        raise RuntimeError(f"出于安全考虑，拒绝清理输出目录: {out_dir}")
+    if out_dir.exists():
+        shutil.rmtree(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     exported: list[Path] = []

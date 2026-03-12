@@ -73,15 +73,17 @@ def _query_cninfo_announcements(code6: str, category: str, se_date: str):
 def find_and_download_period_pdf(
     code6: str,
     period_end: date,
-    out_dir: Path,
+    out_path: Path,
     session: requests.Session | None = None,
 ) -> PdfResult:
     """尽量从巨潮公告中定位该报告期 PDF 并下载（使用接口里的 adjunctUrl）。
 
+    out_path: 目标 PDF 文件路径（使用不同文件名区分，不使用日期文件夹）。
+
     注意：这是“尽力而为”实现；失败会返回 ok=False + note。
     """
 
-    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     sess = session or requests.Session()
 
     rp = ReportPeriod(period_end)
@@ -136,12 +138,11 @@ def find_and_download_period_pdf(
 
     pdf_url = "http://static.cninfo.com.cn/" + str(adjunct).lstrip("/")
 
-    pdf_path = out_dir / "report.pdf"
     try:
         r = sess.get(pdf_url, timeout=60)
         r.raise_for_status()
-        pdf_path.write_bytes(r.content)
+        out_path.write_bytes(r.content)
     except Exception as e:
         return PdfResult(ok=False, url=pdf_url, title=title, note=f"下载 PDF 失败: {e}")
 
-    return PdfResult(ok=True, url=pdf_url, local_path=str(pdf_path), title=title)
+    return PdfResult(ok=True, url=pdf_url, local_path=str(out_path), title=title)

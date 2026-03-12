@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+import re
 
 import pandas as pd
 
@@ -59,7 +60,13 @@ class AkshareSinaProvider:
             return pd.DataFrame()
         return df
 
-    def _extract_period(self, df: pd.DataFrame, period_end: date, statement_type: str) -> tuple[pd.DataFrame, dict]:
+    def _extract_period(
+        self,
+        df: pd.DataFrame,
+        period_end: date,
+        statement_type: str,
+        statement_name: str,
+    ) -> tuple[pd.DataFrame, dict]:
         if df.empty:
             raise ValueError("空数据")
 
@@ -106,18 +113,82 @@ class AkshareSinaProvider:
         row = dfp.iloc[0]
         data_cols = [c for c in dfp.columns if c not in set(keep_meta_cols + ["__report_date"]) ]
 
+        def is_section_header(name: str) -> bool:
+            # 经验规则：只把少量“确定是分组标题”的列当作标题；避免把大量缺失科目当成标题。
+            header_exact = {
+                "流动资产",
+                "非流动资产",
+                "流动负债",
+                "非流动负债",
+                "所有者权益",
+                "股东权益",
+                "经营活动产生的现金流量",
+                "投资活动产生的现金流量",
+                "筹资活动产生的现金流量",
+                "补充资料",
+            }
+            if name in header_exact:
+                return True
+            # 利润表常见分段：一、二、三…（通常有数值，不一定为空）
+            if re.match(r"^[一二三四五六七八九十]、", name):
+                return True
+            # 细分段： （一）（二）…
+            if re.match(r"^（[一二三四五六七八九十]）", name):
+                return True
+            return False
+
+        profit_sentinels = {
+            "营业总收入": "收入",
+            "营业总成本": "成本费用",
+            "营业利润": "利润",
+            "其他综合收益": "其他综合收益",
+            "综合收益总额": "综合收益",
+        }
+
         items = []
+        in_section = False
+        current_section = None
+
+        def add_section(title: str):
+            nonlocal in_section, current_section
+            if current_section == title:
+                return
+            items.append((title, None, 0, True))
+            in_section = True
+            current_section = title
+
         for col in data_cols:
             if col in ("报告日",):
                 continue
+            name = str(col)
             val = row[col]
-            # 丢掉全空
+
+            # 利润表：按关键哨兵插入分类标题
+            if statement_name == "利润表" and name in profit_sentinels:
+                add_section(profit_sentinels[name])
+
+            # 原始分段标题（如现金流量表/资产负债表分段）
+            if is_section_header(name):
+                if pd.isna(val):
+                    items.append((name, None, 0, True))
+                else:
+                    items.append((name, val, 0, True))
+                in_section = True
+                current_section = name
+                continue
+
+            # 丢掉全空的普通科目
             if pd.isna(val):
                 continue
-            items.append((col, val))
 
-        out = pd.DataFrame(items, columns=["科目", "数值"])
-        out.insert(0, "报告期末日", period_end.strftime("%Y-%m-%d"))
+            # 缩进规则
+            level = 1 if in_section else 0
+            if name.startswith(("其中", "其中：", "加：", "减：")):
+                level = max(level, 2)
+
+            items.append((name, val, level, False))
+
+        out = pd.DataFrame(items, columns=["科目", "数值", "__level", "__is_header"])
         return out, meta
 
     def get_bundle(self, ts_code: str, period_end: date, statement_type: str) -> StatementBundle:
@@ -127,9 +198,9 @@ class AkshareSinaProvider:
         is_raw = self._fetch_one(code6, "利润表")
         cf_raw = self._fetch_one(code6, "现金流量表")
 
-        bs, meta_bs = self._extract_period(bs_raw, period_end, statement_type)
-        inc, meta_inc = self._extract_period(is_raw, period_end, statement_type)
-        cf, meta_cf = self._extract_period(cf_raw, period_end, statement_type)
+        bs, meta_bs = self._extract_period(bs_raw, period_end, statement_type, "资产负债表")
+        inc, meta_inc = self._extract_period(is_raw, period_end, statement_type, "利润表")
+        cf, meta_cf = self._extract_period(cf_raw, period_end, statement_type, "现金流量表")
 
         # 口径说明
         detected_type = None

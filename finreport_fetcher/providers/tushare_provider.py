@@ -64,7 +64,8 @@ class TushareProvider:
             items.append((k, v))
 
         out = pd.DataFrame(items, columns=["科目", "数值"])
-        out.insert(0, "报告期末日", period_end.strftime("%Y-%m-%d"))
+        out["__level"] = 0
+        out["__is_header"] = False
         return out
 
     def get_bundle(self, ts_code: str, period_end: date, statement_type: str) -> StatementBundle:

@@ -12,17 +12,29 @@ class ExcelExportResult:
 
 
 def _autofit_worksheet(ws):
-    # 简单自适应列宽：按单元格字符串长度估算
-    for col_cells in ws.columns:
+    """简单自适应列宽：按单元格字符串长度估算。
+
+    注意：存在合并单元格时，ws.columns 可能返回 MergedCell（没有 column_letter）。
+    这里改为按列索引遍历，跳过 MergedCell。
+    """
+
+    from openpyxl.cell.cell import MergedCell
+    from openpyxl.utils import get_column_letter
+
+    for col_idx in range(1, ws.max_column + 1):
         max_len = 0
-        col_letter = col_cells[0].column_letter
-        for cell in col_cells:
+        for row_idx in range(1, ws.max_row + 1):
+            cell = ws.cell(row_idx, col_idx)
+            if isinstance(cell, MergedCell):
+                continue
             v = cell.value
             if v is None:
                 continue
             s = str(v)
             if len(s) > max_len:
                 max_len = len(s)
+
+        col_letter = get_column_letter(col_idx)
         ws.column_dimensions[col_letter].width = min(max(10, max_len + 2), 60)
 
 
@@ -32,14 +44,27 @@ def export_bundle_to_excel(
     income_statement: pd.DataFrame,
     cashflow_statement: pd.DataFrame,
     meta: dict,
+    title_info: dict | None = None,
 ):
+    """导出为 Excel（每张表一个 sheet），并进行美化。
+
+    规则：
+    - 不再输出“报告期末日”列；改为每个 sheet 顶部标题行展示。
+    - 不再输出 PDF 链接/本地路径列；改为标题/注释展示（来源一致）。
+    - 支持科目分组缩进：读取 df 中可选列 __level / __is_header。
+    """
+
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # 写入
+    def view_df(df: pd.DataFrame) -> pd.DataFrame:
+        cols = [c for c in ["科目", "数值"] if c in df.columns]
+        return df[cols].copy()
+
+    # 写入：预留两行做标题/注释
     with pd.ExcelWriter(out_path, engine="openpyxl") as writer:
-        balance_sheet.to_excel(writer, sheet_name="资产负债表", index=False)
-        income_statement.to_excel(writer, sheet_name="利润表", index=False)
-        cashflow_statement.to_excel(writer, sheet_name="现金流量表", index=False)
+        view_df(balance_sheet).to_excel(writer, sheet_name="资产负债表", index=False, startrow=2)
+        view_df(income_statement).to_excel(writer, sheet_name="利润表", index=False, startrow=2)
+        view_df(cashflow_statement).to_excel(writer, sheet_name="现金流量表", index=False, startrow=2)
 
     # 美化（openpyxl）
     from openpyxl import load_workbook
@@ -48,60 +73,145 @@ def export_bundle_to_excel(
 
     wb = load_workbook(out_path)
 
+    title_fill = PatternFill("solid", fgColor="0B2F4F")
+    title_font = Font(color="FFFFFF", bold=True, size=14)
+    title_alignment = Alignment(horizontal="left", vertical="center")
+
     header_fill = PatternFill("solid", fgColor="1F4E79")
     header_font = Font(color="FFFFFF", bold=True)
     header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
     zebra_fill = PatternFill("solid", fgColor="F7F7F7")
+    section_fill = PatternFill("solid", fgColor="E8F1FB")
+    section_font = Font(bold=True, color="0B2F4F")
+
+    info = title_info or {}
+    period_end = info.get("period_end")
+    code6 = info.get("code6")
+    provider = info.get("provider")
+    stype = info.get("statement_type")
+    pdf_url = info.get("pdf_url")
+    pdf_path = info.get("pdf_path")
+
+    def make_title(sheet_name: str) -> str:
+        parts = []
+        if code6:
+            parts.append(str(code6))
+        parts.append(sheet_name)
+        if period_end:
+            parts.append(f"报告期末日: {period_end}")
+        if stype:
+            parts.append(f"口径: {stype}")
+        if provider:
+            parts.append(f"数据源: {provider}")
+        return " | ".join(parts)
+
+    def make_note() -> str:
+        # PDF 信息来源一致，放在注释行
+        parts = []
+        if pdf_url:
+            parts.append(f"PDF链接: {pdf_url}")
+        if pdf_path:
+            parts.append(f"PDF本地路径: {pdf_path}")
+        return " | ".join(parts) if parts else ""
+
+    # 将 df 的缩进信息带到工作表里
+    df_map = {
+        "资产负债表": balance_sheet,
+        "利润表": income_statement,
+        "现金流量表": cashflow_statement,
+    }
 
     for sname in ["资产负债表", "利润表", "现金流量表"]:
         ws = wb[sname]
-        ws.freeze_panes = "C2"  # 冻结首行 + 前两列（报告期末日/科目）
+
+        # 标题行 (row 1) + 注释行 (row 2)
+        ws["A1"].value = make_title(sname)
+        ws["A1"].fill = title_fill
+        ws["A1"].font = title_font
+        ws["A1"].alignment = title_alignment
+        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=2)
+        ws.row_dimensions[1].height = 26
+
+        note = make_note()
+        if note:
+            ws["A2"].value = note
+            ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=2)
+            ws["A2"].alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+            ws.row_dimensions[2].height = 34
+
+        header_row = 3
+        data_start = 4
+
+        ws.freeze_panes = "B4"  # 冻结标题+注释+表头，且冻结科目列
 
         # 表头
-        for cell in ws[1]:
+        for cell in ws[header_row]:
             cell.fill = header_fill
             cell.font = header_font
             cell.alignment = header_alignment
 
-        # 交替底色（数据行）
-        for r in range(2, ws.max_row + 1):
-            if (r - 2) % 2 == 1:
-                for c in range(1, ws.max_column + 1):
-                    ws.cell(r, c).fill = zebra_fill
+        # 缩进/分组样式
+        df = df_map[sname]
+        levels = df.get("__level")
+        is_header = df.get("__is_header")
+
+        for i in range(len(df)):
+            excel_row = data_start + i
+            subj_cell = ws.cell(excel_row, 1)
+            val_cell = ws.cell(excel_row, 2)
+
+            lvl = int(levels.iloc[i]) if levels is not None else 0
+            hdr = bool(is_header.iloc[i]) if is_header is not None else False
+
+            if hdr:
+                subj_cell.font = section_font
+                subj_cell.fill = section_fill
+                val_cell.fill = section_fill
+                subj_cell.alignment = Alignment(horizontal="left", indent=0)
+                # 标题行可能也有数值（如利润表“一、营业总收入”），不强行清空
+                val_cell.alignment = Alignment(horizontal="right")
+            else:
+                subj_cell.alignment = Alignment(horizontal="left", indent=max(lvl, 0))
+
+        # 交替底色（只对非标题行）
+        for i in range(len(df)):
+            excel_row = data_start + i
+            hdr = bool(is_header.iloc[i]) if is_header is not None else False
+            if hdr:
+                continue
+            if (i % 2) == 1:
+                ws.cell(excel_row, 1).fill = zebra_fill
+                ws.cell(excel_row, 2).fill = zebra_fill
 
         # 数字列格式：对“数值”列做千分位
-        # 默认列结构: 报告期末日 / 科目 / 数值 / (可选: PDF链接/本地路径/备注)
-        # 找到名为“数值”的列
-        value_col = None
-        for c in range(1, ws.max_column + 1):
-            if ws.cell(1, c).value == "数值":
-                value_col = c
-                break
-        if value_col:
-            for r in range(2, ws.max_row + 1):
-                cell = ws.cell(r, value_col)
-                if isinstance(cell.value, (int, float)):
-                    v = float(cell.value)
-                    # 尽量避免 .00 噪声：接近整数则按整数格式
-                    if abs(v - round(v)) < 1e-9:
-                        cell.number_format = "#,##0"
-                    else:
-                        cell.number_format = "#,##0.00"
-                    cell.alignment = Alignment(horizontal="right")
+        value_col = 2
+        for r in range(data_start, ws.max_row + 1):
+            cell = ws.cell(r, value_col)
+            if isinstance(cell.value, (int, float)):
+                v = float(cell.value)
+                if abs(v - round(v)) < 1e-9:
+                    cell.number_format = "#,##0"
+                else:
+                    cell.number_format = "#,##0.00"
+                cell.alignment = Alignment(horizontal="right")
 
-            # 负数红色
-            col_letter = ws.cell(1, value_col).column_letter
-            rng = f"{col_letter}2:{col_letter}{ws.max_row}"
-            ws.conditional_formatting.add(
-                rng,
-                CellIsRule(operator="lessThan", formula=["0"], font=Font(color="9C0006")),
-            )
+        # 负数红色
+        col_letter = ws.cell(header_row, value_col).column_letter
+        rng = f"{col_letter}{data_start}:{col_letter}{ws.max_row}"
+        ws.conditional_formatting.add(
+            rng,
+            CellIsRule(operator="lessThan", formula=["0"], font=Font(color="9C0006")),
+        )
 
+        # 列宽：手动给“数值”列更宽一点，避免贴得太近
         _autofit_worksheet(ws)
+        ws.column_dimensions["B"].width = max(ws.column_dimensions["B"].width or 0, 20)
+        ws.column_dimensions["A"].width = max(ws.column_dimensions["A"].width or 0, 36)
 
     # meta sheet
-    ws_meta = wb.create_sheet("META")
+    ws_meta = wb["META"] if "META" in wb.sheetnames else wb.create_sheet("META")
+    ws_meta.delete_rows(1, ws_meta.max_row)
     ws_meta.append(["key", "value"])
     for k, v in meta.items():
         ws_meta.append([str(k), str(v)])
