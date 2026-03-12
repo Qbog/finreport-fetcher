@@ -1,0 +1,24 @@
+# finreport_charts 模板示例
+
+[templates.yingyee]
+# 别名（用于输出文件名）；不填则用模板名
+alias = "yingyee"
+chart = "bar"
+statement = "利润表"
+item = "营业总收入"
+transform = "ttm"  # ttm/raw
+
+[templates.liudong_zichan]
+alias = "liudong_zichan"
+chart = "pie"
+statement = "资产负债表"
+section = "流动资产"
+top_n = 10
+
+[templates.yingyee_vs_price]
+alias = "yingyee_vs_price"
+chart = "combo"
+statement = "利润表"
+bar_item = "营业总收入"
+transform = "ttm"
+# line 暂不启用（默认读取 price/{code6}.csv 的 close）

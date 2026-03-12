@@ -7,3 +7,8 @@ _tmp_*.xlsx
 _tmp_pdf*/
 *.xlsx
 *.pdf
+
+# 图表程序测试输出（用户自有数据）
+_chart_data/
+_charts_*/
+charts_output/

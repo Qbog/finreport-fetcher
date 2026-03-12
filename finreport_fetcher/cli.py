@@ -170,6 +170,7 @@ def fetch(
     statement_type: str = typer.Option("merged", "--statement-type", help="merged(合并)/parent(母公司)"),
     pdf: bool = typer.Option(False, "--pdf", help="下载对应报告期 PDF 原文，并写入 Excel"),
     out_dir: Path = typer.Option(Path("output"), "--out", help="输出目录"),
+    no_clean: bool = typer.Option(False, "--no-clean", help="不清空输出目录，改为增量写入（供图表程序补数据使用）"),
     tushare_token: str | None = typer.Option(None, "--tushare-token", help="Tushare token（可选，未提供则尝试环境变量）"),
 ):
     """抓取 A 股三大报表并导出 Excel。"""
@@ -190,10 +191,11 @@ def fetch(
 
     # 每次提取前删除之前的数据（输出目录）
     out_dir = out_dir.resolve()
-    if str(out_dir) in {"/", str(Path.cwd().resolve())} or out_dir.name in {"", ".", ".."}:
-        raise RuntimeError(f"出于安全考虑，拒绝清理输出目录: {out_dir}")
-    if out_dir.exists():
-        shutil.rmtree(out_dir)
+    if not no_clean:
+        if str(out_dir) in {"/", str(Path.cwd().resolve())} or out_dir.name in {"", ".", ".."}:
+            raise RuntimeError(f"出于安全考虑，拒绝清理输出目录: {out_dir}")
+        if out_dir.exists():
+            shutil.rmtree(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     exported: list[Path] = []
