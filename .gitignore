@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+output/
+_out_test/
+_tmp_*.xlsx
+_tmp_pdf*/
+*.xlsx
+*.pdf
