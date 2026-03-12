@@ -82,7 +82,12 @@ def export_bundle_to_excel(
             for r in range(2, ws.max_row + 1):
                 cell = ws.cell(r, value_col)
                 if isinstance(cell.value, (int, float)):
-                    cell.number_format = "#,##0.00" if isinstance(cell.value, float) else "#,##0"
+                    v = float(cell.value)
+                    # 尽量避免 .00 噪声：接近整数则按整数格式
+                    if abs(v - round(v)) < 1e-9:
+                        cell.number_format = "#,##0"
+                    else:
+                        cell.number_format = "#,##0.00"
                     cell.alignment = Alignment(horizontal="right")
 
             # 负数红色

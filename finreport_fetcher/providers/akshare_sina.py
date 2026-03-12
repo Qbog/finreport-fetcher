@@ -71,27 +71,40 @@ class AkshareSinaProvider:
 
         df2["__report_date"] = df2["报告日"].map(self._normalize_report_date)
 
-        # 先按口径过滤（合并/母公司）
-        mask = self._pick_statement_type_mask(df2, statement_type)
-        df2 = df2[mask].copy()
-
-        # 再按报告期末日过滤
-        df2 = df2[df2["__report_date"] == period_key].copy()
-
-        if df2.empty:
+        # 先按报告期末日过滤
+        dfp = df2[df2["__report_date"] == period_key].copy()
+        if dfp.empty:
             raise ValueError(f"未找到报告期 {period_key} 的数据")
 
+        # 再按口径过滤（合并/母公司）。如果该口径不存在，则退化为“拿到能用的数据并说明”。
+        meta_note = None
+        if "类型" in dfp.columns and statement_type in {"merged", "parent"}:
+            mask = self._pick_statement_type_mask(dfp, statement_type)
+            dfp2 = dfp[mask].copy()
+            if not dfp2.empty:
+                dfp = dfp2
+            else:
+                meta_note = f"未找到请求口径({statement_type})对应的类型行，已回退为该报告期的可用数据（请在META查看类型字段）"
+
+        # 同期多行时，优先取更新日期较新的一条
+        if "更新日期" in dfp.columns:
+            try:
+                dfp = dfp.sort_values("更新日期", ascending=False)
+            except Exception:
+                pass
+
         # 按列展开为两列：科目/数值；保留少量 meta
-        keep_meta_cols = [c for c in ["报告日", "公告日期", "是否审计", "币种", "类型", "数据源", "更新日期"] if c in df2.columns]
+        keep_meta_cols = [c for c in ["报告日", "公告日期", "是否审计", "币种", "类型", "数据源", "更新日期"] if c in dfp.columns]
         meta: dict = {}
         if keep_meta_cols:
-            # 取第一行 meta
-            row0 = df2.iloc[0]
+            row0 = dfp.iloc[0]
             meta = {c: row0[c] for c in keep_meta_cols}
+        if meta_note:
+            meta["口径回退说明"] = meta_note
 
-        # 取第一行作为该期数据（Sina 返回多行时一般是重复/不同口径；我们已经过滤）
-        row = df2.iloc[0]
-        data_cols = [c for c in df2.columns if c not in set(keep_meta_cols + ["__report_date"]) ]
+        # 取第一行作为该期数据
+        row = dfp.iloc[0]
+        data_cols = [c for c in dfp.columns if c not in set(keep_meta_cols + ["__report_date"]) ]
 
         items = []
         for col in data_cols:

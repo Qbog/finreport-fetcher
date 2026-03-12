@@ -18,6 +18,7 @@
 - 多数据源：
   - `--provider auto`：按优先级自动兜底（默认：tushare -> akshare）
   - 或手动指定 `--provider tushare|akshare`
+- 命令形态：`python3 -m finreport_fetcher fetch ...`（无需安装本项目也可运行）
 - 报表口径：默认合并；可切换 `--statement-type merged|parent`
 - Excel 美化：冻结窗格、表头样式、交替底色、负数红色、千分位格式、自适应列宽
 - PDF：`--pdf` 下载，并在 Excel 里写入 PDF 链接/本地路径（若获取成功）
@@ -31,9 +32,12 @@ cd a_share_finreport_fetcher
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -U pip
-pip install -e .
+pip install -r requirements.txt
 # 如需 tushare：
-pip install -e '.[tushare]'
+pip install tushare
+
+# 也可以尝试直接安装本项目（若你的 pip/setuptools 支持 pyproject）：
+# pip install .
 ```
 
 > 如使用 tushare，需要设置环境变量 `TUSHARE_TOKEN`，或在运行时传入 `--tushare-token`。
@@ -43,19 +47,19 @@ pip install -e '.[tushare]'
 ### 1) 单个日期：取最近一期报告期
 
 ```bash
-finfetch fetch run --name 茅台 --date 2025-02-01 --pdf
+python3 -m finreport_fetcher fetch --name 茅台 --date 2025-02-01 --pdf
 ```
 
 ### 2) 日期范围：导出范围内所有报告期
 
 ```bash
-finfetch fetch run --code 600519 --start 2023-01-01 --end 2025-12-31 --pdf
+python3 -m finreport_fetcher fetch --code 600519 --start 2023-01-01 --end 2025-12-31 --pdf
 ```
 
 ### 3) 手动指定数据源 + 母公司口径
 
 ```bash
-finfetch fetch run --code 600519.SH --date 2024-08-01 --provider akshare --statement-type parent
+python3 -m finreport_fetcher fetch --code 600519.SH --date 2024-08-01 --provider akshare --statement-type parent
 ```
 
 ## 输出目录结构

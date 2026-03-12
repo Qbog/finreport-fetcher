@@ -14,10 +14,23 @@ from .utils.dates import candidate_quarter_ends_before, parse_date, quarter_ends
 from .utils.symbols import ResolvedSymbol, fuzzy_match_name, load_a_share_name_map, parse_code
 
 app = typer.Typer(add_completion=False)
-fetch_app = typer.Typer(add_completion=False)
-app.add_typer(fetch_app, name="fetch", help="抓取财报并导出 Excel")
-
 console = Console()
+
+
+@app.callback()
+def _root():
+    """A股财报抓取工具。
+
+    使用 `fetch` 子命令按股票代码/名称抓取三大报表并导出 Excel。
+    """
+
+
+@app.command()
+def version():
+    """输出版本号。"""
+    from . import __version__
+
+    console.print(__version__)
 
 
 def _resolve_symbol(code: str | None, name: str | None) -> ResolvedSymbol:
@@ -129,7 +142,7 @@ def _fetch_one_period(
     return out_path
 
 
-@fetch_app.command("run")
+@app.command("fetch")
 def fetch(
     code: str | None = typer.Option(None, "--code", help="股票代码：600519 / 600519.SH / sh600519 等"),
     name: str | None = typer.Option(None, "--name", help="股票名称（模糊匹配，重名会提示选择）"),
