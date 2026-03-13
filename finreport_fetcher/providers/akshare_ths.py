@@ -109,7 +109,34 @@ class AkshareThsProvider:
 
         drop_cols = {"报告期", "报表核心指标", "报表全部指标"}
 
-        items: list[tuple[str, float, int, bool]] = []
+        def is_section_header(name: str) -> bool:
+            header_exact = {
+                # BS
+                "流动资产",
+                "非流动资产",
+                "流动负债",
+                "非流动负债",
+                "所有者权益",
+                "股东权益",
+                # CF
+                "经营活动产生的现金流量",
+                "投资活动产生的现金流量",
+                "筹资活动产生的现金流量",
+                "补充资料",
+            }
+            if name in header_exact:
+                return True
+            # IS headers like: 一、二、三…
+            if sheet_cn == "利润表" and re.match(r"^[一二三四五六七八九十]、", name):
+                return True
+            # nested headers like: （一）（二）…
+            if sheet_cn == "利润表" and re.match(r"^（[一二三四五六七八九十]）", name):
+                return True
+            return False
+
+        items: list[tuple[str, float | None, int, bool]] = []
+        in_section = False
+
         for col in dfx.columns:
             if col in drop_cols:
                 continue
@@ -122,11 +149,22 @@ class AkshareThsProvider:
 
             val = row.get(col)
             num = AkshareThsProvider._parse_num(val)
+
+            # section header
+            if is_section_header(name_clean):
+                items.append((name_clean, float(num) if num is not None else None, 0, True))
+                in_section = True
+                continue
+
+            # keep only non-empty normal items
             if num is None:
                 continue
 
-            # hierarchy is not provided by THS table; keep flat
-            items.append((name_clean, float(num), 0, False))
+            level = 1 if in_section else 0
+            if name_clean.startswith(("其中", "其中：", "加：", "减：")):
+                level = max(level, 2)
+
+            items.append((name_clean, float(num), level, False))
 
         out = pd.DataFrame(items, columns=["科目", "数值", "__level", "__is_header"])
         return out, meta

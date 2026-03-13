@@ -35,7 +35,8 @@ def _autofit_worksheet(ws):
                 max_len = len(s)
 
         col_letter = get_column_letter(col_idx)
-        ws.column_dimensions[col_letter].width = min(max(10, max_len + 2), 60)
+        # True-ish autofit: small minimum, larger maximum
+        ws.column_dimensions[col_letter].width = min(max(4, max_len + 2), 80)
 
 
 def export_bundle_to_excel(
@@ -68,7 +69,17 @@ def export_bundle_to_excel(
         cols = [c for c in preferred if c in df.columns]
         if not cols:
             cols = [c for c in ["科目", "数值"] if c in df.columns]
-        return df[cols].copy()
+
+        out = df[cols].copy()
+
+        # 在“数值”右侧插入空白列，方便肉眼查看数字列
+        if "数值" in out.columns:
+            idx = out.columns.get_loc("数值") + 1
+            spacer_name = " "  # 单空格列名（Excel 表头看起来像空列）
+            if spacer_name not in out.columns:
+                out.insert(idx, spacer_name, [""] * len(out))
+
+        return out
 
     # 写入：预留两行做标题/注释
     with pd.ExcelWriter(out_path, engine="openpyxl") as writer:
@@ -230,15 +241,23 @@ def export_bundle_to_excel(
             CellIsRule(operator="lessThan", formula=["0"], font=Font(color="9C0006")),
         )
 
-        # 列宽：手动给“数值/科目”列更宽一点，避免贴得太近
+        # 列宽：自适应 + 关键列最小宽度兜底
         from openpyxl.utils import get_column_letter
 
         _autofit_worksheet(ws)
 
         v_letter = get_column_letter(value_col)
         s_letter = get_column_letter(subj_col)
-        ws.column_dimensions[v_letter].width = max(ws.column_dimensions[v_letter].width or 0, 20)
-        ws.column_dimensions[s_letter].width = max(ws.column_dimensions[s_letter].width or 0, 36)
+        ws.column_dimensions[v_letter].width = max(ws.column_dimensions[v_letter].width or 0, 18)
+        ws.column_dimensions[s_letter].width = max(ws.column_dimensions[s_letter].width or 0, 28)
+
+        # spacer 列宽（如果存在）
+        try:
+            spacer_col = headers.index(" ") + 1
+            spacer_letter = get_column_letter(spacer_col)
+            ws.column_dimensions[spacer_letter].width = 4
+        except Exception:
+            pass
 
     # meta sheet
     ws_meta = wb["META"] if "META" in wb.sheetnames else wb.create_sheet("META")
