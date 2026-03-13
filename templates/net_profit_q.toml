@@ -1,0 +1,8 @@
+# 单模板单文件示例：利润表-归母净利润（单季）趋势
+# 注意：推荐用“key”而非中文科目名，避免同义词/口径差异导致匹配失败。
+
+alias = "net_profit_q"
+chart = "bar"              # bar|pie|combo
+statement = "利润表"
+item = "is.net_profit"     # 也可填中文科目名（不推荐）
+transform = "q"            # q|ytd|ttm|raw

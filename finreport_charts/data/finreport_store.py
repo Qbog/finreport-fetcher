@@ -9,6 +9,7 @@ from pathlib import Path
 import pandas as pd
 
 from finreport_fetcher.utils.dates import parse_date, quarter_ends_between
+from finreport_fetcher.utils.paths import safe_dir_component
 
 
 @dataclass(frozen=True)
@@ -17,13 +18,50 @@ class FinreportPaths:
     pdf: Path | None
 
 
-def expected_xlsx_path(data_dir: Path, code6: str, statement_type: str, period_end: date) -> Path:
+def _company_dir(data_dir: Path, code6: str, name: str | None = None) -> Path:
+    """Resolve company directory under data_dir.
+
+    New layout:
+      data_dir/{公司名}_{code6}/...
+
+    Backward compatible:
+      data_dir/*.xlsx
+      data_dir/pdf/*.pdf (legacy)
+    """
+
+    if name:
+        cand = data_dir / safe_dir_component(f"{name}_{code6}")
+        if cand.exists() and cand.is_dir():
+            return cand
+
+    matches = sorted([p for p in data_dir.glob(f"*_{code6}") if p.is_dir()])
+    if matches:
+        return matches[0]
+
+    return data_dir
+
+
+def expected_xlsx_path(data_dir: Path, code6: str, statement_type: str, period_end: date, *, name: str | None = None) -> Path:
     fname = f"{code6}_{statement_type}_{period_end.strftime('%Y%m%d')}.xlsx"
-    return data_dir / fname
+
+    # legacy flat layout
+    p0 = data_dir / fname
+    if p0.exists():
+        return p0
+
+    return _company_dir(data_dir, code6, name=name) / fname
 
 
-def expected_pdf_path(data_dir: Path, code6: str, period_end: date) -> Path:
-    return data_dir / "pdf" / f"{code6}_{period_end.strftime('%Y%m%d')}.pdf"
+def expected_pdf_path(data_dir: Path, code6: str, period_end: date, *, name: str | None = None) -> Path:
+    fname = f"{code6}_{period_end.strftime('%Y%m%d')}.pdf"
+
+    # legacy
+    p0 = data_dir / "pdf" / fname
+    if p0.exists():
+        return p0
+
+    # new layout: PDF 与 XLSX 同目录
+    return _company_dir(data_dir, code6, name=name) / fname
 
 
 def ensure_finreports(
@@ -36,6 +74,7 @@ def ensure_finreports(
     provider: str,
     statement_type: str,
     pdf: bool,
+    company_name: str | None = None,
     tushare_token: str | None = None,
 ) -> list[date]:
     """确保 data_dir 里存在 start~end 的所有报告期末日财报 xlsx。
@@ -46,7 +85,11 @@ def ensure_finreports(
     """
 
     periods = quarter_ends_between(start, end)
-    missing = [pe for pe in periods if not expected_xlsx_path(data_dir, code6, statement_type, pe).exists()]
+    missing = [
+        pe
+        for pe in periods
+        if not expected_xlsx_path(data_dir, code6, statement_type, pe, name=company_name).exists()
+    ]
 
     if not missing:
         return []
@@ -76,7 +119,11 @@ def ensure_finreports(
 
     subprocess.check_call(args)
 
-    still_missing = [pe for pe in periods if not expected_xlsx_path(data_dir, code6, statement_type, pe).exists()]
+    still_missing = [
+        pe
+        for pe in periods
+        if not expected_xlsx_path(data_dir, code6, statement_type, pe, name=company_name).exists()
+    ]
     return still_missing
 
 

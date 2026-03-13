@@ -10,11 +10,9 @@
 
 | 列名 | 说明 | 示例 |
 |------|------|------|
-| `key` | 模板使用的标准键 | `is.revenue` / `bs.cash` |
-| `科目` | 显示用科目名（中文+英文） | `营业收入 (Operating revenue)` |
+| `key` | 模板使用的标准键（每行都有） | `is.revenue` / `bs.cash` |
+| `科目` | 显示用科目名（中文 + 可选英文括号；无翻译不加括号） | `营业收入 (Operating revenue)` |
 | `数值` | 财务数值 | `174144069958.25` |
-| `科目_CN` | 原始中文科目名 | `营业收入` |
-| `科目_EN` | 英文翻译 | `Operating revenue` |
 
 ### Key 命名规则
 
@@ -37,57 +35,64 @@ cf.net_cash_from_ops # 经营活动现金流量净额
 
 ---
 
-## 2. 模板配置文件（charts.toml）
+## 2. 模板文件（推荐：templates/*.toml）
 
-模板使用 TOML 格式，支持三种图表类型：
+我们推荐 **一个模板一个 TOML 文件**，统一放在仓库根目录 `templates/` 下，并用 `finreport_charts run` 执行。
+
+> 强烈建议模板里优先写 `item = "<key>"`（例如 `is.net_profit`），而不是中文科目名，以保证跨公司复用与稳定匹配。
 
 ### 2.1 柱状图趋势（bar）
 
+`templates/revenue_ttm.toml` 示例：
+
 ```toml
-[templates.yingyee]
-alias = "yingyee"        # 输出文件名前缀
-chart = "bar"            # 图表类型
-statement = "利润表"      # 报表类型
-item = "营业总收入"       # 科目（可用中文或 key，如 is.revenue_total）
-transform = "ttm"        # 转换方式: ttm / ytd / q
+alias = "revenue_ttm"
+chart = "bar"            # bar|pie|combo
+statement = "利润表"
+item = "is.revenue"       # 推荐：key
+transform = "ttm"         # ttm|ytd|q|raw
 ```
 
 **transform 选项说明：**
-- `ttm` - 滚动12个月（Trailing Twelve Months）
-- `ytd` / `raw` - 累计值（Year to Date）
-- `q` - 单季值（Quarter，通过差分计算）
+- `ttm`：滚动12个月（Trailing Twelve Months）
+- `ytd` / `raw`：累计值（Year to Date；raw 视为 ytd）
+- `q`：单季值（Quarter，通过差分计算）
 
 ### 2.2 饼图占比（pie）
 
+`templates/current_assets.toml` 示例（按分组标题取子项）：
+
 ```toml
-[templates.liudong_zichan]
-alias = "liudong_zichan"
+alias = "current_assets"
 chart = "pie"
 statement = "资产负债表"
-section = "流动资产"      # 按分组标题取子项
-top_n = 10               # 显示前N项，其余合并为"其他"
+section = "流动资产"
+top_n = 10
 ```
 
 或使用自定义科目列表：
+
 ```toml
-[templates.zidingyi]
 alias = "custom"
 chart = "pie"
 statement = "资产负债表"
-items = ["货币资金", "应收账款", "存货"]  # 自定义科目列表
+items = ["货币资金", "应收账款", "存货"]
 ```
 
 ### 2.3 双轴组合图（combo）
 
+`templates/revenue_price.toml` 示例：
+
 ```toml
-[templates.yingyee_vs_price]
-alias = "yingyee_vs_price"
+alias = "revenue_price"
 chart = "combo"
 statement = "利润表"
-bar_item = "营业总收入"    # 柱状图科目
-transform = "ttm"          # 转换方式: ttm / ytd / q
+bar_item = "is.revenue"
+transform = "ttm"
 # 股价线自动读取 data-dir/price/{code6}.csv
 ```
+
+> 兼容旧版：仍支持单文件多模板（`charts.toml` + `finreport_charts template --type xxx`），但不再推荐。
 
 ---
 
@@ -135,17 +140,30 @@ python3 -m finreport_charts bar \
 - 单季计算需要当年 Q1 数据，程序会自动从当年 1/1 开始补齐
 - 资产负债表通常不需要 TTM（存量科目），建议使用 `ytd` 或 `point`
 
-### 3.3 使用模板配置文件
+### 3.3 使用模板（推荐：run）
+
+运行模板目录下全部模板：
 
 ```bash
-python3 -m finreport_charts template \
-  --type yingyee \
+python3 -m finreport_charts run \
   --code 600519 \
   --start 2023-01-01 --end 2025-12-31 \
-  --config charts.toml \
   --data-dir output \
-  --out charts_output
+  --templates templates
 ```
+
+只运行单个模板（可重复多次）：
+
+```bash
+python3 -m finreport_charts run \
+  --code 600519 \
+  --start 2023-01-01 --end 2025-12-31 \
+  --data-dir output \
+  --templates templates \
+  --template net_profit_q
+```
+
+> 兼容旧版：`finreport_charts template --type xxx --config charts.toml` 仍可用，但不再推荐。
 
 ---
 
@@ -171,7 +189,7 @@ python3 -m finreport_fetcher fetch \
   --pdf
 ```
 
-PDF 保存在 `output/pdf/{code6}_{date}.pdf`
+PDF 保存在 `output/{公司名}_{code6}/{code6}_{date}.pdf`（与 XLSX 同目录）
 
 ### 4.3 股价数据
 
@@ -189,49 +207,40 @@ date,close
 
 ## 5. 完整示例配置
 
-```toml
-# charts.toml 完整示例
+推荐把每个模板拆成单独文件，放到 `templates/` 目录。例如：
 
-# 1. 营业收入 TTM 趋势
-[templates.revenue_ttm]
+`templates/revenue_ttm.toml`
+
+```toml
 alias = "revenue_ttm"
 chart = "bar"
 statement = "利润表"
-item = "is.revenue_total"  # 使用 key
+item = "is.revenue"   # 推荐 key
 transform = "ttm"
+```
 
-# 2. 净利润单季趋势
-[templates.profit_quarter]
+`templates/profit_quarter.toml`
+
+```toml
 alias = "profit_quarter"
 chart = "bar"
 statement = "利润表"
 item = "is.net_profit"
 transform = "q"
+```
 
-# 3. 流动资产构成饼图
-[templates.current_assets]
+`templates/current_assets.toml`
+
+```toml
 alias = "current_assets"
 chart = "pie"
 statement = "资产负债表"
 section = "流动资产"
 top_n = 10
-
-# 4. 营收 vs 股价双轴图
-[templates.revenue_price]
-alias = "revenue_price"
-chart = "combo"
-statement = "利润表"
-bar_item = "is.revenue_total"
-transform = "ttm"
-
-# 5. 预收+预付（使用表达式风格的 key）
-[templates.advances]
-alias = "advances"
-chart = "bar"
-statement = "资产负债表"
-item = "bs.advance_receipts"  # 预收款项
-transform = "ytd"
 ```
+
+> 兼容旧版：你仍可以把这些模板写在同一个 `charts.toml` 里，但建议迁移到单文件模式。
+
 
 ---
 
@@ -248,6 +257,11 @@ transform = "ytd"
 ```
 {alias}_{code6}_{start}_{end}.png
 {alias}_{code6}_{start}_{end}.xlsx
+```
+
+默认输出目录（`finreport_charts run`）：
+```
+{data_dir}/{公司名}_{code6}/charts/
 ```
 
 ---
@@ -282,7 +296,7 @@ SubjectSpec("is.your_key", "中文科目名", "English Name")
 | `finreport_charts bar --code XXX --item XXX --transform ttm` | 柱状图趋势 |
 | `finreport_charts pie --code XXX --section XXX` | 饼图占比 |
 | `finreport_charts combo --code XXX --bar-item XXX` | 双轴组合图 |
-| `finreport_charts template --type XXX` | 使用模板 |
+| `finreport_charts run --templates templates [--template xxx]` | 使用模板（推荐：单文件模板） |
 
 ---
 

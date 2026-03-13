@@ -52,21 +52,21 @@ pip install tushare
 - 日期逻辑：
   - `--date`：取该日期**之前最近一期已披露**（通过"能否抓到数据"做可用性判断）的报告期末日
   - `--start --end`：取范围内所有报告期末日（03-31/06-30/09-30/12-31）逐个导出
-- 多数据源：
-  - `--provider auto`：按优先级自动兜底（默认：tushare -> akshare）
-  - 或手动指定 `--provider tushare|akshare`
+- 多数据源（避免 Sina 被墙导致 akshare 失败）：
+  - `--provider auto`：按优先级自动兜底（默认：tushare → akshare_ths(同花顺) → akshare(Sina)）
+  - 或手动指定 `--provider tushare|akshare_ths|akshare`
 - 报表口径：默认合并；可切换 `--statement-type merged|parent`
 - Excel 美化：标题行、冻结窗格、表头样式、交替底色、负数红色、千分位格式、自适应列宽
   - 不输出"报告期末日"列（改为每个 sheet 顶部标题展示）
   - 不输出 PDF 链接/本地路径列（改为标题下方注释行展示）
-  - **新增**：每行包含 `key` 列（模板标准键，如 `is.revenue`）
-  - **新增**：`科目` 列显示中英文对照（如 `营业收入 (Operating revenue)`）
-  - **新增**：`科目_CN` 和 `科目_EN` 列分别存储中文和英文
-- PDF：`--pdf` 下载，保存为 `output/pdf/{code6}_{report_period}.pdf`
+  - **新增**：每行包含 `key` 列（模板标准键，如 `is.revenue`；即使未命中词典也会生成 key）
+  - **新增**：`科目` 列按“中文 + 可选英文括号”展示：有翻译才显示 ` (EN)`，无翻译不加括号
+  - **约束**：不再导出 `科目_CN` / `科目_EN` 两列（避免重复）
+- PDF：`--pdf` 下载，保存为 `output/{公司名}_{code6}/{code6}_{report_period}.pdf`（与 XLSX 同目录）
 
 ### 清理策略
 
-- 默认：每次执行会先清空 `--out` 输出目录，再生成新结果（避免旧数据混淆）。
+- 默认：每次执行会先清理“本次公司(code6)”的历史文件（`{code6}_*.xlsx` / `{code6}_*.pdf`），不影响其他公司目录。
 - 若需要增量写入（例如给图表程序补数据用）：加 `--no-clean`。
 
 ### 使用示例
@@ -84,16 +84,18 @@ python3 -m finreport_fetcher fetch --code 600519 --start 2024-01-01 --end 2024-1
 
 ### 输出目录结构
 
-默认输出到 `./output`：
+默认输出到 `./output`，并按公司归档到 `{公司名}_{code6}` 目录：
 
 ```
 output/
-  600519_merged_20241231.xlsx
-  600519_merged_20240930.xlsx
-  pdf/
+  {公司名}_600519/
+    600519_merged_20241231.xlsx
+    600519_merged_20240930.xlsx
     600519_20241231.pdf
     600519_20240930.pdf
 ```
+
+> 目录名中的 `{公司名}` 会尽量按 A 股正式简称解析；解析失败则退化为 code6。
 
 ---
 
@@ -110,12 +112,12 @@ output/
   - 财务科目趋势柱状图（支持 **TTM / YTD / 单季** 三种口径切换）
   - 同型分析饼图（范围内每期一张，支持 `section` 或 `items`，支持 TopN+其他）
   - 合并双轴图（财务柱 + 股价折线，股价来自 CSV：列 `date,close`）
-- 可选模板化：TOML 配置 + `template --type xxx`
+- **模板驱动（推荐）**：每个模板一个 TOML 文件（`templates/*.toml`），通过 `finreport_charts run` 执行（支持跑全部模板或指定单个/多个模板）
 - **新增**：支持使用 `key`（如 `is.revenue`）替代中文科目名，实现跨公司标准化引用
 
 ### 约定：数据目录（--data-dir）
 
-`--data-dir` 需要指向 **finreport_fetcher** 的输出目录（同一个目录里放 xlsx/pdf）。
+`--data-dir` 需要指向 **finreport_fetcher** 的输出根目录：里面按公司分目录存放（`{公司名}_{code6}/`），且 **XLSX 与 PDF 同目录**。
 
 股价 CSV（未来由你的股价 fetcher 产生）默认约定位置：
 
@@ -155,29 +157,37 @@ python3 -m finreport_charts combo --code 600519 --start 2023-01-01 --end 2025-12
   --price-csv output/price/600519.csv
 ```
 
-### 模板化（TOML）
+### 模板化（TOML，推荐：单模板单文件）
 
-- 示例配置见：`charts.toml.example`
-- 文件命名：优先用模板的 `alias`，没有则用模板名。
+- 模板目录：`templates/`（仓库根目录）
+- 每个模板一个文件：`templates/<template_name>.toml`
+- 输出文件名：优先使用 `alias`，否则用文件名（stem）
 
-运行模板：
+运行全部模板：
 
 ```bash
-python3 -m finreport_charts template --type yingyee --name 茅台 \
-  --start 2023-01-01 --end 2025-12-31 \
-  --data-dir output --out charts_output \
-  --config charts.toml
+python3 -m finreport_charts run --code 600519 --start 2024-01-01 --end 2024-12-31 \
+  --data-dir output --templates templates
 ```
+
+只运行指定模板（可多次）：
+
+```bash
+python3 -m finreport_charts run --code 600519 --start 2024-01-01 --end 2024-12-31 \
+  --data-dir output --templates templates \
+  --template net_profit_q
+```
+
+> 兼容旧版：仍支持单文件多模板（`charts.toml` + `finreport_charts template --type xxx`），但不再推荐。
 
 ---
 
 ## 新增功能说明（v0.2）
 
 ### 1. 财报 Excel 新增列
-- `key`：模板标准键（如 `is.revenue`, `bs.cash`）
-- `科目`：中英文对照显示（`中文 (English)`）
-- `科目_CN`：纯中文科目名
-- `科目_EN`：英文翻译
+- `key`：模板标准键（如 `is.revenue`, `bs.cash`），且**每行都有 key**
+- `科目`：中英文对照展示（`中文 (English)`；无翻译则仅中文）
+- `数值`：金额（自动格式化，负数红色，千分位）
 
 ### 2. Transform 口径切换
 柱状图和组合图支持三种数据口径：

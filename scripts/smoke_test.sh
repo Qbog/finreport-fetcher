@@ -18,19 +18,25 @@ python3 -m finreport_fetcher fetch --code 600519 --date 2025-02-01 --out "$OUT_D
 mkdir -p output
 ( cd output && python3 -m finreport_fetcher version >/dev/null )
 
-XLSX="$OUT_DIR/600519_merged_20241231.xlsx"
-if [ ! -f "$XLSX" ]; then
-  echo "[smoke] expected xlsx not found: $XLSX" >&2
+# locate xlsx (new layout: _smoke_output/{公司名}_600519/*.xlsx)
+XLSX="$(ls -1 "$OUT_DIR"/*_600519/600519_merged_*.xlsx 2>/dev/null | sort | tail -n 1 || true)"
+if [ -z "$XLSX" ] || [ ! -f "$XLSX" ]; then
+  echo "[smoke] expected xlsx not found under company dir: $OUT_DIR/*_600519/600519_merged_*.xlsx" >&2
+  echo "[smoke] tree:" >&2
+  find "$OUT_DIR" -maxdepth 3 -type f -print >&2 || true
   exit 1
 fi
 
+echo "[smoke] using xlsx: $XLSX"
+
 # 2) validate columns exist + cashflow indent
-python3 - <<'PY'
+python3 - "$XLSX" <<'PY'
+import sys
 import pandas as pd
 from pathlib import Path
 from openpyxl import load_workbook
 
-p = Path('_smoke_output/600519_merged_20241231.xlsx')
+p = Path(sys.argv[1])
 
 # column checks
 for sheet in ['利润表','资产负债表','现金流量表']:
@@ -68,9 +74,16 @@ assert indent_next >= 1, f'cashflow item indent expected >=1, got {indent_next}'
 print('[smoke] fetcher excel columns OK + cashflow indent OK')
 PY
 
-# 3) optional: charts bar using key
-python3 -m finreport_charts bar --code 600519 --start 2024-01-01 --end 2024-12-31 \
-  --statement 利润表 --item is.net_profit --transform q \
-  --data-dir "$OUT_DIR" --out "$CHART_DIR"
+# 3) charts run (template-only workflow)
+python3 -m finreport_charts run --code 600519 --start 2024-01-01 --end 2024-12-31 \
+  --data-dir "$OUT_DIR" --templates templates --template net_profit_q
+
+RUN_PNG="$(ls -1 "$OUT_DIR"/*_600519/charts/net_profit_q_600519_20240101_20241231.png 2>/dev/null | head -n 1 || true)"
+RUN_XLSX="$(ls -1 "$OUT_DIR"/*_600519/charts/net_profit_q_600519_20240101_20241231.xlsx 2>/dev/null | head -n 1 || true)"
+if [ -z "$RUN_PNG" ] || [ ! -f "$RUN_PNG" ] || [ -z "$RUN_XLSX" ] || [ ! -f "$RUN_XLSX" ]; then
+  echo "[smoke] run outputs not found under: $OUT_DIR/*_600519/charts/" >&2
+  find "$OUT_DIR" -maxdepth 4 -type f -print >&2 || true
+  exit 1
+fi
 
 echo "[smoke] OK"

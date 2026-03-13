@@ -12,6 +12,7 @@ from .exporter.excel import export_bundle_to_excel
 from .pdf.cninfo import find_and_download_period_pdf
 from .providers.registry import ProviderConfig, build_providers
 from .utils.dates import candidate_quarter_ends_before, parse_date, quarter_ends_between
+from .utils.paths import safe_dir_component
 from .utils.symbols import ResolvedSymbol, fuzzy_match_name, load_a_share_name_map, parse_code
 
 app = typer.Typer(add_completion=False)
@@ -39,10 +40,21 @@ def _resolve_symbol(code: str | None, name: str | None) -> ResolvedSymbol:
         raise typer.BadParameter("--code 与 --name 只能二选一")
 
     if code:
-        rs = parse_code(code)
-        if not rs:
+        rs0 = parse_code(code)
+        if not rs0:
             raise typer.BadParameter(f"无法解析股票代码格式: {code}")
-        return rs
+
+        # Fill official name if possible (user要求用正式简称命名目录)
+        try:
+            df_map = load_a_share_name_map()
+            m = df_map["code"].astype(str).str.zfill(6) == rs0.code6
+            if m.any():
+                nm = str(df_map[m].iloc[0]["name"])
+                return ResolvedSymbol(code6=rs0.code6, ts_code=rs0.ts_code, market=rs0.market, name=nm)
+        except Exception:
+            pass
+
+        return rs0
 
     if name:
         df_map = load_a_share_name_map()
@@ -102,8 +114,8 @@ def _fetch_one_period(
     pdf_title = None
     pdf_note = None
     if want_pdf:
-        pdf_root = out_dir / "pdf"
-        pdf_file = pdf_root / f"{code6}_{period_end.strftime('%Y%m%d')}.pdf"
+        # PDF 与 XLSX 同目录（按文件名区分，不再使用 pdf/ 子目录）
+        pdf_file = out_dir / f"{code6}_{period_end.strftime('%Y%m%d')}.pdf"
         pdf_res = find_and_download_period_pdf(code6=code6, period_end=period_end, out_path=pdf_file)
         if pdf_res.ok:
             pdf_url = pdf_res.url
@@ -193,11 +205,16 @@ def fetch(
     providers = build_providers(cfg)
 
     # 每次提取前删除之前的数据：仅删除本次公司(code6)相关文件，不影响其他公司
-    out_dir = out_dir.resolve()
+    out_root = out_dir.resolve()
+    out_root.mkdir(parents=True, exist_ok=True)
+
+    company_name = rs.name or rs.code6
+    company_dirname = safe_dir_component(f"{company_name}_{rs.code6}")
+    out_dir = out_root / company_dirname
     out_dir.mkdir(parents=True, exist_ok=True)
 
     if not no_clean:
-        # xlsx
+        # 只清理本公司目录内的本公司文件
         for p in out_dir.glob(f"{rs.code6}_*.xlsx"):
             try:
                 p.unlink()
@@ -209,14 +226,11 @@ def fetch(
             except Exception:
                 pass
 
-        # pdf
-        pdf_dir = out_dir / "pdf"
-        if pdf_dir.exists():
-            for p in pdf_dir.glob(f"{rs.code6}_*.pdf"):
-                try:
-                    p.unlink()
-                except Exception:
-                    pass
+        for p in out_dir.glob(f"{rs.code6}_*.pdf"):
+            try:
+                p.unlink()
+            except Exception:
+                pass
 
     exported: list[Path] = []
 
