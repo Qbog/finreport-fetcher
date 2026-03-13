@@ -16,17 +16,24 @@
 
 ## 安装
 
-建议虚拟环境：
+建议虚拟环境（推荐安装为可执行命令，这样你在任何目录都能运行）：
 
 ```bash
 cd a_share_finreport_fetcher
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -U pip
-pip install -r requirements.txt
+
+# 安装为 editable（会提供 finfetch 命令；也支持 python -m finreport_fetcher）
+pip install -e .
+
 # 如需 tushare（可选）：
 pip install tushare
 ```
+
+> 如果你不想安装，也可以在项目根目录用：
+> `PYTHONPATH=. python3 -m finreport_fetcher fetch ...`
+> **注意不要在 output/ 子目录直接跑**，否则会出现 `No module named finreport_fetcher`。
 
 > 如使用 tushare，需要设置环境变量 `TUSHARE_TOKEN`，或在运行时传入 `--tushare-token`。
 

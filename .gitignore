@@ -1,14 +1,22 @@
+# Local outputs
+output/
+charts_output/
+
+# chart demo artifacts (repo examples generate these)
+_chart_data/
+_charts_out/
+_charts_pie/
+_charts_combo/
+_charts_tpl/
+
+# smoke test artifacts
+_smoke_output/
+_smoke_charts/
+
+# python
 __pycache__/
 *.pyc
 .venv/
-output/
-_out_test/
-_tmp_*.xlsx
-_tmp_pdf*/
-*.xlsx
-*.pdf
 
-# 图表程序测试输出（用户自有数据）
-_chart_data/
-_charts_*/
-charts_output/
+# OS
+.DS_Store
