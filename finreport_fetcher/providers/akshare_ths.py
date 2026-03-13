@@ -109,7 +109,13 @@ class AkshareThsProvider:
 
         drop_cols = {"报告期", "报表核心指标", "报表全部指标"}
 
-        def is_section_header(name: str) -> bool:
+        def header_kind(name: str) -> tuple[bool, int]:
+            """Return (is_header, next_item_level).
+
+            next_item_level controls indentation for following normal items.
+            """
+
+            # exact section headers (mainly for BS)
             header_exact = {
                 # BS
                 "流动资产",
@@ -118,24 +124,35 @@ class AkshareThsProvider:
                 "非流动负债",
                 "所有者权益",
                 "股东权益",
-                # CF
-                "经营活动产生的现金流量",
-                "投资活动产生的现金流量",
-                "筹资活动产生的现金流量",
-                "补充资料",
             }
             if name in header_exact:
-                return True
+                return True, 1
+
             # IS headers like: 一、二、三…
             if sheet_cn == "利润表" and re.match(r"^[一二三四五六七八九十]、", name):
-                return True
+                return True, 1
             # nested headers like: （一）（二）…
             if sheet_cn == "利润表" and re.match(r"^（[一二三四五六七八九十]）", name):
-                return True
-            return False
+                return True, 2
+
+            # CF headers
+            if sheet_cn == "现金流量表":
+                # top sections: 一、二、三、四、五、六…
+                if re.match(r"^[一二三四五六七八九十]、", name):
+                    return True, 1
+                # supplement sections like: 补充资料：
+                if name.startswith("补充资料"):
+                    return True, 1
+                # numbered sub-sections: 1、2、3、... （通常以冒号结尾）
+                if re.match(r"^[0-9]+、", name):
+                    return True, 2
+                if name.endswith("："):
+                    return True, 2
+
+            return False, 0
 
         items: list[tuple[str, float | None, int, bool]] = []
-        in_section = False
+        cur_level = 0
 
         for col in dfx.columns:
             if col in drop_cols:
@@ -150,19 +167,20 @@ class AkshareThsProvider:
             val = row.get(col)
             num = AkshareThsProvider._parse_num(val)
 
-            # section header
-            if is_section_header(name_clean):
+            is_hdr, next_level = header_kind(name_clean)
+            if is_hdr:
+                # header rows should exist even without numeric value
                 items.append((name_clean, float(num) if num is not None else None, 0, True))
-                in_section = True
+                cur_level = next_level
                 continue
 
             # keep only non-empty normal items
             if num is None:
                 continue
 
-            level = 1 if in_section else 0
+            level = cur_level
             if name_clean.startswith(("其中", "其中：", "加：", "减：")):
-                level = max(level, 2)
+                level = cur_level + 1
 
             items.append((name_clean, float(num), level, False))
 

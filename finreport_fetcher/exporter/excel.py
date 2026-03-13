@@ -251,6 +251,14 @@ def export_bundle_to_excel(
         ws.column_dimensions[v_letter].width = max(ws.column_dimensions[v_letter].width or 0, 18)
         ws.column_dimensions[s_letter].width = max(ws.column_dimensions[s_letter].width or 0, 28)
 
+        # key 列：避免过宽（key 很长时会把整张表拉得很宽）
+        try:
+            key_col = headers.index("key") + 1
+            key_letter = get_column_letter(key_col)
+            ws.column_dimensions[key_letter].width = min(ws.column_dimensions[key_letter].width or 0, 18)
+        except Exception:
+            pass
+
         # spacer 列宽（如果存在）
         try:
             spacer_col = headers.index(" ") + 1
