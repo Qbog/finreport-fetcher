@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .akshare_sina import AkshareSinaProvider
+from .akshare_ths import AkshareThsProvider
 from .tushare_provider import TushareProvider
 
 
@@ -16,6 +17,7 @@ class ProviderConfig:
 def build_providers(cfg: ProviderConfig):
     providers = {
         "akshare": AkshareSinaProvider(),
+        "akshare_ths": AkshareThsProvider(),
         "tushare": TushareProvider(token=cfg.tushare_token),
     }
 

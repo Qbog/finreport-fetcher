@@ -81,18 +81,48 @@ def ensure_finreports(
 
 
 def read_statement_df(xlsx_path: Path, sheet_name: str) -> pd.DataFrame:
-    """读取某一期财报的某张表，返回 DataFrame(科目,数值)。"""
+    """读取某一期财报的某张表。
+
+    兼容两种格式：
+    - 老格式：列为 [科目, 数值]
+    - 新格式：列包含 key / 科目(中英展示) / 科目_CN / 科目_EN / 数值
+
+    返回 df 至少包含列: 科目, 数值；若存在也会保留 key。
+    """
 
     # 我们的 xlsx：第1行标题、第2行注释、第3行表头
     df = pd.read_excel(xlsx_path, sheet_name=sheet_name, header=2)
-    # 标准列
-    df = df[["科目", "数值"]].copy()
-    return df
+
+    subj_raw = "科目_CN" if "科目_CN" in df.columns else "科目"
+
+    keep: list[str] = []
+    if "key" in df.columns:
+        keep.append("key")
+    keep += [subj_raw, "数值"]
+
+    df2 = df[keep].copy()
+    if subj_raw != "科目":
+        df2.rename(columns={subj_raw: "科目"}, inplace=True)
+
+    return df2
 
 
 def get_item_value(xlsx_path: Path, sheet_name: str, item: str) -> float | None:
+    """按科目取值。
+
+    item 支持：
+    - CN 科目名（精确匹配）
+    - 模板 key（如 is.revenue / bs.cash），当 xlsx 含 key 列时生效
+    """
+
     df = read_statement_df(xlsx_path, sheet_name)
-    m = df["科目"].astype(str) == item
+
+    item_s = str(item)
+    if "key" in df.columns and "." in item_s:
+        m = df["key"].astype(str) == item_s
+    else:
+        m = df["科目"].astype(str) == item_s
+
     sub = df[m]
     if sub.empty:
         return None

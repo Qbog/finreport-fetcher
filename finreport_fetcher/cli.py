@@ -133,8 +133,8 @@ def _fetch_one_period(
         "pdf_local_path": pdf_path,
         "pdf_note": pdf_note,
     })
-    if used_provider and getattr(used_provider, "name", None) == "akshare":
-        # 若用户请求合并但实际拿到母公司（或相反），在 meta 里说明
+    if used_provider and getattr(used_provider, "name", None) in {"akshare", "akshare_ths"}:
+        # 若用户请求合并但实际拿到母公司（或相反），在 meta 里说明（Sina only）
         detected = bundle.meta.get("detected_type")
         if detected:
             meta["statement_type_note"] = f"Sina 类型字段: {detected}"
@@ -186,7 +186,11 @@ def fetch(
     if not date_ and not (start and end):
         raise typer.BadParameter("必须提供 --date 或 --start/--end")
 
-    cfg = ProviderConfig(provider=provider, prefer_order=["tushare", "akshare"], tushare_token=tushare_token)
+    cfg = ProviderConfig(
+        provider=provider,
+        prefer_order=["tushare", "akshare_ths", "akshare"],
+        tushare_token=tushare_token,
+    )
     providers = build_providers(cfg)
 
     # 每次提取前删除之前的数据（输出目录）

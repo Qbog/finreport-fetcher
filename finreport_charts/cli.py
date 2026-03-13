@@ -36,7 +36,7 @@ from .data.finreport_store import (
 )
 from .templates.config import load_templates
 from .utils.files import safe_slug
-from .utils.ttm import ttm_from_ytd
+from .utils.ttm import quarter_from_ytd, ttm_from_ytd
 
 app = typer.Typer(add_completion=False)
 console = Console()
@@ -169,7 +169,7 @@ def bar_trend(
     statement: str = typer.Option("利润表", "--statement", help="资产负债表/利润表/现金流量表"),
     item: str = typer.Option("营业总收入", "--item", help="科目精确匹配"),
     item_like: str | None = typer.Option(None, "--item-like", help="科目模糊匹配（正则/包含）"),
-    transform: str = typer.Option("ttm", "--transform", help="ttm/raw"),
+    transform: str = typer.Option("ttm", "--transform", help="ttm/ytd/q（raw 视为 ytd）"),
     data_dir: Path = typer.Option(Path("output"), "--data-dir"),
     out_dir: Path = typer.Option(Path("charts_output"), "--out"),
     provider: str = typer.Option("auto", "--provider"),
@@ -181,8 +181,18 @@ def bar_trend(
 
     c = _common(code, name, start, end, data_dir, out_dir, provider, statement_type, pdf, tushare_token)
 
-    # TTM 需要上一年数据：从上一年1月1日开始补齐
-    fetch_start = date(c.start.year - 1, 1, 1) if transform == "ttm" else c.start
+    # 口径：
+    # - ttm：需要上一年数据（从上一年 1/1 补齐）
+    # - q：需要同一年内上一季度（从当年 1/1 补齐）
+    # - ytd/raw：只需要范围内
+    t = "ytd" if transform == "raw" else transform
+    if t == "ttm":
+        fetch_start = date(c.start.year - 1, 1, 1)
+    elif t == "q":
+        fetch_start = date(c.start.year, 1, 1)
+    else:
+        fetch_start = c.start
+
     _maybe_fetch_missing(c, fetch_start=fetch_start)
 
     periods = quarter_ends_between(c.start, c.end)
@@ -196,7 +206,9 @@ def bar_trend(
         # item_like 支持：优先精确；否则正则/包含
         if item_like:
             df = pd.read_excel(xlsx, sheet_name=statement, header=2)
-            df = df[["科目", "数值"]].copy()
+            subj_col = "科目_CN" if "科目_CN" in df.columns else "科目"
+            df = df[[subj_col, "数值"]].copy()
+            df.rename(columns={subj_col: "科目"}, inplace=True)
             subj = df["科目"].astype(str)
             # regex first
             try:
@@ -214,7 +226,7 @@ def bar_trend(
             continue
         series_ytd[pe] = float(v)
 
-    # 输出范围内数据
+    # 输出范围内数据（支持 q/ytd/ttm）
     rows = []
     for pe in periods:
         y_raw = series_ytd.get(pe)
@@ -222,15 +234,17 @@ def bar_trend(
             rows.append({"period_end": pe.strftime("%Y-%m-%d"), "value": None})
             continue
 
-        if transform == "ttm":
+        if t == "ttm":
             y = ttm_from_ytd(pe, series_ytd)
+        elif t == "q":
+            y = quarter_from_ytd(pe, series_ytd)
         else:
             y = y_raw
         rows.append({"period_end": pe.strftime("%Y-%m-%d"), "value": y})
 
     df_out = pd.DataFrame(rows)
 
-    title = f"{c.rs.code6} {statement}.{item if not item_like else item_like} 趋势 ({transform.upper()})"
+    title = f"{c.rs.code6} {statement}.{item if not item_like else item_like} 趋势 ({t.upper()})"
     base = safe_slug(f"bar_{statement}_{item if not item_like else item_like}")
     out_png = c.out_dir / f"{base}_{c.rs.code6}_{c.start.strftime('%Y%m%d')}_{c.end.strftime('%Y%m%d')}.png"
     out_xlsx = c.out_dir / f"{base}_{c.rs.code6}_{c.start.strftime('%Y%m%d')}_{c.end.strftime('%Y%m%d')}.xlsx"
@@ -309,7 +323,7 @@ def combo_dual_axis(
     end: str = typer.Option(..., "--end"),
     statement: str = typer.Option("利润表", "--statement"),
     bar_item: str = typer.Option("营业总收入", "--bar-item"),
-    bar_transform: str = typer.Option("ttm", "--bar-transform", help="ttm/raw"),
+    bar_transform: str = typer.Option("ttm", "--bar-transform", help="ttm/ytd/q（raw 视为 ytd）"),
     price_csv: Path | None = typer.Option(None, "--price-csv", help="股价CSV（列: date, close）"),
     data_dir: Path = typer.Option(Path("output"), "--data-dir"),
     out_dir: Path = typer.Option(Path("charts_output"), "--out"),
@@ -322,7 +336,13 @@ def combo_dual_axis(
 
     c = _common(code, name, start, end, data_dir, out_dir, provider, statement_type, pdf, tushare_token)
 
-    fetch_start = date(c.start.year - 1, 1, 1) if bar_transform == "ttm" else c.start
+    bt = "ytd" if bar_transform == "raw" else bar_transform
+    if bt == "ttm":
+        fetch_start = date(c.start.year - 1, 1, 1)
+    elif bt == "q":
+        fetch_start = date(c.start.year, 1, 1)
+    else:
+        fetch_start = c.start
     _maybe_fetch_missing(c, fetch_start=fetch_start)
 
     if price_csv is None:
@@ -351,7 +371,12 @@ def combo_dual_axis(
         v_raw = ytd_map.get(pe)
         if v_raw is None:
             continue
-        v = ttm_from_ytd(pe, ytd_map) if bar_transform == "ttm" else v_raw
+        if bt == "ttm":
+            v = ttm_from_ytd(pe, ytd_map)
+        elif bt == "q":
+            v = quarter_from_ytd(pe, ytd_map)
+        else:
+            v = v_raw
         px = price_on_or_before(df_price, pe)
         rows.append({"period_end": pe.strftime("%Y-%m-%d"), "amount": v, "close": px})
 
@@ -419,7 +444,13 @@ def run_template(
         statement = tpl.statement or "利润表"
         item = tpl.item or "营业总收入"
         transform = tpl.transform or "ttm"
-        fetch_start = date(c.start.year - 1, 1, 1) if transform == "ttm" else c.start
+        t2 = "ytd" if transform == "raw" else transform
+        if t2 == "ttm":
+            fetch_start = date(c.start.year - 1, 1, 1)
+        elif t2 == "q":
+            fetch_start = date(c.start.year, 1, 1)
+        else:
+            fetch_start = c.start
         _maybe_fetch_missing(c, fetch_start=fetch_start)
 
         periods = quarter_ends_between(c.start, c.end)
@@ -439,7 +470,12 @@ def run_template(
             y_raw = series_ytd.get(pe)
             if y_raw is None:
                 continue
-            y = ttm_from_ytd(pe, series_ytd) if transform == "ttm" else y_raw
+            if t2 == "ttm":
+                y = ttm_from_ytd(pe, series_ytd)
+            elif t2 == "q":
+                y = quarter_from_ytd(pe, series_ytd)
+            else:
+                y = y_raw
             rows.append({"period_end": pe.strftime("%Y-%m-%d"), "value": y})
 
         df_out = pd.DataFrame(rows)
@@ -500,7 +536,13 @@ def run_template(
         statement = tpl.statement or "利润表"
         bar_item = tpl.bar_item or tpl.item or "营业总收入"
         transform = tpl.transform or "ttm"
-        fetch_start = date(c.start.year - 1, 1, 1) if transform == "ttm" else c.start
+        t3 = "ytd" if transform == "raw" else transform
+        if t3 == "ttm":
+            fetch_start = date(c.start.year - 1, 1, 1)
+        elif t3 == "q":
+            fetch_start = date(c.start.year, 1, 1)
+        else:
+            fetch_start = c.start
         _maybe_fetch_missing(c, fetch_start=fetch_start)
 
         price_csv = c.data_dir / "price" / f"{c.rs.code6}.csv"
@@ -525,7 +567,12 @@ def run_template(
             v_raw = ytd_map.get(pe)
             if v_raw is None:
                 continue
-            v = ttm_from_ytd(pe, ytd_map) if transform == "ttm" else v_raw
+            if t3 == "ttm":
+                v = ttm_from_ytd(pe, ytd_map)
+            elif t3 == "q":
+                v = quarter_from_ytd(pe, ytd_map)
+            else:
+                v = v_raw
             px = price_on_or_before(df_price, pe)
             rows.append({"period_end": pe.strftime("%Y-%m-%d"), "amount": v, "close": px})
 

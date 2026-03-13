@@ -56,15 +56,25 @@ def export_bundle_to_excel(
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
+    from ..mappings.enrich import enrich_statement_df
+
+    bs_df = enrich_statement_df(balance_sheet, sheet_name_cn="资产负债表")
+    is_df = enrich_statement_df(income_statement, sheet_name_cn="利润表")
+    cf_df = enrich_statement_df(cashflow_statement, sheet_name_cn="现金流量表")
+
     def view_df(df: pd.DataFrame) -> pd.DataFrame:
-        cols = [c for c in ["科目", "数值"] if c in df.columns]
+        # 兼容老格式：如果 enrich 失败/不支持，至少输出 科目/数值
+        preferred = ["key", "科目", "数值", "科目_CN", "科目_EN"]
+        cols = [c for c in preferred if c in df.columns]
+        if not cols:
+            cols = [c for c in ["科目", "数值"] if c in df.columns]
         return df[cols].copy()
 
     # 写入：预留两行做标题/注释
     with pd.ExcelWriter(out_path, engine="openpyxl") as writer:
-        view_df(balance_sheet).to_excel(writer, sheet_name="资产负债表", index=False, startrow=2)
-        view_df(income_statement).to_excel(writer, sheet_name="利润表", index=False, startrow=2)
-        view_df(cashflow_statement).to_excel(writer, sheet_name="现金流量表", index=False, startrow=2)
+        view_df(bs_df).to_excel(writer, sheet_name="资产负债表", index=False, startrow=2)
+        view_df(is_df).to_excel(writer, sheet_name="利润表", index=False, startrow=2)
+        view_df(cf_df).to_excel(writer, sheet_name="现金流量表", index=False, startrow=2)
 
     # 美化（openpyxl）
     from openpyxl import load_workbook
@@ -117,33 +127,48 @@ def export_bundle_to_excel(
 
     # 将 df 的缩进信息带到工作表里
     df_map = {
-        "资产负债表": balance_sheet,
-        "利润表": income_statement,
-        "现金流量表": cashflow_statement,
+        "资产负债表": bs_df,
+        "利润表": is_df,
+        "现金流量表": cf_df,
     }
 
     for sname in ["资产负债表", "利润表", "现金流量表"]:
         ws = wb[sname]
+        end_col = ws.max_column
 
         # 标题行 (row 1) + 注释行 (row 2)
         ws["A1"].value = make_title(sname)
         ws["A1"].fill = title_fill
         ws["A1"].font = title_font
         ws["A1"].alignment = title_alignment
-        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=2)
+        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=end_col)
         ws.row_dimensions[1].height = 26
 
         note = make_note()
         if note:
             ws["A2"].value = note
-            ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=2)
+            ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=end_col)
             ws["A2"].alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
             ws.row_dimensions[2].height = 34
 
         header_row = 3
         data_start = 4
 
-        ws.freeze_panes = "B4"  # 冻结标题+注释+表头，且冻结科目列
+        # 解析列位置（兼容列增减/顺序变化）
+        headers = [ws.cell(header_row, c).value for c in range(1, end_col + 1)]
+
+        def _col(name: str, default: int) -> int:
+            try:
+                return headers.index(name) + 1
+            except Exception:
+                return default
+
+        subj_col = _col("科目", 1)
+        value_col = _col("数值", end_col)
+
+        # 冻结标题+注释+表头，并冻结 key+科目（即科目列之前的所有列）
+        freeze_col = min(subj_col + 1, end_col)
+        ws.freeze_panes = ws.cell(data_start, freeze_col).coordinate
 
         # 表头
         for cell in ws[header_row]:
@@ -158,16 +183,18 @@ def export_bundle_to_excel(
 
         for i in range(len(df)):
             excel_row = data_start + i
-            subj_cell = ws.cell(excel_row, 1)
-            val_cell = ws.cell(excel_row, 2)
+            subj_cell = ws.cell(excel_row, subj_col)
+            val_cell = ws.cell(excel_row, value_col)
 
             lvl = int(levels.iloc[i]) if levels is not None else 0
             hdr = bool(is_header.iloc[i]) if is_header is not None else False
 
             if hdr:
+                # 整行填充
+                for c in range(1, end_col + 1):
+                    ws.cell(excel_row, c).fill = section_fill
+
                 subj_cell.font = section_font
-                subj_cell.fill = section_fill
-                val_cell.fill = section_fill
                 subj_cell.alignment = Alignment(horizontal="left", indent=0)
                 # 标题行可能也有数值（如利润表“一、营业总收入”），不强行清空
                 val_cell.alignment = Alignment(horizontal="right")
@@ -181,11 +208,10 @@ def export_bundle_to_excel(
             if hdr:
                 continue
             if (i % 2) == 1:
-                ws.cell(excel_row, 1).fill = zebra_fill
-                ws.cell(excel_row, 2).fill = zebra_fill
+                for c in range(1, end_col + 1):
+                    ws.cell(excel_row, c).fill = zebra_fill
 
         # 数字列格式：对“数值”列做千分位
-        value_col = 2
         for r in range(data_start, ws.max_row + 1):
             cell = ws.cell(r, value_col)
             if isinstance(cell.value, (int, float)):
@@ -204,10 +230,15 @@ def export_bundle_to_excel(
             CellIsRule(operator="lessThan", formula=["0"], font=Font(color="9C0006")),
         )
 
-        # 列宽：手动给“数值”列更宽一点，避免贴得太近
+        # 列宽：手动给“数值/科目”列更宽一点，避免贴得太近
+        from openpyxl.utils import get_column_letter
+
         _autofit_worksheet(ws)
-        ws.column_dimensions["B"].width = max(ws.column_dimensions["B"].width or 0, 20)
-        ws.column_dimensions["A"].width = max(ws.column_dimensions["A"].width or 0, 36)
+
+        v_letter = get_column_letter(value_col)
+        s_letter = get_column_letter(subj_col)
+        ws.column_dimensions[v_letter].width = max(ws.column_dimensions[v_letter].width or 0, 20)
+        ws.column_dimensions[s_letter].width = max(ws.column_dimensions[s_letter].width or 0, 36)
 
     # meta sheet
     ws_meta = wb["META"] if "META" in wb.sheetnames else wb.create_sheet("META")
