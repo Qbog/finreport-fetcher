@@ -17,6 +17,7 @@ def render_combo_png(
     out_png: Path,
     bar_label: str = "",
     line_label: str = "",
+    x_label: str = "",
 ):
     import matplotlib.pyplot as plt
 
@@ -28,7 +29,7 @@ def render_combo_png(
 
     fig, ax1 = plt.subplots()
     ax1.bar(x, y1, color="#1F77B4", alpha=0.85, label=bar_label or bar_col)
-    ax1.set_xlabel("时间")
+    ax1.set_xlabel(x_label or "时间")
     ax1.set_ylabel(bar_label or bar_col)
     ax1.tick_params(axis="x", rotation=45)
 
@@ -59,6 +60,7 @@ def write_combo_excel(
     out_xlsx: Path,
     bar_label: str = "",
     line_label: str = "",
+    x_label: str = "",
 ):
     from openpyxl import Workbook
     from openpyxl.chart import BarChart, LineChart, Reference
@@ -97,7 +99,7 @@ def write_combo_excel(
     bar.type = "col"
     bar.title = title
     bar.y_axis.title = bar_label or bar_col
-    bar.x_axis.title = "时间"
+    bar.x_axis.title = x_label or "时间"
 
     bar_data = Reference(ws, min_col=2, min_row=2, max_row=ws.max_row)
     cats = Reference(ws, min_col=1, min_row=3, max_row=ws.max_row)

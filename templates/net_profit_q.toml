@@ -1,8 +1,29 @@
-# 单模板单文件示例：利润表-归母净利润（单季）趋势
-# 注意：推荐用“key”而非中文科目名，避免同义词/口径差异导致匹配失败。
+# 单模板单文件示例：趋势分析（利润表-归母净利润 单季）
 
+name = "net_profit_q"
 alias = "net_profit_q"
-chart = "bar"              # bar|pie|combo
+
+# 必填：图表类型
+# - bar: 柱状图
+# - pie: 饼图
+# - combo: 双轴（柱+线）
+type = "bar"
+
+# 必填：标题（显示在图表上方）
+title = "归母净利润（单季）趋势"
+
+# 必填：坐标轴名称（bar/combo 使用）
+x_label = "报告期"
+y_label = "金额"
+
+# bar 必填：mode=trend/compare
+mode = "trend"
+
+# 默认报表（bars 里也可单独覆盖 statement）
 statement = "利润表"
-item = "is.net_profit"     # 也可填中文科目名（不推荐）
-transform = "q"            # q|ytd|ttm|raw
+
+# 每根柱（series）一个配置块；trend 模式下，每个报告期会画出所有 bars（可做双柱/多柱）
+[[bars]]
+name = "归母净利润"
+expr = "is.net_profit"
+transform = "q"   # q|ytd|ttm|raw

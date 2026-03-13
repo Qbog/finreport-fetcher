@@ -23,7 +23,7 @@ from finreport_fetcher.utils.symbols import (
     parse_code,
 )
 
-from .charts.bar_trend import render_bar_png, write_bar_excel
+from .charts.bar_trend import render_bar_png, render_bars_png, write_bar_excel, write_bars_excel
 from .charts.combo_dual_axis import render_combo_png, write_combo_excel
 from .charts.pie_share import render_pie_png, topn_with_other, write_pie_excel
 from .data.finreport_store import (
@@ -34,8 +34,10 @@ from .data.finreport_store import (
     get_section_items,
     load_price_csv,
     price_on_or_before,
+    read_statement_df,
 )
 from .templates.config import load_template_dir, load_template_file, load_templates
+from .utils.expr import ExprError, eval_expr
 from .utils.files import safe_slug
 from .utils.ttm import quarter_from_ytd, ttm_from_ytd
 
@@ -636,29 +638,39 @@ def run(
     template: list[str] = typer.Option(
         [],
         "--template",
-        help="单个模板文件或模板名（可重复多次）。例如: revenue_ttm / templates/revenue_ttm.toml",
+        help="模板文件/模板名（可重复）。支持 '*' 表示运行模板目录下全部模板。",
         show_default=False,
     ),
     templates: Path = typer.Option(Path("templates"), "--templates", help="模板目录（单模板单文件 *.toml）"),
     code: str | None = typer.Option(None, "--code"),
     name: str | None = typer.Option(None, "--name"),
-    start: str = typer.Option(..., "--start"),
+    start: str = typer.Option(..., "--start", help="趋势分析必须提供时间范围；比较分析也可复用该范围"),
     end: str = typer.Option(..., "--end"),
+    as_of: str | None = typer.Option(None, "--as-of", help="比较分析使用的报告期末日（YYYY-MM-DD）。不传则取 end 对应的最近一个季末"),
+    period_ends: str | None = typer.Option(
+        None,
+        "--period-ends",
+        help="只绘制指定报告期末（例如: 1231 或 0630,1231 或 q4 或 half）",
+    ),
     data_dir: Path | None = typer.Option(None, "--data-dir", help="财报数据目录（默认：若 ./output 存在则用 output，否则用当前目录）"),
     out_dir: Path | None = typer.Option(None, "--out", help="输出目录（默认：{data_dir}/{公司名}_{code6}/charts/）"),
     provider: str = typer.Option("auto", "--provider"),
     statement_type: str = typer.Option("merged", "--statement-type"),
     pdf: bool = typer.Option(False, "--pdf"),
-    top_n: int | None = typer.Option(None, "--top-n", help="覆盖 pie 模板 top_n"),
+    top_n: int | None = typer.Option(None, "--top-n", help="覆盖模板的 top_n（常用于 pie）"),
     list_only: bool = typer.Option(False, "--list", help="仅列出将要运行的模板并退出"),
     tushare_token: str | None = typer.Option(None, "--tushare-token"),
 ):
-    """按“每个模板一个 TOML 文件”的方式批量生成图表。
+    """模板驱动的图表生成（唯一推荐方式）。
 
-    - 若不指定 --template：运行 --templates 目录下全部 *.toml。
-    - 若指定 --template：只运行指定模板（可重复多次）。
+    模板要求（你的约束）：
+    - 必须有：type(类型)、title(标题)、x_label/y_label（坐标轴显示名，bar/combo 使用）
+    - bar 需要 mode：trend（趋势分析）/ compare（比较分析）
+    - bar 的每根柱都通过 [[bars]] 配置块描述，支持 expr 表达式（key + +-*/()）
 
-    约定默认输出：{data_dir}/{公司名}_{code6}/charts/
+    运行规则：
+    - 不传 --template 或传入 '*'：运行 --templates 目录下全部模板
+    - 传入 --template：仅运行指定模板（可重复）
     """
 
     rs = _resolve_symbol(code=code, name=name)
@@ -690,6 +702,37 @@ def run(
         tushare_token=tushare_token,
     )
 
+    def _parse_period_ends(v: str | None) -> set[str] | None:
+        if not v:
+            return None
+        vv = v.strip().lower()
+        if not vv:
+            return None
+        if vv in {"q4", "4"}:
+            return {"1231"}
+        if vv in {"half", "hy", "halfyear", "mid", "midyear"}:
+            return {"0630", "1231"}
+        parts = re.split(r"[\s,]+", vv)
+        out: set[str] = set()
+        for p in parts:
+            p = p.strip()
+            if not p:
+                continue
+            p = p.replace("-", "")
+            if len(p) == 8 and p.isdigit():
+                p = p[4:]
+            if len(p) != 4 or (not p.isdigit()):
+                raise typer.BadParameter(f"--period-ends 无法解析: {v}")
+            out.add(p)
+        return out
+
+    pe_filter = _parse_period_ends(period_ends)
+
+    def _filter_periods(periods: list[date]) -> list[date]:
+        if not pe_filter:
+            return periods
+        return [pe for pe in periods if pe.strftime('%m%d') in pe_filter]
+
     # 1) load templates
     selected: dict[str, object] = {}
 
@@ -699,7 +742,6 @@ def run(
         if p.suffix != ".toml":
             cands.append(p.with_suffix(".toml"))
         cands.append(p)
-        # also try under templates dir
         base = p.name
         cands.append(templates / base)
         if not base.endswith(".toml"):
@@ -708,6 +750,10 @@ def run(
             if pp.exists() and pp.is_file():
                 return pp
         raise FileNotFoundError(f"未找到模板文件: {s0}（已尝试: {', '.join(str(x) for x in cands)}）")
+
+    # '*' means all templates
+    if template and any(t.strip() == "*" for t in template):
+        template = []
 
     if template:
         for t in template:
@@ -726,69 +772,230 @@ def run(
             console.print(f"  - {k}")
         return
 
+    # helpers
+    def _latest_quarter_end_on_or_before(d: date) -> date:
+        # search back up to 2 years
+        start0 = date(d.year - 2, 1, 1)
+        qs = quarter_ends_between(start0, d)
+        if not qs:
+            raise RuntimeError(f"无法从日期推断季末: {d}")
+        return qs[-1]
+
+    def _value_map_for_statement(xlsx: Path, statement: str) -> dict[str, float]:
+        df = read_statement_df(xlsx, sheet_name=statement)
+        m: dict[str, float] = {}
+        if "key" not in df.columns:
+            return m
+        for k2, v2 in zip(df["key"].astype(str), df["数值"]):
+            if pd.isna(v2) or v2 is None:
+                continue
+            try:
+                m[str(k2)] = float(v2)
+            except Exception:
+                continue
+        return m
+
+    def _eval_expr_or_item(expr: str, *, values_map: dict[str, float], xlsx: Path, statement: str) -> float | None:
+        expr_s = (expr or "").strip()
+        if not expr_s:
+            return None
+        # expression
+        if re.search(r"[\+\-\*/\(\)]", expr_s):
+            try:
+                return float(eval_expr(expr_s, values_map))
+            except ExprError as ex:
+                console.print(f"[yellow]表达式计算失败: {expr_s} ({ex})[/yellow]")
+                return None
+        # key preferred
+        if "." in expr_s and expr_s in values_map:
+            return float(values_map[expr_s])
+        # fallback: allow CN subject or key via slow path
+        return get_item_value(xlsx, statement, expr_s)
+
     # 2) run templates
     for k, tpl in selected.items():
-        tpl = tpl  # typing helper
         fname_base = safe_slug(getattr(tpl, "alias", None) or getattr(tpl, "name", k))
+        t_type = str(getattr(tpl, "type", "")).strip().lower()
+        if not t_type:
+            raise RuntimeError(f"模板缺少 type: {k}")
+
+        title0 = getattr(tpl, "title", None)
+        if not title0:
+            raise RuntimeError(f"模板缺少 title: {k}")
+
+        x_label = getattr(tpl, "x_label", None) or "时间"
+        y_label = getattr(tpl, "y_label", None) or "金额"
+
         console.print(f"\n[bold]运行模板[/bold]: {k} → {fname_base}")
 
         # ---- bar ----
-        if getattr(tpl, "chart") == "bar":
-            statement = getattr(tpl, "statement") or "利润表"
-            item = getattr(tpl, "item") or "营业总收入"
-            transform = getattr(tpl, "transform") or "ttm"
+        if t_type == "bar":
+            mode = (getattr(tpl, "mode", None) or "trend").strip().lower()
+            bars = getattr(tpl, "bars", None)
+            statement_default = getattr(tpl, "statement", None) or "利润表"
 
-            # 口径补数
-            t2 = "ytd" if transform == "raw" else transform
-            if t2 == "ttm":
-                fetch_start = date(c.start.year - 1, 1, 1)
-            elif t2 == "q":
-                fetch_start = date(c.start.year, 1, 1)
-            else:
-                fetch_start = c.start
-            _maybe_fetch_missing(c, fetch_start=fetch_start)
+            if mode not in {"trend", "compare"}:
+                raise RuntimeError(f"bar 模板 mode 仅支持 trend/compare: {k}")
 
-            periods = quarter_ends_between(c.start, c.end)
+            if not bars and mode == "trend":
+                raise RuntimeError(f"趋势 bar 模板必须提供 [[bars]]: {k}")
 
-            series_ytd: dict[date, float] = {}
-            for pe in quarter_ends_between(fetch_start, c.end):
-                xlsx = expected_xlsx_path(c.data_dir, c.rs.code6, c.statement_type, pe, name=c.rs.name)
-                if not xlsx.exists():
-                    continue
-                v = get_item_value(xlsx, statement, item)
-                if v is None:
-                    continue
-                series_ytd[pe] = float(v)
+            # ---- trend ----
+            if mode == "trend":
+                # requirement: must have start/end (already required by CLI)
+                periods_out = _filter_periods(quarter_ends_between(c.start, c.end))
 
-            rows = []
-            for pe in periods:
-                y_raw = series_ytd.get(pe)
-                if y_raw is None:
-                    continue
-                if t2 == "ttm":
-                    y = ttm_from_ytd(pe, series_ytd)
-                elif t2 == "q":
-                    y = quarter_from_ytd(pe, series_ytd)
+                # decide fetch_start based on transforms
+                transforms = []
+                for b in bars or []:
+                    transforms.append(str(getattr(b, "transform", None) or "ttm").lower())
+                if any(t == "ttm" for t in transforms):
+                    fetch_start = date(c.start.year - 1, 1, 1)
+                elif any(t == "q" for t in transforms):
+                    fetch_start = date(c.start.year, 1, 1)
                 else:
-                    y = y_raw
-                rows.append({"period_end": pe.strftime("%Y-%m-%d"), "value": y})
+                    fetch_start = c.start
 
-            df_out = pd.DataFrame(rows)
-            title = f"{c.rs.code6} {statement}.{item} 趋势 ({transform.upper()})"
+                _maybe_fetch_missing(c, fetch_start=fetch_start)
 
-            out_png = c.out_dir / f"{fname_base}_{c.rs.code6}_{c.start.strftime('%Y%m%d')}_{c.end.strftime('%Y%m%d')}.png"
-            out_xlsx = c.out_dir / f"{fname_base}_{c.rs.code6}_{c.start.strftime('%Y%m%d')}_{c.end.strftime('%Y%m%d')}.xlsx"
+                periods_all = quarter_ends_between(fetch_start, c.end)
 
-            render_bar_png(df_out, title=title, x_col="period_end", y_col="value", out_png=out_png, y_label="金额")
-            write_bar_excel(df_out, title=title, x_col="period_end", y_col="value", out_xlsx=out_xlsx, y_label="金额")
+                # compute ytd/raw series for each bar
+                series_ytd_by_name: dict[str, dict[date, float]] = {}
+
+                # cache value maps per (xlsx, statement)
+                cache: dict[tuple[Path, str], dict[str, float]] = {}
+
+                for pe in periods_all:
+                    xlsx = expected_xlsx_path(c.data_dir, c.rs.code6, c.statement_type, pe, name=c.rs.name)
+                    if not xlsx.exists():
+                        continue
+
+                    for b in bars or []:
+                        b_name = str(getattr(b, "name", None) or getattr(b, "expr", "")).strip() or "value"
+                        b_expr = str(getattr(b, "expr", "")).strip()
+                        b_stmt = str(getattr(b, "statement", None) or statement_default)
+
+                        key = (xlsx, b_stmt)
+                        if key not in cache:
+                            cache[key] = _value_map_for_statement(xlsx, b_stmt)
+
+                        v_raw = _eval_expr_or_item(b_expr, values_map=cache[key], xlsx=xlsx, statement=b_stmt)
+                        if v_raw is None:
+                            continue
+                        series_ytd_by_name.setdefault(b_name, {})[pe] = float(v_raw)
+
+                # build output df (one row per period)
+                rows: list[dict[str, object]] = []
+                for pe in periods_out:
+                    row: dict[str, object] = {"period_end": pe.strftime("%Y-%m-%d")}
+                    for b in bars or []:
+                        b_name = str(getattr(b, "name", None) or getattr(b, "expr", "")).strip() or "value"
+                        b_t = str(getattr(b, "transform", None) or "ttm").lower()
+                        t2 = "ytd" if b_t == "raw" else b_t
+                        ytd_map = series_ytd_by_name.get(b_name) or {}
+                        y_raw = ytd_map.get(pe)
+                        if y_raw is None:
+                            row[b_name] = None
+                            continue
+                        if t2 == "ttm":
+                            row[b_name] = ttm_from_ytd(pe, ytd_map)
+                        elif t2 == "q":
+                            row[b_name] = quarter_from_ytd(pe, ytd_map)
+                        else:
+                            row[b_name] = y_raw
+                    rows.append(row)
+
+                df_out = pd.DataFrame(rows)
+
+                title = f"{title0} | {c.rs.code6}"
+                out_png = c.out_dir / f"{fname_base}_{c.rs.code6}_{c.start.strftime('%Y%m%d')}_{c.end.strftime('%Y%m%d')}.png"
+                out_xlsx = c.out_dir / f"{fname_base}_{c.rs.code6}_{c.start.strftime('%Y%m%d')}_{c.end.strftime('%Y%m%d')}.xlsx"
+
+                series_cols = [(str(getattr(b, 'name', None) or getattr(b, 'expr', '')).strip() or 'value', str(getattr(b, 'name', None) or getattr(b, 'expr', '')).strip() or 'value') for b in (bars or [])]
+                # de-dup in case of duplicate names
+                seen=set(); series_cols2=[]
+                for col,label in series_cols:
+                    if col in seen:
+                        continue
+                    seen.add(col)
+                    series_cols2.append((col,label))
+
+                render_bars_png(df_out, title=title, x_col="period_end", series=series_cols2, out_png=out_png, x_label=x_label, y_label=y_label)
+                write_bars_excel(df_out, title=title, x_col="period_end", series=series_cols2, out_xlsx=out_xlsx, x_label=x_label, y_label=y_label)
+
+                console.print(f"已生成: {out_png}")
+                console.print(f"已生成: {out_xlsx}")
+                continue
+
+            # ---- compare ----
+            # determine as_of
+            if getattr(tpl, "period_end", None):
+                pe0 = parse_date(str(getattr(tpl, "period_end")))
+            elif as_of:
+                pe0 = parse_date(as_of)
+            else:
+                pe0 = _latest_quarter_end_on_or_before(c.end)
+            pe = _latest_quarter_end_on_or_before(pe0)
+
+            # ensure the one period exists
+            missing = ensure_finreports(
+                code_or_name_args=["--code", c.rs.code6],
+                code6=c.rs.code6,
+                start=pe,
+                end=pe,
+                data_dir=c.data_dir,
+                provider=c.provider,
+                statement_type=c.statement_type,
+                pdf=c.pdf,
+                company_name=c.rs.name,
+                tushare_token=c.tushare_token,
+            )
+            if missing:
+                console.print(f"[yellow]警告：比较分析仍缺失报告期: {missing}[/yellow]")
+
+            xlsx = expected_xlsx_path(c.data_dir, c.rs.code6, c.statement_type, pe, name=c.rs.name)
+            if not xlsx.exists():
+                raise RuntimeError(f"未找到期末财报 xlsx: {xlsx}")
+
+            statement = statement_default
+
+            # if template provides [[bars]] => explicit compare bars; else auto all items
+            if bars:
+                cache: dict[tuple[Path, str], dict[str, float]] = {}
+                rows=[]
+                for b in bars:
+                    b_name = str(getattr(b, "name", None) or getattr(b, "expr", "")).strip() or "value"
+                    b_expr = str(getattr(b, "expr", "")).strip()
+                    b_stmt = str(getattr(b, "statement", None) or statement)
+                    key = (xlsx, b_stmt)
+                    if key not in cache:
+                        cache[key] = _value_map_for_statement(xlsx, b_stmt)
+                    v = _eval_expr_or_item(b_expr, values_map=cache[key], xlsx=xlsx, statement=b_stmt)
+                    rows.append({"name": b_name, "value": v})
+                df_cmp = pd.DataFrame(rows)
+                title = f"{title0} | {c.rs.code6} | {pe.strftime('%Y-%m-%d')}"
+            else:
+                # auto: every item in statement
+                df_s = read_statement_df(xlsx, sheet_name=statement)
+                df_s2 = df_s.dropna(subset=["数值"]).copy()
+                df_s2["name"] = df_s2["科目"].astype(str)
+                df_cmp = df_s2[["name", "数值"]].rename(columns={"数值": "value"})
+                title = f"{title0} | {c.rs.code6} | {statement} | {pe.strftime('%Y-%m-%d')}"
+
+            out_png = c.out_dir / f"{fname_base}_{c.rs.code6}_{pe.strftime('%Y%m%d')}.png"
+            out_xlsx = c.out_dir / f"{fname_base}_{c.rs.code6}_{pe.strftime('%Y%m%d')}.xlsx"
+
+            render_bars_png(df_cmp, title=title, x_col="name", series=[("value", y_label)], out_png=out_png, x_label=x_label, y_label=y_label)
+            write_bars_excel(df_cmp, title=title, x_col="name", series=[("value", y_label)], out_xlsx=out_xlsx, x_label=x_label, y_label=y_label)
 
             console.print(f"已生成: {out_png}")
             console.print(f"已生成: {out_xlsx}")
             continue
 
         # ---- pie ----
-        if getattr(tpl, "chart") == "pie":
-            statement = getattr(tpl, "statement") or "资产负债表"
+        if t_type == "pie":
+            statement = getattr(tpl, "statement", None) or "资产负债表"
             t_section = getattr(tpl, "section", None)
             t_items = getattr(tpl, "items", None)
             n = top_n if top_n is not None else (getattr(tpl, "top_n", None) or 10)
@@ -797,7 +1004,7 @@ def run(
                 raise RuntimeError(f"pie 模板需要 section 或 items: {k}")
 
             _maybe_fetch_missing(c)
-            periods = quarter_ends_between(c.start, c.end)
+            periods = _filter_periods(quarter_ends_between(c.start, c.end))
 
             for pe in periods:
                 xlsx = expected_xlsx_path(c.data_dir, c.rs.code6, c.statement_type, pe, name=c.rs.name)
@@ -818,7 +1025,7 @@ def run(
                 if not items_top:
                     continue
 
-                title = f"{c.rs.code6} {statement}.{t_section or getattr(tpl, 'name', k)} 占比 | {pe.strftime('%Y-%m-%d')}"
+                title = f"{title0} | {c.rs.code6} | {pe.strftime('%Y-%m-%d')}"
                 out_png = c.out_dir / f"{fname_base}_{c.rs.code6}_{pe.strftime('%Y%m%d')}.png"
                 out_xlsx = c.out_dir / f"{fname_base}_{c.rs.code6}_{pe.strftime('%Y%m%d')}.xlsx"
 
@@ -829,12 +1036,12 @@ def run(
             continue
 
         # ---- combo ----
-        if getattr(tpl, "chart") == "combo":
-            statement = getattr(tpl, "statement") or "利润表"
-            bar_item = getattr(tpl, "bar_item", None) or getattr(tpl, "item", None) or "营业总收入"
-            transform = getattr(tpl, "transform") or "ttm"
+        if t_type == "combo":
+            statement = getattr(tpl, "statement", None) or "利润表"
+            bar_item = getattr(tpl, "bar_item", None) or "营业总收入"
+            transform = getattr(tpl, "transform", None) or "ttm"
 
-            t3 = "ytd" if transform == "raw" else transform
+            t3 = "ytd" if transform == "raw" else str(transform).lower()
             if t3 == "ttm":
                 fetch_start = date(c.start.year - 1, 1, 1)
             elif t3 == "q":
@@ -848,7 +1055,7 @@ def run(
                 raise RuntimeError(f"未找到股价 CSV: {price_csv}")
 
             df_price = load_price_csv(price_csv)
-            periods = quarter_ends_between(c.start, c.end)
+            periods = _filter_periods(quarter_ends_between(c.start, c.end))
 
             ytd_map: dict[date, float] = {}
             for pe in quarter_ends_between(fetch_start, c.end):
@@ -875,21 +1082,22 @@ def run(
                 rows.append({"period_end": pe.strftime("%Y-%m-%d"), "amount": v, "close": px})
 
             df = pd.DataFrame(rows).dropna(subset=["amount", "close"])
-            title = f"{c.rs.code6} {statement}.{bar_item} ({transform.upper()}) + 股价(收盘)"
+            title = f"{title0} | {c.rs.code6}"
 
             out_png = c.out_dir / f"{fname_base}_{c.rs.code6}_{c.start.strftime('%Y%m%d')}_{c.end.strftime('%Y%m%d')}.png"
             out_xlsx = c.out_dir / f"{fname_base}_{c.rs.code6}_{c.start.strftime('%Y%m%d')}_{c.end.strftime('%Y%m%d')}.xlsx"
 
-            render_combo_png(df, title=title, x_col="period_end", bar_col="amount", line_col="close", out_png=out_png, bar_label="金额", line_label="收盘价")
-            write_combo_excel(df, title=title, x_col="period_end", bar_col="amount", line_col="close", out_xlsx=out_xlsx, bar_label="金额", line_label="收盘价")
+            render_combo_png(df, title=title, x_col="period_end", bar_col="amount", line_col="close", out_png=out_png, bar_label=y_label, line_label="收盘价", x_label=x_label)
+            write_combo_excel(df, title=title, x_col="period_end", bar_col="amount", line_col="close", out_xlsx=out_xlsx, bar_label=y_label, line_label="收盘价", x_label=x_label)
 
             console.print(f"已生成: {out_png}")
             console.print(f"已生成: {out_xlsx}")
             continue
 
-        raise RuntimeError(f"暂不支持的模板 chart 类型: {getattr(tpl, 'chart', None)}")
+        raise RuntimeError(f"暂不支持的模板 type: {t_type} ({k})")
 
     console.print(f"\n全部完成。输出目录: {c.out_dir}")
+
 
 
 def main():
