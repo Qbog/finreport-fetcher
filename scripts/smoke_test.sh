@@ -35,7 +35,7 @@ p = Path('_smoke_output/600519_merged_20241231.xlsx')
 # column checks
 for sheet in ['利润表','资产负债表','现金流量表']:
     df = pd.read_excel(p, sheet_name=sheet, header=2)
-    need = ['key','科目','数值']
+    need = ['科目','数值','key']
     missing = [c for c in need if c not in df.columns]
     assert not missing, f'[{sheet}] missing columns: {missing}'
     assert df['key'].isna().sum()==0, f'[{sheet}] key has empty rows'

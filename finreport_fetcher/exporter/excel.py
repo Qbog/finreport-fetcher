@@ -64,15 +64,15 @@ def export_bundle_to_excel(
     cf_df = enrich_statement_df(cashflow_statement, sheet_name_cn="现金流量表")
 
     def view_df(df: pd.DataFrame) -> pd.DataFrame:
-        # 兼容老格式：至少输出 key/科目/数值（用户要求不输出 科目_CN/科目_EN）
-        preferred = ["key", "科目", "数值"]
+        # 兼容老格式：至少输出 科目/数值/key（key 放最后）
+        preferred = ["科目", "数值", "key"]
         cols = [c for c in preferred if c in df.columns]
         if not cols:
             cols = [c for c in ["科目", "数值"] if c in df.columns]
 
         out = df[cols].copy()
 
-        # 在“数值”右侧插入空白列，方便肉眼查看数字列
+        # 在“数值”右侧插入空白列，方便肉眼查看数字列（同时让 key 与数值列保持距离）
         if "数值" in out.columns:
             idx = out.columns.get_loc("数值") + 1
             spacer_name = " "  # 单空格列名（Excel 表头看起来像空列）
@@ -251,13 +251,6 @@ def export_bundle_to_excel(
         ws.column_dimensions[v_letter].width = max(ws.column_dimensions[v_letter].width or 0, 18)
         ws.column_dimensions[s_letter].width = max(ws.column_dimensions[s_letter].width or 0, 28)
 
-        # key 列：避免过宽（key 很长时会把整张表拉得很宽）
-        try:
-            key_col = headers.index("key") + 1
-            key_letter = get_column_letter(key_col)
-            ws.column_dimensions[key_letter].width = min(ws.column_dimensions[key_letter].width or 0, 18)
-        except Exception:
-            pass
 
         # spacer 列宽（如果存在）
         try:

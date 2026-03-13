@@ -112,12 +112,43 @@ def find_and_download_period_pdf(
         "三季报": "第三季度报告",
     }[cat]
 
+    def is_summary(title: str) -> bool:
+        # 巨潮里经常有：年度报告摘要/半年度报告摘要/...；用户希望下载全文而非摘要
+        return "摘要" in title
+
+    def is_full_text(title: str) -> bool:
+        # 常见全文标识：全文 / 正文
+        return ("全文" in title) or ("正文" in title)
+
+    # 1) 最优：同年 + 关键词 + 全文/正文，且非摘要
     cand = []
     for a in anns:
         title = str(a.get("announcementTitle", ""))
-        if keyword in title and y in title:
+        if keyword in title and y in title and (not is_summary(title)) and is_full_text(title):
             cand.append(a)
 
+    # 2) 次优：同年 + 关键词，且非摘要
+    if not cand:
+        for a in anns:
+            title = str(a.get("announcementTitle", ""))
+            if keyword in title and y in title and (not is_summary(title)):
+                cand.append(a)
+
+    # 3) 退一步：关键词 + 全文/正文，且非摘要
+    if not cand:
+        for a in anns:
+            title = str(a.get("announcementTitle", ""))
+            if keyword in title and (not is_summary(title)) and is_full_text(title):
+                cand.append(a)
+
+    # 4) 再退：关键词，且非摘要
+    if not cand:
+        for a in anns:
+            title = str(a.get("announcementTitle", ""))
+            if keyword in title and (not is_summary(title)):
+                cand.append(a)
+
+    # 5) 最后兜底：任何包含关键词的（可能会是摘要）
     if not cand:
         for a in anns:
             title = str(a.get("announcementTitle", ""))
