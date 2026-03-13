@@ -251,18 +251,34 @@ def fetch(
         periods = quarter_ends_between(s, e)
         if not periods:
             raise RuntimeError("日期范围内没有任何标准报告期末日（03-31/06-30/09-30/12-31）")
+        failed: list[tuple[date, str]] = []
         for pe in periods:
-            p = _fetch_one_period(
-                ts_code=rs.ts_code,
-                code6=rs.code6,
-                period_end=pe,
-                statement_type=statement_type,
-                providers=providers,
-                want_pdf=pdf,
-                out_dir=out_dir,
-            )
-            exported.append(p)
-            console.print(f"已导出: {p}")
+            try:
+                p = _fetch_one_period(
+                    ts_code=rs.ts_code,
+                    code6=rs.code6,
+                    period_end=pe,
+                    statement_type=statement_type,
+                    providers=providers,
+                    want_pdf=pdf,
+                    out_dir=out_dir,
+                )
+                exported.append(p)
+                console.print(f"已导出: {p}")
+            except Exception as e:
+                failed.append((pe, str(e)))
+                console.print(f"[yellow]跳过 {pe.strftime('%Y-%m-%d')}：{e}[/yellow]")
+                continue
+
+        if not exported:
+            raise RuntimeError(f"范围内所有报告期均失败，共 {len(failed)} 期。示例错误: {failed[0] if failed else 'N/A'}")
+
+        if failed:
+            console.print(f"[yellow]提示：范围内有 {len(failed)} 期未能抓取（已跳过）。[/yellow]")
+            for pe, msg in failed[:10]:
+                console.print(f"  - {pe.strftime('%Y-%m-%d')}: {msg}")
+            if len(failed) > 10:
+                console.print(f"  ... 仅展示前 10 条")
 
     console.print(f"完成，共导出 {len(exported)} 个文件。输出目录: {out_dir}")
 
