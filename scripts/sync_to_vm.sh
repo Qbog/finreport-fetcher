@@ -20,11 +20,12 @@ rsync -a --delete \
   --exclude '_charts_pie/' \
   --exclude '_charts_combo/' \
   --exclude '_charts_tpl/' \
-  --exclude 'output/**' \
+  --exclude 'charts_output/' \
+  \
   --include 'output/' \
   --include 'output/finreport_fetcher.py' \
-  --exclude 'output/*' \
-  --exclude 'charts_output/' \
+  --exclude 'output/**' \
+  \
   "${SRC_DIR}/" "${DST_DIR}/"
 
 echo "[sync] synced to ${DST_DIR}"
