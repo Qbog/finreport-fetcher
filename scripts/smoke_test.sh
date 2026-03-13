@@ -14,6 +14,10 @@ mkdir -p "$OUT_DIR" "$CHART_DIR"
 # 1) fetch one period (no pdf for speed)
 python3 -m finreport_fetcher fetch --code 600519 --date 2025-02-01 --out "$OUT_DIR" --no-clean
 
+# 1b) also verify running from output/ works without PYTHONPATH (shim)
+mkdir -p output
+( cd output && python3 -m finreport_fetcher version >/dev/null )
+
 XLSX="$OUT_DIR/600519_merged_20241231.xlsx"
 if [ ! -f "$XLSX" ]; then
   echo "[smoke] expected xlsx not found: $XLSX" >&2

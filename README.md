@@ -33,7 +33,10 @@ pip install tushare
 
 > 如果你不想安装，也可以在项目根目录用：
 > `PYTHONPATH=. python3 -m finreport_fetcher fetch ...`
-> **注意不要在 output/ 子目录直接跑**，否则会出现 `No module named finreport_fetcher`。
+>
+> 已兼容一种常见误用：如果你 `cd output` 后运行 `python3 -m finreport_fetcher ...`，
+> 仓库内提供了 `output/finreport_fetcher.py` shim，会自动切回项目根目录执行。
+> （但更推荐在项目根目录运行，或用 `pip install -e .` 安装后用 `finfetch` 命令运行。）
 
 > 如使用 tushare，需要设置环境变量 `TUSHARE_TOKEN`，或在运行时传入 `--tushare-token`。
 
