@@ -206,15 +206,17 @@ def bar_trend(
         # item_like 支持：优先精确；否则正则/包含
         if item_like:
             df = pd.read_excel(xlsx, sheet_name=statement, header=2)
-            subj_col = "科目_CN" if "科目_CN" in df.columns else "科目"
+            subj_col = "科目"
             df = df[[subj_col, "数值"]].copy()
-            df.rename(columns={subj_col: "科目"}, inplace=True)
+
+            # 兼容“中文 (English)”显示列：用于打印时可读，但匹配时用中文部分
             subj = df["科目"].astype(str)
-            # regex first
+            subj_cn = subj.str.split(" (", n=1).str[0]
+            # regex first (match on CN part)
             try:
-                m = subj.str.contains(item_like, regex=True, na=False)
+                m = subj_cn.str.contains(item_like, regex=True, na=False)
             except Exception:
-                m = subj.str.contains(item_like, regex=False, na=False)
+                m = subj_cn.str.contains(item_like, regex=False, na=False)
             sub = df[m]
             if sub.empty:
                 continue

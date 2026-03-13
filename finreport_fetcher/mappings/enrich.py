@@ -27,60 +27,18 @@ def _safe_key_part(s: str) -> str:
     return s.strip("_") or "item"
 
 
-_ROMAN = {"一": "I", "二": "II", "三": "III", "四": "IV", "五": "V", "六": "VI", "七": "VII", "八": "VIII", "九": "IX", "十": "X"}
-
-
-def _fallback_en(prefix: str, cn: str) -> str:
-    """Rule-based fallback English for unmapped CN subjects.
-
-    This is *not* a full translation; it just helps readability and keeps EN non-empty.
-    """
-
-    s = (cn or "").strip()
-    if not s:
-        return "Item"
-
-    m = re.match(r"^([一二三四五六七八九十])、(.*)$", s)
-    if m:
-        rn = _ROMAN.get(m.group(1), m.group(1))
-        tail = m.group(2).strip()
-        return f"{rn}. {tail}"  # tail may stay CN
-
-    m = re.match(r"^（([一二三四五六七八九十])）(.*)$", s)
-    if m:
-        rn = _ROMAN.get(m.group(1), m.group(1))
-        tail = m.group(2).strip()
-        return f"({rn}) {tail}"
-
-    for pfx_cn, pfx_en in [("其中：", "Of which: "), ("其中", "Of which: "), ("加：", "Add: "), ("减：", "Less: ")]:
-        if s.startswith(pfx_cn):
-            return pfx_en + s[len(pfx_cn):].strip()
-
-    # sheet-based hints
-    if prefix == "bs":
-        return f"BS item: {s}"
-    if prefix == "is":
-        return f"IS item: {s}"
-    if prefix == "cf":
-        return f"CF item: {s}"
-
-    return s
-
-
 def enrich_statement_df(df: pd.DataFrame, *, sheet_name_cn: str) -> pd.DataFrame:
     """Add template-key + EN translation columns for a statement df.
 
     Input df should contain at least: 科目, 数值 (and may contain __level/__is_header).
 
-    Output adds:
-    - key: template key (e.g. is.revenue)
-    - 科目_CN: original CN subject
-    - 科目_EN: English translation (best-effort)
-    - 科目: display subject "CN (EN)" (always)
+    Output:
+    - Adds `key` column (guaranteed non-empty, unique within sheet)
+    - Rewrites `科目` display to: `中文 (English)` **only when English exists**
 
     Notes:
-    - We guarantee every row has a non-empty `key` so it can be referenced in template expressions.
-    - EN is best-effort: known subjects use curated glossary; others use rule-based fallback.
+    - English is best-effort from curated glossary; unknown subjects keep English empty.
+    - This function does NOT output 科目_CN / 科目_EN columns (user requested to avoid duplication).
     """
 
     if df is None or df.empty:
@@ -90,14 +48,10 @@ def enrich_statement_df(df: pd.DataFrame, *, sheet_name_cn: str) -> pd.DataFrame
 
     out = df.copy()
 
-    # 1) CN subject column
-    if "科目_CN" not in out.columns:
-        if "科目" in out.columns:
-            out.insert(0, "科目_CN", out["科目"].astype(str))
-        else:
-            out.insert(0, "科目_CN", "")
+    if "科目" not in out.columns:
+        return out
 
-    cn_series = out["科目_CN"].astype(str)
+    cn_series = out["科目"].astype(str)
 
     # 2) Key + EN mapping (guarantee non-empty key)
     keys: list[str] = []
@@ -132,10 +86,6 @@ def enrich_statement_df(df: pd.DataFrame, *, sheet_name_cn: str) -> pd.DataFrame
             else:
                 seen[k] = 1
 
-        # Guarantee EN (best-effort)
-        if not en:
-            en = _fallback_en(prefix, cn)
-
         keys.append(k)
         ens.append(en)
 
@@ -143,19 +93,10 @@ def enrich_statement_df(df: pd.DataFrame, *, sheet_name_cn: str) -> pd.DataFrame
     if "key" not in out.columns:
         out.insert(0, "key", keys)
 
-    # 科目_EN next to 科目_CN
-    if "科目_EN" not in out.columns:
-        # place after 科目_CN if possible
-        try:
-            idx = out.columns.get_loc("科目_CN") + 1
-        except Exception:
-            idx = 2
-        out.insert(idx, "科目_EN", ens)
-
-    # 3) Display subject
+    # 3) Display subject: only append (EN) when EN exists
     disp = []
     for cn, en in zip(cn_series.tolist(), ens):
-        disp.append(f"{cn} ({en})")
+        disp.append(f"{cn} ({en})" if en else cn)
 
     out["科目"] = disp
 

@@ -5,7 +5,6 @@ from pathlib import Path
 
 import typer
 from rich.console import Console
-import shutil
 
 from rich.prompt import IntPrompt
 
@@ -193,14 +192,31 @@ def fetch(
     )
     providers = build_providers(cfg)
 
-    # 每次提取前删除之前的数据（输出目录）
+    # 每次提取前删除之前的数据：仅删除本次公司(code6)相关文件，不影响其他公司
     out_dir = out_dir.resolve()
-    if not no_clean:
-        if str(out_dir) in {"/", str(Path.cwd().resolve())} or out_dir.name in {"", ".", ".."}:
-            raise RuntimeError(f"出于安全考虑，拒绝清理输出目录: {out_dir}")
-        if out_dir.exists():
-            shutil.rmtree(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    if not no_clean:
+        # xlsx
+        for p in out_dir.glob(f"{rs.code6}_*.xlsx"):
+            try:
+                p.unlink()
+            except Exception:
+                pass
+        for p in out_dir.glob(f"~${rs.code6}_*.xlsx"):
+            try:
+                p.unlink()
+            except Exception:
+                pass
+
+        # pdf
+        pdf_dir = out_dir / "pdf"
+        if pdf_dir.exists():
+            for p in pdf_dir.glob(f"{rs.code6}_*.pdf"):
+                try:
+                    p.unlink()
+                except Exception:
+                    pass
 
     exported: list[Path] = []
 

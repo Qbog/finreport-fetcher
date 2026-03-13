@@ -35,10 +35,12 @@ p = Path('_smoke_output/600519_merged_20241231.xlsx')
 # column checks
 for sheet in ['利润表','资产负债表','现金流量表']:
     df = pd.read_excel(p, sheet_name=sheet, header=2)
-    need = ['key','科目','数值','科目_CN','科目_EN']
+    need = ['key','科目','数值']
     missing = [c for c in need if c not in df.columns]
     assert not missing, f'[{sheet}] missing columns: {missing}'
     assert df['key'].isna().sum()==0, f'[{sheet}] key has empty rows'
+    assert '科目_CN' not in df.columns, f'[{sheet}] 科目_CN should not be exported'
+    assert '科目_EN' not in df.columns, f'[{sheet}] 科目_EN should not be exported'
 
 # cashflow style/indent checks (openpyxl)
 wb = load_workbook(p)

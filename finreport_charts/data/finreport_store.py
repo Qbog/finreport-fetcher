@@ -85,7 +85,7 @@ def read_statement_df(xlsx_path: Path, sheet_name: str) -> pd.DataFrame:
 
     兼容两种格式：
     - 老格式：列为 [科目, 数值]
-    - 新格式：列包含 key / 科目(中英展示) / 科目_CN / 科目_EN / 数值
+    - 新格式：列包含 key / 科目(中英展示) / 数值
 
     返回 df 至少包含列: 科目, 数值；若存在也会保留 key。
     """
@@ -107,12 +107,23 @@ def read_statement_df(xlsx_path: Path, sheet_name: str) -> pd.DataFrame:
     return df2
 
 
+def _subject_cn_from_display(s: str) -> str:
+    """Extract CN subject from display like '中文 (English)'."""
+
+    ss = (s or "").strip()
+    if " (" in ss and ss.endswith(")"):
+        return ss.split(" (", 1)[0].strip()
+    return ss
+
+
 def get_item_value(xlsx_path: Path, sheet_name: str, item: str) -> float | None:
     """按科目取值。
 
     item 支持：
     - CN 科目名（精确匹配）
     - 模板 key（如 is.revenue / bs.cash），当 xlsx 含 key 列时生效
+
+    兼容：xlsx 的“科目”列可能为 '中文 (English)'。
     """
 
     df = read_statement_df(xlsx_path, sheet_name)
@@ -121,7 +132,8 @@ def get_item_value(xlsx_path: Path, sheet_name: str, item: str) -> float | None:
     if "key" in df.columns and "." in item_s:
         m = df["key"].astype(str) == item_s
     else:
-        m = df["科目"].astype(str) == item_s
+        subj = df["科目"].astype(str).map(_subject_cn_from_display)
+        m = subj == item_s
 
     sub = df[m]
     if sub.empty:
@@ -147,7 +159,9 @@ def get_section_items(
     subj = df["科目"].astype(str)
     val = df["数值"]
 
-    idxs = df.index[subj == section].tolist()
+    subj_cn = subj.map(_subject_cn_from_display)
+
+    idxs = df.index[subj_cn == section].tolist()
     if not idxs:
         return []
 
@@ -156,10 +170,11 @@ def get_section_items(
 
     for i in range(start_i, len(df)):
         name = str(subj.iloc[i])
+        name_cn = _subject_cn_from_display(name)
         v = val.iloc[i]
 
         # 下一标题
-        if name and (pd.isna(v) or v is None):
+        if name_cn and (pd.isna(v) or v is None):
             break
 
         if not name:
