@@ -5,6 +5,7 @@ from pathlib import Path
 import pandas as pd
 
 from ..utils.mpl_style import apply_pretty_style
+from ..utils.numfmt import choose_unit_scale, fmt_scaled, fmt_tick
 
 
 def render_combo_png(
@@ -27,11 +28,38 @@ def render_combo_png(
     y1 = df[bar_col].tolist()
     y2 = df[line_col].tolist()
 
-    fig, ax1 = plt.subplots()
-    ax1.bar(x, y1, color="#1F77B4", alpha=0.85, label=bar_label or bar_col)
+    # unit for bar axis
+    max_abs = 0.0
+    try:
+        max_abs = float(pd.Series(y1).abs().max())
+    except Exception:
+        max_abs = 0.0
+    us = choose_unit_scale(max_abs)
+
+    fig, ax1 = plt.subplots(figsize=(max(7, min(22, 0.75 * len(x) + 4)), 5.5))
+    cont = ax1.bar(x, y1, color="#4E79A7", alpha=0.9, label=bar_label or bar_col)
     ax1.set_xlabel(x_label or "时间")
     ax1.set_ylabel(bar_label or bar_col)
     ax1.tick_params(axis="x", rotation=45)
+
+    from matplotlib.ticker import FuncFormatter
+
+    ax1.yaxis.set_major_formatter(FuncFormatter(lambda v, _pos: fmt_tick(v, us)))
+
+    # value labels on bars
+    ymax = max([float(v) for v in y1 if v is not None] + [0.0])
+    ymin = min([float(v) for v in y1 if v is not None] + [0.0])
+    span = max(1.0, ymax - ymin)
+    ax1.set_ylim(ymin - 0.08 * span, ymax + 0.18 * span)
+
+    for p in cont.patches:
+        h = p.get_height()
+        x0 = p.get_x() + p.get_width() / 2
+        txt = fmt_scaled(float(h), us)
+        if h >= 0:
+            ax1.text(x0, h, txt, ha="center", va="bottom", fontsize=9, color="#EAEAEA")
+        else:
+            ax1.text(x0, h, txt, ha="center", va="top", fontsize=9, color="#EAEAEA")
 
     ax2 = ax1.twinx()
     ax2.plot(x, y2, color="#FF7F0E", marker="o", linewidth=2, label=line_label or line_col)

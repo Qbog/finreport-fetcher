@@ -5,6 +5,7 @@ from pathlib import Path
 import pandas as pd
 
 from ..utils.mpl_style import apply_pretty_style
+from ..utils.numfmt import choose_unit_scale, fmt_scaled, fmt_tick
 
 
 def render_bar_png(
@@ -47,6 +48,7 @@ def render_bars_png(
 
     import matplotlib.pyplot as plt
     import numpy as np
+    from matplotlib.ticker import FuncFormatter
 
     apply_pretty_style()
 
@@ -57,12 +59,43 @@ def render_bars_png(
     idx = np.arange(n)
     width = 0.8 / k
 
-    fig, ax = plt.subplots(figsize=(max(6, min(22, 0.7 * n + 4)), 5))
+    # compute unit
+    max_abs = 0.0
+    for col, _label in series:
+        try:
+            max_abs = max(max_abs, float(df[col].abs().max()))
+        except Exception:
+            pass
+    us = choose_unit_scale(max_abs)
 
+    fig, ax = plt.subplots(figsize=(max(7, min(22, 0.75 * n + 4)), 5.5))
+
+    palette = [
+        "#4E79A7",
+        "#F28E2B",
+        "#E15759",
+        "#76B7B2",
+        "#59A14F",
+        "#EDC949",
+        "#AF7AA1",
+        "#FF9DA7",
+        "#9C755F",
+        "#BAB0AC",
+    ]
+
+    containers = []
     for j, (col, label) in enumerate(series):
         y = df[col].tolist()
         offset = (j - (k - 1) / 2) * width
-        ax.bar(idx + offset, y, width=width, label=label)
+        cont = ax.bar(
+            idx + offset,
+            y,
+            width=width,
+            label=label,
+            color=palette[j % len(palette)],
+            alpha=0.92,
+        )
+        containers.append(cont)
 
     ax.set_title(title)
     ax.set_xlabel(x_label or "时间")
@@ -70,12 +103,42 @@ def render_bars_png(
     ax.set_xticks(idx)
     ax.set_xticklabels(x, rotation=45, ha="right")
 
+    # y-axis ticks with unit
+    ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _pos: fmt_tick(v, us)))
+
+    # add value labels above bars
+    ymax = 0.0
+    ymin = 0.0
+    for cont in containers:
+        for p in cont.patches:
+            h = p.get_height()
+            if h is None:
+                continue
+            ymax = max(ymax, float(h))
+            ymin = min(ymin, float(h))
+
+    # headroom
+    span = max(1.0, ymax - ymin)
+    ax.set_ylim(ymin - 0.08 * span, ymax + 0.18 * span)
+
+    for cont in containers:
+        for p in cont.patches:
+            h = p.get_height()
+            if h is None:
+                continue
+            x0 = p.get_x() + p.get_width() / 2
+            txt = fmt_scaled(float(h), us)
+            if h >= 0:
+                ax.text(x0, h, txt, ha="center", va="bottom", fontsize=9, color="#EAEAEA")
+            else:
+                ax.text(x0, h, txt, ha="center", va="top", fontsize=9, color="#EAEAEA")
+
     if k > 1:
         ax.legend(loc="best")
 
     fig.tight_layout()
     out_png.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_png, dpi=200)
+    fig.savefig(out_png, dpi=220)
     plt.close(fig)
 
 

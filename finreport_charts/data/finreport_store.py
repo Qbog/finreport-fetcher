@@ -60,8 +60,8 @@ def expected_pdf_path(data_dir: Path, code6: str, period_end: date, *, name: str
     if p0.exists():
         return p0
 
-    # new layout: PDF 与 XLSX 同目录
-    return _company_dir(data_dir, code6, name=name) / fname
+    # new layout: company_dir/pdf/*.pdf
+    return _company_dir(data_dir, code6, name=name) / "pdf" / fname
 
 
 def ensure_finreports(

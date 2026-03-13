@@ -114,8 +114,10 @@ def _fetch_one_period(
     pdf_title = None
     pdf_note = None
     if want_pdf:
-        # PDF 与 XLSX 同目录（按文件名区分，不再使用 pdf/ 子目录）
-        pdf_file = out_dir / f"{code6}_{period_end.strftime('%Y%m%d')}.pdf"
+        # PDF 单独放到公司目录下的 pdf/ 子目录
+        pdf_root = out_dir / "pdf"
+        pdf_root.mkdir(parents=True, exist_ok=True)
+        pdf_file = pdf_root / f"{code6}_{period_end.strftime('%Y%m%d')}.pdf"
         pdf_res = find_and_download_period_pdf(code6=code6, period_end=period_end, out_path=pdf_file)
         if pdf_res.ok:
             pdf_url = pdf_res.url
@@ -226,11 +228,13 @@ def fetch(
             except Exception:
                 pass
 
-        for p in out_dir.glob(f"{rs.code6}_*.pdf"):
-            try:
-                p.unlink()
-            except Exception:
-                pass
+        pdf_dir = out_dir / "pdf"
+        if pdf_dir.exists():
+            for p in pdf_dir.glob(f"{rs.code6}_*.pdf"):
+                try:
+                    p.unlink()
+                except Exception:
+                    pass
 
     exported: list[Path] = []
 

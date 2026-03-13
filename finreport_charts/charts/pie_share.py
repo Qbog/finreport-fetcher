@@ -27,13 +27,25 @@ def render_pie_png(items: list[tuple[str, float]], *, title: str, out_png: Path)
     labels = [k for k, _ in items]
     values = [v for _, v in items]
 
-    fig, ax = plt.subplots()
-    ax.pie(values, labels=labels, autopct=lambda p: f"{p:.1f}%" if p >= 3 else "")
+    fig, ax = plt.subplots(figsize=(10, 6))
+    wedges, texts, autotexts = ax.pie(
+        values,
+        labels=labels,
+        autopct=lambda p: f"{p:.1f}%" if p >= 3 else "",
+        startangle=90,
+        textprops={"color": "#E6EDF3", "fontsize": 10},
+    )
+    ax.axis("equal")
     ax.set_title(title)
+
+    for t in autotexts:
+        t.set_color("#E6EDF3")
+        t.set_fontsize(10)
+
     fig.tight_layout()
 
     out_png.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_png, dpi=200)
+    fig.savefig(out_png, dpi=220)
     plt.close(fig)
 
 

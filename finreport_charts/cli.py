@@ -37,7 +37,7 @@ from .data.finreport_store import (
     read_statement_df,
 )
 from .templates.config import load_template_dir, load_template_file, load_templates
-from .utils.expr import ExprError, eval_expr
+from .utils.expr import ExprError, eval_expr, tokenize
 from .utils.files import safe_slug
 from .utils.ttm import quarter_from_ytd, ttm_from_ytd
 
@@ -647,10 +647,11 @@ def run(
     start: str = typer.Option(..., "--start", help="趋势分析必须提供时间范围；比较分析也可复用该范围"),
     end: str = typer.Option(..., "--end"),
     as_of: str | None = typer.Option(None, "--as-of", help="比较分析使用的报告期末日（YYYY-MM-DD）。不传则取 end 对应的最近一个季末"),
-    period_ends: str | None = typer.Option(
+    period: str | None = typer.Option(
         None,
+        "--period",
         "--period-ends",
-        help="只绘制指定报告期末（例如: 1231 或 0630,1231 或 q4 或 half）",
+        help="仅过滤绘图输出的报告期（例如: q4,q2 或 half 或 0630,1231；不影响自动补数/取数）",
     ),
     data_dir: Path | None = typer.Option(None, "--data-dir", help="财报数据目录（默认：若 ./output 存在则用 output，否则用当前目录）"),
     out_dir: Path | None = typer.Option(None, "--out", help="输出目录（默认：{data_dir}/{公司名}_{code6}/charts/）"),
@@ -702,31 +703,46 @@ def run(
         tushare_token=tushare_token,
     )
 
-    def _parse_period_ends(v: str | None) -> set[str] | None:
+    def _parse_period(v: str | None) -> set[str] | None:
         if not v:
             return None
         vv = v.strip().lower()
         if not vv:
             return None
-        if vv in {"q4", "4"}:
-            return {"1231"}
-        if vv in {"half", "hy", "halfyear", "mid", "midyear"}:
+
+        qmap = {
+            "q1": "0331",
+            "q2": "0630",
+            "q3": "0930",
+            "q4": "1231",
+        }
+        if vv in qmap:
+            return {qmap[vv]}
+        if vv in {"half", "hy"}:
             return {"0630", "1231"}
+
         parts = re.split(r"[\s,]+", vv)
         out: set[str] = set()
         for p in parts:
             p = p.strip()
             if not p:
                 continue
+            if p in qmap:
+                out.add(qmap[p])
+                continue
+            if p in {"half", "hy"}:
+                out.update({"0630", "1231"})
+                continue
+
             p = p.replace("-", "")
             if len(p) == 8 and p.isdigit():
                 p = p[4:]
             if len(p) != 4 or (not p.isdigit()):
-                raise typer.BadParameter(f"--period-ends 无法解析: {v}")
+                raise typer.BadParameter(f"--period 无法解析: {v}")
             out.add(p)
         return out
 
-    pe_filter = _parse_period_ends(period_ends)
+    pe_filter = _parse_period(period)
 
     def _filter_periods(periods: list[date]) -> list[date]:
         if not pe_filter:
@@ -795,22 +811,109 @@ def run(
                 continue
         return m
 
-    def _eval_expr_or_item(expr: str, *, values_map: dict[str, float], xlsx: Path, statement: str) -> float | None:
+    _ID_DATE_SUFFIX = re.compile(r"^(?P<id>.+?)\.(?P<y>\d{4})\.(?P<m>\d{2})\.(?P<d>\d{2})$")
+
+    def _split_id_date(s: str) -> tuple[str, date | None]:
+        m = _ID_DATE_SUFFIX.match(s)
+        if not m:
+            return s, None
+        base = m.group("id")
+        y, mm, dd = int(m.group("y")), int(m.group("m")), int(m.group("d"))
+        return base, date(y, mm, dd)
+
+    def _statement_from_key(key0: str, default_statement: str) -> str:
+        k2 = (key0 or "").strip().lower()
+        if k2.startswith("is."):
+            return "利润表"
+        if k2.startswith("bs."):
+            return "资产负债表"
+        if k2.startswith("cf."):
+            return "现金流量表"
+        return default_statement
+
+    # cache: (xlsx_path, statement) -> {key: value}
+    _map_cache: dict[tuple[Path, str], dict[str, float]] = {}
+
+    def _xlsx_for_period(pe: date) -> Path:
+        xlsx = expected_xlsx_path(c.data_dir, c.rs.code6, c.statement_type, pe, name=c.rs.name)
+        if xlsx.exists():
+            return xlsx
+
+        # on-demand fetch (允许缺失时自动补齐)
+        ensure_finreports(
+            code_or_name_args=["--code", c.rs.code6],
+            code6=c.rs.code6,
+            start=pe,
+            end=pe,
+            data_dir=c.data_dir,
+            provider=c.provider,
+            statement_type=c.statement_type,
+            pdf=c.pdf,
+            company_name=c.rs.name,
+            tushare_token=c.tushare_token,
+        )
+        return xlsx
+
+    def _values_map_for(pe: date, statement: str) -> dict[str, float]:
+        xlsx = _xlsx_for_period(pe)
+        key = (xlsx, statement)
+        if key not in _map_cache:
+            _map_cache[key] = _value_map_for_statement(xlsx, statement)
+        return _map_cache[key]
+
+    def _resolve_ident_value(ident: str, *, current_pe: date, default_statement: str) -> float | None:
+        ident_s = (ident or "").strip()
+        if not ident_s:
+            return None
+
+        base, pe2 = _split_id_date(ident_s)
+        pe_use = pe2 or current_pe
+
+        statement = _statement_from_key(base, default_statement)
+        xlsx = _xlsx_for_period(pe_use)
+
+        # key path
+        if "." in base:
+            vm = _values_map_for(pe_use, statement)
+            if base in vm:
+                return float(vm[base])
+            # fallback: allow key-like string not in vm
+            v = get_item_value(xlsx, statement, base)
+            return float(v) if v is not None else None
+
+        # CN subject fallback
+        v = get_item_value(xlsx, statement, base)
+        return float(v) if v is not None else None
+
+    def _eval_expr_or_item(expr: str, *, current_pe: date, default_statement: str) -> float | None:
         expr_s = (expr or "").strip()
         if not expr_s:
             return None
-        # expression
+
+        # expression: only ASCII identifiers are supported inside expr
         if re.search(r"[\+\-\*/\(\)]", expr_s):
             try:
-                return float(eval_expr(expr_s, values_map))
+                toks = tokenize(expr_s)
+                ids = [t for t in toks if t not in {"+", "-", "*", "/", "(", ")"} and not re.fullmatch(r"\d+(?:\.\d+)?", t)]
+                vals: dict[str, float] = {}
+                for ident in ids:
+                    v = _resolve_ident_value(ident, current_pe=current_pe, default_statement=default_statement)
+                    if v is None:
+                        raise ExprError(f"缺少变量: {ident}")
+                    vals[ident] = float(v)
+                return float(eval_expr(expr_s, vals))
             except ExprError as ex:
                 console.print(f"[yellow]表达式计算失败: {expr_s} ({ex})[/yellow]")
                 return None
-        # key preferred
-        if "." in expr_s and expr_s in values_map:
-            return float(values_map[expr_s])
-        # fallback: allow CN subject or key via slow path
-        return get_item_value(xlsx, statement, expr_s)
+
+        # single identifier / item
+        if "." in expr_s:
+            return _resolve_ident_value(expr_s, current_pe=current_pe, default_statement=default_statement)
+
+        # CN subject
+        xlsx = _xlsx_for_period(current_pe)
+        v = get_item_value(xlsx, default_statement, expr_s)
+        return float(v) if v is not None else None
 
     # 2) run templates
     for k, tpl in selected.items():
@@ -823,8 +926,10 @@ def run(
         if not title0:
             raise RuntimeError(f"模板缺少 title: {k}")
 
-        x_label = getattr(tpl, "x_label", None) or "时间"
-        y_label = getattr(tpl, "y_label", None) or "金额"
+        x_label = getattr(tpl, "x_label", None)
+        y_label = getattr(tpl, "y_label", None)
+        if not x_label or not y_label:
+            raise RuntimeError(f"模板缺少 x_label/y_label: {k}")
 
         console.print(f"\n[bold]运行模板[/bold]: {k} → {fname_base}")
 
@@ -863,24 +968,13 @@ def run(
                 # compute ytd/raw series for each bar
                 series_ytd_by_name: dict[str, dict[date, float]] = {}
 
-                # cache value maps per (xlsx, statement)
-                cache: dict[tuple[Path, str], dict[str, float]] = {}
-
                 for pe in periods_all:
-                    xlsx = expected_xlsx_path(c.data_dir, c.rs.code6, c.statement_type, pe, name=c.rs.name)
-                    if not xlsx.exists():
-                        continue
-
                     for b in bars or []:
                         b_name = str(getattr(b, "name", None) or getattr(b, "expr", "")).strip() or "value"
                         b_expr = str(getattr(b, "expr", "")).strip()
                         b_stmt = str(getattr(b, "statement", None) or statement_default)
 
-                        key = (xlsx, b_stmt)
-                        if key not in cache:
-                            cache[key] = _value_map_for_statement(xlsx, b_stmt)
-
-                        v_raw = _eval_expr_or_item(b_expr, values_map=cache[key], xlsx=xlsx, statement=b_stmt)
+                        v_raw = _eval_expr_or_item(b_expr, current_pe=pe, default_statement=b_stmt)
                         if v_raw is None:
                             continue
                         series_ytd_by_name.setdefault(b_name, {})[pe] = float(v_raw)
@@ -908,7 +1002,7 @@ def run(
 
                 df_out = pd.DataFrame(rows)
 
-                title = f"{title0} | {c.rs.code6}"
+                title = f"{c.rs.name or c.rs.code6} | {title0}"
                 out_png = c.out_dir / f"{fname_base}_{c.rs.code6}_{c.start.strftime('%Y%m%d')}_{c.end.strftime('%Y%m%d')}.png"
                 out_xlsx = c.out_dir / f"{fname_base}_{c.rs.code6}_{c.start.strftime('%Y%m%d')}_{c.end.strftime('%Y%m%d')}.xlsx"
 
@@ -960,28 +1054,20 @@ def run(
 
             statement = statement_default
 
-            # if template provides [[bars]] => explicit compare bars; else auto all items
-            if bars:
-                cache: dict[tuple[Path, str], dict[str, float]] = {}
-                rows=[]
-                for b in bars:
-                    b_name = str(getattr(b, "name", None) or getattr(b, "expr", "")).strip() or "value"
-                    b_expr = str(getattr(b, "expr", "")).strip()
-                    b_stmt = str(getattr(b, "statement", None) or statement)
-                    key = (xlsx, b_stmt)
-                    if key not in cache:
-                        cache[key] = _value_map_for_statement(xlsx, b_stmt)
-                    v = _eval_expr_or_item(b_expr, values_map=cache[key], xlsx=xlsx, statement=b_stmt)
-                    rows.append({"name": b_name, "value": v})
-                df_cmp = pd.DataFrame(rows)
-                title = f"{title0} | {c.rs.code6} | {pe.strftime('%Y-%m-%d')}"
-            else:
-                # auto: every item in statement
-                df_s = read_statement_df(xlsx, sheet_name=statement)
-                df_s2 = df_s.dropna(subset=["数值"]).copy()
-                df_s2["name"] = df_s2["科目"].astype(str)
-                df_cmp = df_s2[["name", "数值"]].rename(columns={"数值": "value"})
-                title = f"{title0} | {c.rs.code6} | {statement} | {pe.strftime('%Y-%m-%d')}"
+            # 比较分析：完全由模板 bars 控制（不自动枚举“全部科目”）
+            if not bars:
+                raise RuntimeError(f"compare 模式必须在模板中显式配置 [[bars]]: {k}")
+
+            rows = []
+            for b in bars:
+                b_name = str(getattr(b, "name", None) or getattr(b, "expr", "")).strip() or "value"
+                b_expr = str(getattr(b, "expr", "")).strip()
+                b_stmt = str(getattr(b, "statement", None) or statement)
+                v = _eval_expr_or_item(b_expr, current_pe=pe, default_statement=b_stmt)
+                rows.append({"name": b_name, "value": v})
+
+            df_cmp = pd.DataFrame(rows)
+            title = f"{c.rs.name or c.rs.code6} | {title0} | {pe.strftime('%Y-%m-%d')}"
 
             out_png = c.out_dir / f"{fname_base}_{c.rs.code6}_{pe.strftime('%Y%m%d')}.png"
             out_xlsx = c.out_dir / f"{fname_base}_{c.rs.code6}_{pe.strftime('%Y%m%d')}.xlsx"
@@ -1025,7 +1111,7 @@ def run(
                 if not items_top:
                     continue
 
-                title = f"{title0} | {c.rs.code6} | {pe.strftime('%Y-%m-%d')}"
+                title = f"{c.rs.name or c.rs.code6} | {title0} | {pe.strftime('%Y-%m-%d')}"
                 out_png = c.out_dir / f"{fname_base}_{c.rs.code6}_{pe.strftime('%Y%m%d')}.png"
                 out_xlsx = c.out_dir / f"{fname_base}_{c.rs.code6}_{pe.strftime('%Y%m%d')}.xlsx"
 
@@ -1082,7 +1168,7 @@ def run(
                 rows.append({"period_end": pe.strftime("%Y-%m-%d"), "amount": v, "close": px})
 
             df = pd.DataFrame(rows).dropna(subset=["amount", "close"])
-            title = f"{title0} | {c.rs.code6}"
+            title = f"{c.rs.name or c.rs.code6} | {title0}"
 
             out_png = c.out_dir / f"{fname_base}_{c.rs.code6}_{c.start.strftime('%Y%m%d')}_{c.end.strftime('%Y%m%d')}.png"
             out_xlsx = c.out_dir / f"{fname_base}_{c.rs.code6}_{c.start.strftime('%Y%m%d')}_{c.end.strftime('%Y%m%d')}.xlsx"

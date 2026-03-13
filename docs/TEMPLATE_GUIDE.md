@@ -39,18 +39,31 @@ cf.net_cash_from_ops # 经营活动现金流量净额
 
 我们推荐 **一个模板一个 TOML 文件**，统一放在仓库根目录 `templates/` 下，并用 `finreport_charts run` 执行。
 
-> 强烈建议模板里优先写 `item = "<key>"`（例如 `is.net_profit`），而不是中文科目名，以保证跨公司复用与稳定匹配。
+> 强烈建议在 `[[bars]]` 里优先写 `expr = "<key>"`（例如 `is.net_profit`），而不是中文科目名，以保证跨公司复用与稳定匹配。
+>
+> 支持跨期取数：`is.admin_expense.2024.12.31`（在 key 后追加 `.YYYY.MM.DD`）。
 
 ### 2.1 柱状图趋势（bar）
 
 `templates/revenue_ttm.toml` 示例：
 
 ```toml
+name = "revenue_ttm"
 alias = "revenue_ttm"
-chart = "bar"            # bar|pie|combo
+
+type = "bar"           # bar|pie|combo
+mode = "trend"         # trend|compare
+
+title = "营业收入（TTM）趋势"
+x_label = "报告期"
+y_label = "金额"
+
 statement = "利润表"
-item = "is.revenue"       # 推荐：key
-transform = "ttm"         # ttm|ytd|q|raw
+
+[[bars]]
+name = "营业收入"
+expr = "is.revenue"     # 推荐用 key；也支持表达式：is.sell_expense + is.admin_expense
+transform = "ttm"       # ttm|ytd|q|raw
 ```
 
 **transform 选项说明：**
@@ -63,8 +76,15 @@ transform = "ttm"         # ttm|ytd|q|raw
 `templates/current_assets.toml` 示例（按分组标题取子项）：
 
 ```toml
+name = "current_assets"
 alias = "current_assets"
-chart = "pie"
+
+type = "pie"
+
+title = "流动资产构成"
+x_label = "项目"   # pie 里目前不使用，但字段要求必须存在
+y_label = "金额"   # 同上
+
 statement = "资产负债表"
 section = "流动资产"
 top_n = 10
@@ -73,8 +93,15 @@ top_n = 10
 或使用自定义科目列表：
 
 ```toml
+name = "custom"
 alias = "custom"
-chart = "pie"
+
+type = "pie"
+
+title = "自定义科目占比"
+x_label = "项目"
+y_label = "金额"
+
 statement = "资产负债表"
 items = ["货币资金", "应收账款", "存货"]
 ```
@@ -84,15 +111,22 @@ items = ["货币资金", "应收账款", "存货"]
 `templates/revenue_price.toml` 示例：
 
 ```toml
+name = "revenue_price"
 alias = "revenue_price"
-chart = "combo"
+
+type = "combo"
+
+title = "营业收入（TTM）vs 股价"
+x_label = "报告期"
+y_label = "金额"
+
 statement = "利润表"
 bar_item = "is.revenue"
 transform = "ttm"
 # 股价线自动读取 data-dir/price/{code6}.csv
 ```
 
-> 兼容旧版：仍支持单文件多模板（`charts.toml` + `finreport_charts template --type xxx`），但不再推荐。
+> 说明：旧版 `charts.toml`（单文件多模板）解析器仍保留，但 CLI 仅支持 `finreport_charts run`；旧的 `bar/pie/combo/template` 子命令已弃用并会直接退出。
 
 ---
 
@@ -101,25 +135,29 @@ transform = "ttm"
 ### 3.1 基础命令
 
 ```bash
-# 柱状图（单科目趋势）
-python3 -m finreport_charts bar \
+# 运行模板目录下全部模板
+python3 -m finreport_charts run \
   --code 600519 \
   --start 2023-01-01 --end 2025-12-31 \
-  --statement 利润表 \
-  --item 营业总收入 \
-  --transform ttm \
   --data-dir output \
-  --out charts_output
+  --templates templates
 
-# 使用 key 替代中文科目名
-python3 -m finreport_charts bar \
+# 使用 "*" 通配符（等价于全部模板）
+python3 -m finreport_charts run \
   --code 600519 \
   --start 2023-01-01 --end 2025-12-31 \
-  --statement 利润表 \
-  --item is.net_profit \
-  --transform q \
   --data-dir output \
-  --out charts_output
+  --templates templates \
+  --template "*"
+
+# 仅过滤输出的报告期：例如只画 Q4 和 Q2（不影响自动补数）
+python3 -m finreport_charts run \
+  --code 600519 \
+  --start 2023-01-01 --end 2025-12-31 \
+  --data-dir output \
+  --templates templates \
+  --template "*" \
+  --period q4,q2
 ```
 
 ### 3.2 Transform 详解
@@ -163,22 +201,15 @@ python3 -m finreport_charts run \
   --template net_profit_q
 ```
 
-> 兼容旧版：`finreport_charts template --type xxx --config charts.toml` 仍可用，但不再推荐。
+> 说明：本项目已切换为模板驱动 `run`；旧的 `bar/pie/combo/template` 子命令已弃用并会直接退出。
 
 ---
 
 ## 4. 高级用法
 
-### 4.1 模糊匹配科目
+### 4.1（建议）使用 key 避免模糊匹配
 
-```bash
-python3 -m finreport_charts bar \
-  --code 600519 \
-  --start 2023-01-01 --end 2025-12-31 \
-  --statement 利润表 \
-  --item-like "营收" \
-  --transform ttm
-```
+`finreport_charts` 已切换为模板驱动，建议在模板里使用 `expr = "is.xxx"` 这样的 **key**，避免中文同义词/别名导致的模糊匹配不稳定。
 
 ### 4.2 下载 PDF 原文
 
@@ -189,7 +220,7 @@ python3 -m finreport_fetcher fetch \
   --pdf
 ```
 
-PDF 保存在 `output/{公司名}_{code6}/{code6}_{date}.pdf`（与 XLSX 同目录）
+PDF 保存在 `output/{公司名}_{code6}/pdf/{code6}_{date}.pdf`
 
 ### 4.3 股价数据
 
@@ -212,34 +243,63 @@ date,close
 `templates/revenue_ttm.toml`
 
 ```toml
+name = "revenue_ttm"
 alias = "revenue_ttm"
-chart = "bar"
+
+type = "bar"
+mode = "trend"
+
+title = "营业收入（TTM）趋势"
+x_label = "报告期"
+y_label = "金额"
+
 statement = "利润表"
-item = "is.revenue"   # 推荐 key
+
+[[bars]]
+name = "营业收入"
+expr = "is.revenue"
 transform = "ttm"
 ```
 
 `templates/profit_quarter.toml`
 
 ```toml
+name = "profit_quarter"
 alias = "profit_quarter"
-chart = "bar"
+
+type = "bar"
+mode = "trend"
+
+title = "归母净利润（单季）趋势"
+x_label = "报告期"
+y_label = "金额"
+
 statement = "利润表"
-item = "is.net_profit"
+
+[[bars]]
+name = "归母净利润"
+expr = "is.net_profit"
 transform = "q"
 ```
 
 `templates/current_assets.toml`
 
 ```toml
+name = "current_assets"
 alias = "current_assets"
-chart = "pie"
+
+type = "pie"
+
+title = "流动资产构成"
+x_label = "项目"
+y_label = "金额"
+
 statement = "资产负债表"
 section = "流动资产"
 top_n = 10
 ```
 
-> 兼容旧版：你仍可以把这些模板写在同一个 `charts.toml` 里，但建议迁移到单文件模式。
+> 说明：旧版 `charts.toml` 写法的解析器仍保留，但 CLI 仅支持 `run`；建议统一迁移到单文件模板（templates/*.toml）。
 
 
 ---
@@ -271,10 +331,10 @@ top_n = 10
 ### Q1: 如何查看所有可用的 key？
 打开生成的财报 Excel，查看 `key` 列。或在代码中查看 `subject_glossary.py`。
 
-### Q2: 科目找不到怎么办？
-- 检查报表类型是否正确（利润表/资产负债表/现金流量表）
-- 尝试使用模糊匹配 `--item-like`
-- 检查 Excel 中的实际科目名
+### Q2: expr/key 找不到怎么办？
+- 优先使用 Excel 里的 `key` 列（每行都有 key）
+- 确认 key 前缀对应报表：`is.*`=利润表，`bs.*`=资产负债表，`cf.*`=现金流量表
+- 如果确实缺少映射：在 `finreport_fetcher/mappings/subject_glossary.py` 里补充 key→中文/英文映射
 
 ### Q3: TTM 计算失败？
 - 确保数据包含上一年同季度和年报数据
