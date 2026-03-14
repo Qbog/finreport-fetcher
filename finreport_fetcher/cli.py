@@ -115,8 +115,8 @@ def _fetch_one_period(
     pdf_title = None
     pdf_note = None
     if want_pdf:
-        # PDF 单独放到公司目录下的 pdf/ 子目录
-        pdf_root = out_dir / "pdf"
+        # PDF 单独放到公司目录下的 pdf/ 子目录（与 reports 同级）
+        pdf_root = out_dir.parent / "pdf"
         pdf_root.mkdir(parents=True, exist_ok=True)
         pdf_file = pdf_root / f"{code6}_{period_end.strftime('%Y%m%d')}.pdf"
         pdf_res = find_and_download_period_pdf(code6=code6, period_end=period_end, out_path=pdf_file)
@@ -213,7 +213,7 @@ def fetch(
 
     company_name = rs.name or rs.code6
     company_dirname = safe_dir_component(f"{company_name}_{rs.code6}")
-    out_dir = out_root / company_dirname
+    out_dir = out_root / company_dirname / "reports"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     if not no_clean:
@@ -229,7 +229,7 @@ def fetch(
             except Exception:
                 pass
 
-        pdf_dir = out_dir / "pdf"
+        pdf_dir = out_dir.parent / "pdf"
         if pdf_dir.exists():
             for p in pdf_dir.glob(f"{rs.code6}_*.pdf"):
                 try:
@@ -300,6 +300,7 @@ def fetch(
                 console.print(f"  ... 仅展示前 10 条")
 
     console.print(f"完成，共导出 {len(exported)} 个文件。输出目录: {out_dir}")
+    console.print(f"提示：公司根目录为 {out_dir.parent}")
 
 
 def main():

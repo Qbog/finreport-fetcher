@@ -98,8 +98,9 @@ python3 -m finreport_charts run \
 ```
 output/
   {公司名}_600519/
-    600519_merged_20241231.xlsx
-    600519_merged_20240930.xlsx
+    reports/
+      600519_merged_20241231.xlsx
+      600519_merged_20240930.xlsx
     pdf/
       600519_20241231.pdf
       600519_20240930.pdf
@@ -134,7 +135,7 @@ output/
 
 `--data-dir` 需要指向 **finreport_fetcher** 的输出根目录：
 
-- Excel：`output/{公司名}_{code6}/{code6}_{statement}_{period}.xlsx`
+- Excel：`output/{公司名}_{code6}/reports/{code6}_{statement}_{period}.xlsx`
 - PDF：`output/{公司名}_{code6}/pdf/{code6}_{period}.pdf`（PDF 与 Excel 不同层级；PDF 统一放入 `pdf/` 子目录）
 
 股价 CSV（未来由你的股价 fetcher 产生）默认约定位置：

@@ -19,16 +19,8 @@ class FinreportPaths:
     pdf: Path | None
 
 
-def _company_dir(data_dir: Path, code6: str, name: str | None = None) -> Path:
-    """Resolve company directory under data_dir.
-
-    New layout:
-      data_dir/{公司名}_{code6}/...
-
-    Backward compatible:
-      data_dir/*.xlsx
-      data_dir/pdf/*.pdf (legacy)
-    """
+def _company_root_dir(data_dir: Path, code6: str, name: str | None = None) -> Path:
+    """Resolve company root directory under data_dir."""
 
     if name:
         cand = data_dir / safe_dir_component(f"{name}_{code6}")
@@ -42,6 +34,24 @@ def _company_dir(data_dir: Path, code6: str, name: str | None = None) -> Path:
     return data_dir
 
 
+def _company_reports_dir(data_dir: Path, code6: str, name: str | None = None) -> Path:
+    """Resolve reports directory under data_dir.
+
+    Layout:
+      data_dir/{公司名}_{code6}/reports/*.xlsx
+
+    Backward compatible:
+      data_dir/{公司名}_{code6}/*.xlsx
+      data_dir/*.xlsx (legacy)
+    """
+
+    root = _company_root_dir(data_dir, code6, name=name)
+    cand = root / "reports"
+    if cand.exists() and cand.is_dir():
+        return cand
+    return root
+
+
 def expected_xlsx_path(data_dir: Path, code6: str, statement_type: str, period_end: date, *, name: str | None = None) -> Path:
     fname = f"{code6}_{statement_type}_{period_end.strftime('%Y%m%d')}.xlsx"
 
@@ -50,7 +60,7 @@ def expected_xlsx_path(data_dir: Path, code6: str, statement_type: str, period_e
     if p0.exists():
         return p0
 
-    return _company_dir(data_dir, code6, name=name) / fname
+    return _company_reports_dir(data_dir, code6, name=name) / fname
 
 
 def expected_pdf_path(data_dir: Path, code6: str, period_end: date, *, name: str | None = None) -> Path:
@@ -62,7 +72,7 @@ def expected_pdf_path(data_dir: Path, code6: str, period_end: date, *, name: str
         return p0
 
     # new layout: company_dir/pdf/*.pdf
-    return _company_dir(data_dir, code6, name=name) / "pdf" / fname
+    return _company_root_dir(data_dir, code6, name=name) / "pdf" / fname
 
 
 def ensure_finreports(
