@@ -1117,7 +1117,7 @@ def run(
             pe = _latest_quarter_end_on_or_before(pe0)
 
             # ensure the one period exists
-            missing = ensure_finreports(
+            still = ensure_finreports(
                 code_or_name_args=["--code", c.rs.code6],
                 code6=c.rs.code6,
                 start=pe,
@@ -1129,12 +1129,31 @@ def run(
                 company_name=c.rs.name,
                 tushare_token=c.tushare_token,
             )
-            if missing:
-                console.print(f"[yellow]警告：比较分析仍缺失报告期: {missing}[/yellow]")
+            if still:
+                console.print(f"[yellow]提示：比较分析期末财报不可用: {still}[/yellow]")
+                if strict:
+                    raise RuntimeError(f"缺失财报 {len(still)} 期（strict 模式退出）：{still}")
 
             xlsx = expected_xlsx_path(c.data_dir, c.rs.code6, c.statement_type, pe, name=c.rs.name)
+
+            # 若 end/as-of 对应期末未披露：自动回退到最近一期可用财报（向前找最多 12 个季度）
             if not xlsx.exists():
-                raise RuntimeError(f"未找到期末财报 xlsx: {xlsx}")
+                pe2 = pe
+                xlsx2 = xlsx
+                for _ in range(12):
+                    pe2 = _prev_quarter_end(pe2)
+                    xlsx2 = expected_xlsx_path(c.data_dir, c.rs.code6, c.statement_type, pe2, name=c.rs.name)
+                    if xlsx2.exists():
+                        console.print(
+                            f"[yellow]提示：{pe.strftime('%Y-%m-%d')} 财报不可用，回退到 {pe2.strftime('%Y-%m-%d')}。[/yellow]"
+                        )
+                        pe = pe2
+                        xlsx = xlsx2
+                        break
+
+            if not xlsx.exists():
+                console.print(f"[yellow]提示：比较分析缺少财报，跳过模板 {k}。[/yellow]")
+                continue
 
             statement = statement_default
 
@@ -1150,7 +1169,11 @@ def run(
                 v = _eval_expr_or_item(b_expr, current_pe=pe, default_statement=b_stmt)
                 rows.append({"name": b_name, "value": v})
 
-            df_cmp = pd.DataFrame(rows)
+            df_cmp = pd.DataFrame(rows).dropna(subset=["value"])
+            if df_cmp.empty:
+                console.print(f"[yellow]提示：{k} 在该期末没有可用数据（可能科目缺失/表达式失败）。[/yellow]")
+                continue
+
             title = f"{c.rs.name or c.rs.code6} | {title0} | {pe.strftime('%Y-%m-%d')}"
 
             out_png = c.out_dir / f"{fname_base}_{c.rs.code6}_{pe.strftime('%Y%m%d')}.png"
