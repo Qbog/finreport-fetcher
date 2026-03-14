@@ -6,11 +6,11 @@
 #   Q2/Q3/Q4: 用差分得到单季
 
 name = "net_profit_q"
-alias = "net_profit_q"
+alias = "归母净利润"
 
 type = "bar"
 
-title = "归母净利润（单季）趋势"
+title = "归母净利润（报告期）趋势"
 
 x_label = "报告期"
 y_label = "金额"
@@ -21,4 +21,4 @@ statement = "利润表"
 
 [[bars]]
 name = "归母净利润"
-expr = "is.net_profit_parent - is.net_profit_parent.prev_in_year"
+expr = "is.net_profit_parent"
