@@ -134,7 +134,14 @@ def ensure_finreports(
             args += ["--tushare-token", tushare_token]
 
         # 不用 check_call：单期失败时继续其他期，并把缺失留给 still_missing。
-        subprocess.run(args, check=False)
+        # 同时捕获输出，避免在 finreport_charts 场景下打印冗长 traceback。
+        subprocess.run(
+            args,
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
 
     still_missing = [
         pe
