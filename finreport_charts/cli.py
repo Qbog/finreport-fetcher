@@ -124,6 +124,9 @@ def _common(
     s = parse_date(start)
     e = parse_date(end)
 
+    if s > e:
+        raise typer.BadParameter(f"--start 不能晚于 --end：{start} > {end}")
+
     if statement_type not in {"merged", "parent"}:
         raise typer.BadParameter("--statement-type 仅支持 merged 或 parent")
 
@@ -140,10 +143,21 @@ def _common(
     )
 
 
-def _maybe_fetch_missing(c: CommonOpts, fetch_start: date | None = None):
+def _maybe_fetch_missing(c: CommonOpts, fetch_start: date | None = None) -> list[date]:
+    """Ensure finreport xlsx exists for required periods.
+
+    返回仍缺失的报告期列表（不会在此处抛异常）。
+
+    说明：
+    - 最新一期未披露/数据源缺失时，允许继续执行（上层可选择 strict）。
+    - 避免重复下载：底层 ensure_finreports 会只补齐缺失期。
+    """
+
     # 检测缺失的报告期文件（TTM 等场景可能需要 start 之前的历史期）
     check_start = fetch_start or c.start
-    periods = quarter_ends_between(check_start, c.end)
+    # end 超过今天时没有意义（未来报告期不可能有数据），避免误触导致大量无效下载尝试
+    check_end = min(c.end, date.today())
+    periods = quarter_ends_between(check_start, check_end)
     missing = [
         pe
         for pe in periods
@@ -151,7 +165,7 @@ def _maybe_fetch_missing(c: CommonOpts, fetch_start: date | None = None):
     ]
 
     if not missing:
-        return
+        return []
 
     fs = fetch_start or c.start
     console.print(f"发现缺失财报 {len(missing)} 期，调用 finreport_fetcher 补齐到: {c.data_dir}")
@@ -159,7 +173,7 @@ def _maybe_fetch_missing(c: CommonOpts, fetch_start: date | None = None):
         code_or_name_args=["--code", c.rs.code6],
         code6=c.rs.code6,
         start=fs,
-        end=c.end,
+        end=check_end,
         data_dir=c.data_dir,
         provider=c.provider,
         statement_type=c.statement_type,
@@ -168,7 +182,9 @@ def _maybe_fetch_missing(c: CommonOpts, fetch_start: date | None = None):
         tushare_token=c.tushare_token,
     )
     if still:
-        raise RuntimeError(f"补齐后仍缺失 {len(still)} 期财报: {still}")
+        console.print(f"[yellow]提示：补齐后仍缺失 {len(still)} 期财报，将跳过缺失期继续绘图：{still}[/yellow]")
+
+    return still
 
 
 @app.callback()
@@ -662,6 +678,7 @@ def run(
     top_n: int | None = typer.Option(None, "--top-n", help="覆盖模板的 top_n（常用于 pie）"),
     list_only: bool = typer.Option(False, "--list", help="仅列出将要运行的模板并退出"),
     tushare_token: str | None = typer.Option(None, "--tushare-token"),
+    strict: bool = typer.Option(False, "--strict", help="缺失财报时是否直接报错退出（默认：跳过缺失期继续）"),
 ):
     """模板驱动的图表生成（唯一推荐方式）。
 
@@ -678,6 +695,9 @@ def run(
     rs = _resolve_symbol(code=code, name=name)
     s = parse_date(start)
     e = parse_date(end)
+
+    if s > e:
+        raise typer.BadParameter(f"--start 不能晚于 --end：{start} > {end}")
 
     if statement_type not in {"merged", "parent"}:
         raise typer.BadParameter("--statement-type 仅支持 merged 或 parent")
@@ -834,11 +854,17 @@ def run(
 
     # cache: (xlsx_path, statement) -> {key: value}
     _map_cache: dict[tuple[Path, str], dict[str, float]] = {}
+    # cache: periods we already attempted to fetch in this run
+    _fetch_tried: set[date] = set()
 
     def _xlsx_for_period(pe: date) -> Path:
         xlsx = expected_xlsx_path(c.data_dir, c.rs.code6, c.statement_type, pe, name=c.rs.name)
         if xlsx.exists():
             return xlsx
+
+        if pe in _fetch_tried:
+            return xlsx
+        _fetch_tried.add(pe)
 
         # on-demand fetch (允许缺失时自动补齐)
         ensure_finreports(
@@ -857,6 +883,8 @@ def run(
 
     def _values_map_for(pe: date, statement: str) -> dict[str, float]:
         xlsx = _xlsx_for_period(pe)
+        if not xlsx.exists():
+            return {}
         key = (xlsx, statement)
         if key not in _map_cache:
             _map_cache[key] = _value_map_for_statement(xlsx, statement)
@@ -924,6 +952,8 @@ def run(
 
         statement = _statement_from_key(base, default_statement)
         xlsx = _xlsx_for_period(pe_use)
+        if not xlsx.exists():
+            return None
 
         # key path
         if '.' in base:
@@ -1005,7 +1035,7 @@ def run(
             # ---- trend ----
             if mode == "trend":
                 # requirement: must have start/end (already required by CLI)
-                periods_out = _filter_periods(quarter_ends_between(c.start, c.end))
+                periods_out = _filter_periods(quarter_ends_between(c.start, min(c.end, date.today())))
                 # transform 配置已弃用：现在按表达式直接取值（不做 ttm/ytd/q 口径转换）。
                 # 若模板里仍写了 transform，仅提示并忽略。
                 if getattr(tpl, 'transform', None):
@@ -1015,23 +1045,50 @@ def run(
                         b_n = str(getattr(b, 'name', None) or getattr(b, 'expr', '')).strip() or 'value'
                         console.print(f'[yellow]提示：bars.transform 已弃用，将被忽略：{b_n}[/yellow]')
 
-                _maybe_fetch_missing(c)
+                still = _maybe_fetch_missing(c)
+                if strict and still:
+                    raise RuntimeError(f"缺失财报 {len(still)} 期（strict 模式退出）：{still}")
 
                 # build output df (one row per period)
                 rows: list[dict[str, object]] = []
+                used_periods: list[date] = []
                 for pe in periods_out:
-                    row: dict[str, object] = {'period_end': pe.strftime('%Y-%m-%d')}
+                    # 如果该期财报最终仍不存在（例如最新一期尚未披露），直接跳过
+                    xlsx0 = expected_xlsx_path(c.data_dir, c.rs.code6, c.statement_type, pe, name=c.rs.name)
+                    if not xlsx0.exists():
+                        continue
+
+                    row: dict[str, object] = {"period_end": pe.strftime("%Y-%m-%d")}
+                    any_val = False
                     for b in bars or []:
-                        b_name = str(getattr(b, 'name', None) or getattr(b, 'expr', '')).strip() or 'value'
-                        b_expr = str(getattr(b, 'expr', '')).strip()
-                        b_stmt = str(getattr(b, 'statement', None) or statement_default)
-                        row[b_name] = _eval_expr_or_item(b_expr, current_pe=pe, default_statement=b_stmt)
+                        b_name = str(getattr(b, "name", None) or getattr(b, "expr", "")).strip() or "value"
+                        b_expr = str(getattr(b, "expr", "")).strip()
+                        b_stmt = str(getattr(b, "statement", None) or statement_default)
+                        v = _eval_expr_or_item(b_expr, current_pe=pe, default_statement=b_stmt)
+                        row[b_name] = v
+                        if v is not None:
+                            any_val = True
+
+                    if not any_val:
+                        continue
+
                     rows.append(row)
+                    used_periods.append(pe)
+
+                if not rows:
+                    console.print(f"[yellow]提示：{k} 在该区间内没有可用数据（可能都缺失/未披露）。[/yellow]")
+                    continue
 
                 df_out = pd.DataFrame(rows)
                 title = f"{c.rs.name or c.rs.code6} | {title0}"
-                out_png = c.out_dir / f"{fname_base}_{c.rs.code6}_{c.start.strftime('%Y%m%d')}_{c.end.strftime('%Y%m%d')}.png"
-                out_xlsx = c.out_dir / f"{fname_base}_{c.rs.code6}_{c.start.strftime('%Y%m%d')}_{c.end.strftime('%Y%m%d')}.xlsx"
+
+                actual_s = used_periods[0]
+                actual_e = used_periods[-1]
+                if actual_e < c.end:
+                    console.print(f"[yellow]提示：end={c.end} 对应最新报告期数据不可用，实际截至 {actual_e}。[/yellow]")
+
+                out_png = c.out_dir / f"{fname_base}_{c.rs.code6}_{actual_s.strftime('%Y%m%d')}_{actual_e.strftime('%Y%m%d')}.png"
+                out_xlsx = c.out_dir / f"{fname_base}_{c.rs.code6}_{actual_s.strftime('%Y%m%d')}_{actual_e.strftime('%Y%m%d')}.xlsx"
 
                 series_cols = [(str(getattr(b, 'name', None) or getattr(b, 'expr', '')).strip() or 'value', str(getattr(b, 'name', None) or getattr(b, 'expr', '')).strip() or 'value') for b in (bars or [])]
                 # de-dup in case of duplicate names
@@ -1116,8 +1173,11 @@ def run(
             if not t_section and not t_items:
                 raise RuntimeError(f"pie 模板需要 section 或 items: {k}")
 
-            _maybe_fetch_missing(c)
-            periods = _filter_periods(quarter_ends_between(c.start, c.end))
+            still = _maybe_fetch_missing(c)
+            if strict and still:
+                raise RuntimeError(f"缺失财报 {len(still)} 期（strict 模式退出）：{still}")
+
+            periods = _filter_periods(quarter_ends_between(c.start, min(c.end, date.today())))
 
             for pe in periods:
                 xlsx = expected_xlsx_path(c.data_dir, c.rs.code6, c.statement_type, pe, name=c.rs.name)
@@ -1156,14 +1216,16 @@ def run(
             if getattr(tpl, "transform", None):
                 console.print('[yellow]提示：combo.transform 已弃用，将被忽略（按 bar_item 表达式原值取数）[/yellow]')
 
-            _maybe_fetch_missing(c)
+            still = _maybe_fetch_missing(c)
+            if strict and still:
+                raise RuntimeError(f"缺失财报 {len(still)} 期（strict 模式退出）：{still}")
 
             price_csv = c.data_dir / "price" / f"{c.rs.code6}.csv"
             if not price_csv.exists():
                 raise RuntimeError(f"未找到股价 CSV: {price_csv}")
 
             df_price = load_price_csv(price_csv)
-            periods = _filter_periods(quarter_ends_between(c.start, c.end))
+            periods = _filter_periods(quarter_ends_between(c.start, min(c.end, date.today())))
 
             rows = []
             for pe in periods:
@@ -1171,11 +1233,22 @@ def run(
                 px = price_on_or_before(df_price, pe)
                 rows.append({"period_end": pe.strftime("%Y-%m-%d"), "amount": amount, "close": px})
 
-            df = pd.DataFrame(rows).dropna(subset=["amount", "close"])
+            df = pd.DataFrame(rows).dropna(subset=["amount", "close"]).sort_values("period_end")
+            if df.empty:
+                console.print(f"[yellow]提示：{k} 在该区间内没有可用数据（可能缺少财报或股价数据）。[/yellow]")
+                continue
+
+            # 以实际有数据的报告期作为输出文件名范围（避免 end 对应期末未披露导致误导）
+            used_periods = [parse_date(str(x)) for x in df["period_end"].tolist()]
+            actual_s = used_periods[0]
+            actual_e = used_periods[-1]
+            if actual_e < c.end:
+                console.print(f"[yellow]提示：end={c.end} 对应最新报告期数据不可用，实际截至 {actual_e}。[/yellow]")
+
             title = f"{c.rs.name or c.rs.code6} | {title0}"
 
-            out_png = c.out_dir / f"{fname_base}_{c.rs.code6}_{c.start.strftime('%Y%m%d')}_{c.end.strftime('%Y%m%d')}.png"
-            out_xlsx = c.out_dir / f"{fname_base}_{c.rs.code6}_{c.start.strftime('%Y%m%d')}_{c.end.strftime('%Y%m%d')}.xlsx"
+            out_png = c.out_dir / f"{fname_base}_{c.rs.code6}_{actual_s.strftime('%Y%m%d')}_{actual_e.strftime('%Y%m%d')}.png"
+            out_xlsx = c.out_dir / f"{fname_base}_{c.rs.code6}_{actual_s.strftime('%Y%m%d')}_{actual_e.strftime('%Y%m%d')}.xlsx"
 
             render_combo_png(df, title=title, x_col="period_end", bar_col="amount", line_col="close", out_png=out_png, bar_label=y_label, line_label="收盘价", x_label=x_label)
             write_combo_excel(df, title=title, x_col="period_end", bar_col="amount", line_col="close", out_xlsx=out_xlsx, bar_label=y_label, line_label="收盘价", x_label=x_label)

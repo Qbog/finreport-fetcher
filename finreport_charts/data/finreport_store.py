@@ -92,7 +92,10 @@ def ensure_finreports(
 
     返回：本次“仍然缺失”的报告期末日列表（如果补齐失败）。
 
-    缺失时通过调用 finreport_fetcher 补齐（增量写入）。
+    设计要点：
+    - 只尝试下载“缺失的报告期”，避免重复下载/覆盖已有文件。
+    - 即使补齐失败（例如最新一期尚未披露、或本地文件被占用导致 Permission denied），
+      也不在这里抛异常；由上层决定是否 strict。
     """
 
     periods = quarter_ends_between(start, end)
@@ -105,30 +108,33 @@ def ensure_finreports(
     if not missing:
         return []
 
-    args = [
-        sys.executable,
-        "-m",
-        "finreport_fetcher",
-        "fetch",
-        *code_or_name_args,
-        "--start",
-        start.strftime("%Y-%m-%d"),
-        "--end",
-        end.strftime("%Y-%m-%d"),
-        "--provider",
-        provider,
-        "--statement-type",
-        statement_type,
-        "--out",
-        str(data_dir),
-        "--no-clean",
-    ]
-    if pdf:
-        args.append("--pdf")
-    if tushare_token:
-        args += ["--tushare-token", tushare_token]
+    # 逐期补齐：避免 fetcher 对整个区间重复抓取/重复写文件。
+    for pe in missing:
+        args = [
+            sys.executable,
+            "-m",
+            "finreport_fetcher",
+            "fetch",
+            *code_or_name_args,
+            "--start",
+            pe.strftime("%Y-%m-%d"),
+            "--end",
+            pe.strftime("%Y-%m-%d"),
+            "--provider",
+            provider,
+            "--statement-type",
+            statement_type,
+            "--out",
+            str(data_dir),
+            "--no-clean",
+        ]
+        if pdf:
+            args.append("--pdf")
+        if tushare_token:
+            args += ["--tushare-token", tushare_token]
 
-    subprocess.check_call(args)
+        # 不用 check_call：单期失败时继续其他期，并把缺失留给 still_missing。
+        subprocess.run(args, check=False)
 
     still_missing = [
         pe
@@ -205,7 +211,12 @@ def get_item_value(xlsx_path: Path, sheet_name: str, item: str) -> float | None:
     - 模板 key（如 is.revenue / bs.cash），当 xlsx 含 key 列时生效
 
     兼容：xlsx 的“科目”列可能为 '中文 (English)'。
+
+    重要：当 xlsx 不存在时返回 None（上层可选择跳过该报告期）。
     """
+
+    if not xlsx_path.exists():
+        return None
 
     df = read_statement_df(xlsx_path, sheet_name)
 
@@ -234,7 +245,12 @@ def get_section_items(
     """按 section（标题科目）取其后连续的子项，直到下一个标题行。
 
     标题行的识别规则：数值为空且科目非空。
+
+    当 xlsx 不存在时返回空列表。
     """
+
+    if not xlsx_path.exists():
+        return []
 
     df = read_statement_df(xlsx_path, sheet_name)
     subj = df["科目"].astype(str)

@@ -168,6 +168,10 @@ expr = "is.revenue - is.revenue.prev_in_year"
 ### 3.1 基础命令
 
 > 若已通过 `pip install -e .` 安装为命令，可把 `python3 -m finreport_charts` 换成 `finchart`。
+>
+> 缺失财报处理（默认行为）：
+> - 如果 `--end` 对应的最新报告期尚未披露/数据源缺失，会**自动跳过缺失期**，并把输出截至到最近可用报告期。
+> - 如需“只要缺失就报错退出”，请加 `--strict`。
 
 ```bash
 # 运行模板目录下全部模板

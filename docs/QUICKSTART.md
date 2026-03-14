@@ -88,7 +88,9 @@ finchart run --code 600519 \
   --template "*"
 ```
 
-> 若 `output/` 里缺少某些报告期，`finreport_charts` 会自动调用 `finreport_fetcher` 增量补齐（不会清空历史数据）。
+> 若 `output/` 里缺少某些报告期，`finreport_charts` 会自动调用 `finreport_fetcher` **仅补齐缺失期**（不会清空历史数据）。
+>
+> 如果 `--end` 对应的最新一期尚未披露/不存在，会自动跳过缺失期并把输出截至到最近可用期；需要严格模式可加 `--strict`。
 
 图表输出位置：
 
