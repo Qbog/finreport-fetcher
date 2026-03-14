@@ -97,11 +97,17 @@ SUBJECT_SPECS: list[SubjectSpec] = [
     SubjectSpec("is.eps_diluted", "稀释每股收益", "Diluted EPS"),
 
     # -------------------- Balance Sheet (BS) --------------------
+    SubjectSpec("bs.section.core_metrics", "报表核心指标", "Core metrics"),
     SubjectSpec("bs.section.current_assets", "流动资产", "Current assets"),
     SubjectSpec("bs.section.non_current_assets", "非流动资产", "Non-current assets"),
     SubjectSpec("bs.section.current_liabilities", "流动负债", "Current liabilities"),
     SubjectSpec("bs.section.non_current_liabilities", "非流动负债", "Non-current liabilities"),
-    SubjectSpec("bs.section.equity", "所有者权益", "Owners' equity", aliases=("股东权益",)),
+    SubjectSpec(
+        "bs.section.equity",
+        "股东权益",
+        "Shareholders' equity",
+        aliases=("所有者权益", "所有者权益（或股东权益）"),
+    ),
 
     SubjectSpec("bs.cash", "货币资金", "Cash and cash equivalents"),
     SubjectSpec("bs.total_cash", "总现金", "Total cash"),

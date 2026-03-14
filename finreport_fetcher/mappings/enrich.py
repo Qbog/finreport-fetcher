@@ -167,6 +167,93 @@ def _is_redundant_duplicate_value(v, first) -> bool:
     return abs(fv - f1) < 1e-9
 
 
+def _patch_balance_sheet_structure(df: pd.DataFrame) -> pd.DataFrame:
+    """Patch balance sheet hierarchy to make it consistent across providers.
+
+    Goals:
+    - Add a header row "报表核心指标" for the first 4 core metrics.
+    - Add a header row "股东权益" before equity detail items (some sources omit it).
+
+    This operates on provider-native columns: 科目/数值 and optional __level/__is_header.
+    """
+
+    out = df.copy()
+
+    if "__level" not in out.columns:
+        out["__level"] = 0
+    if "__is_header" not in out.columns:
+        out["__is_header"] = False
+
+    # ---- core metrics header (first 4 lines) ----
+    subj0 = out["科目"].astype(str).tolist()
+    norm0 = [_normalize_subject(s) for s in subj0]
+
+    core_set = {
+        "资产合计",
+        "资产总计",
+        "负债合计",
+        "所有者权益合计",
+        "所有者权益总计",
+        "归属于母公司所有者权益合计",
+        "归属于母公司所有者权益总计",
+    }
+
+    if len(norm0) >= 4 and all((n in core_set) for n in norm0[:4]):
+        if norm0[0] != "报表核心指标":
+            header = {c: None for c in out.columns}
+            header.update({"科目": "报表核心指标", "数值": None, "__level": 0, "__is_header": True})
+            out = pd.concat([pd.DataFrame([header]), out], ignore_index=True)
+            # indent the 4 core lines under the header
+            for r in range(1, 5):
+                out.at[r, "__level"] = 1
+                out.at[r, "__is_header"] = False
+
+    # ---- equity header ----
+    subj = out["科目"].astype(str).tolist()
+    norm = [_normalize_subject(s) for s in subj]
+
+    has_equity_header = False
+    for i, n in enumerate(norm):
+        if n in {"所有者权益", "股东权益"} and bool(out.iloc[i].get("__is_header")):
+            has_equity_header = True
+            break
+
+    if not has_equity_header:
+        equity_markers = {
+            "实收资本（或股本）",
+            "实收资本(或股本)",
+            "实收资本",
+            "股本",
+            "资本公积",
+            "盈余公积",
+            "未分配利润",
+        }
+        eq_idx = None
+        for i, n in enumerate(norm):
+            if n in equity_markers:
+                eq_idx = i
+                break
+
+        if eq_idx is not None:
+            header = {c: None for c in out.columns}
+            header.update({"科目": "股东权益", "数值": None, "__level": 0, "__is_header": True})
+            top = out.iloc[:eq_idx].copy()
+            bot = out.iloc[eq_idx:].copy()
+            out = pd.concat([top, pd.DataFrame([header]), bot], ignore_index=True)
+
+            # ensure equity detail items are indented
+            # (some sources already give __level=1; keep the max)
+            for r in range(eq_idx + 1, len(out)):
+                try:
+                    lvl = int(out.at[r, "__level"])
+                except Exception:
+                    lvl = 0
+                if lvl < 1 and not bool(out.at[r, "__is_header"]):
+                    out.at[r, "__level"] = 1
+
+    return out
+
+
 def enrich_statement_df(df: pd.DataFrame, *, sheet_name_cn: str) -> pd.DataFrame:
     """Add stable template key + English remark for a statement df.
 
@@ -191,6 +278,11 @@ def enrich_statement_df(df: pd.DataFrame, *, sheet_name_cn: str) -> pd.DataFrame
 
     if "科目" not in out.columns:
         return out
+
+    # 结构修补：不同数据源的资产负债表经常缺少“报表核心指标/股东权益”等分组标题。
+    # 在 enrich 层统一补齐，确保跨 provider 输出结构一致。
+    if sheet_name_cn == "资产负债表":
+        out = _patch_balance_sheet_structure(out)
 
     cn_series_raw = out["科目"].astype(str)
 

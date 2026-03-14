@@ -6,13 +6,15 @@
 
 ## 1. 财报 Excel 格式（Fetcher 输出）
 
-运行 `finreport_fetcher fetch` 后，生成的 Excel 包含以下列：
+运行 `finreport_fetcher fetch` 后，生成的 Excel **列顺序已固定**（不同数据源/不同平台导出保持一致）：
 
 | 列名 | 说明 | 示例 |
 |------|------|------|
-| `key` | 模板使用的标准键（每行都有） | `is.revenue` / `bs.cash` |
-| `科目` | 显示用科目名（中文 + 可选英文括号；无翻译不加括号） | `营业收入 (Operating revenue)` |
+| `科目` | 规范中文科目名（来自 `subject_glossary`；必要时保留“其中/加/减”前缀） | `应收账款` / `其中：固定资产` |
 | `数值` | 财务数值 | `174144069958.25` |
+| ` ` | 空白分隔列（便于肉眼阅读；不参与计算） | *(空)* |
+| `key` | **稳定的模板 key（ASCII-only）**，强烈建议模板里使用 | `is.revenue_total` / `bs.cash` |
+| `备注` | 科目英文名称（用于校对/补全映射） | `Operating revenue` |
 
 ### Key 命名规则
 
@@ -39,6 +41,11 @@ cf.net_cash_from_ops # 经营活动现金流量净额
 ## 2. 模板文件（推荐：templates/*.toml）
 
 我们推荐 **一个模板一个 TOML 文件**，统一放在仓库根目录 `templates/` 下，并用 `finreport_charts run` 执行。
+
+本仓库自带示例模板：
+- `net_profit_q.toml`：归母净利润趋势（bar trend）
+- `revenue_total_trend.toml`：营业总收入趋势（bar trend）
+- `bs_key_items_compare.toml`：资产负债表关键科目对比（bar compare）
 
 图表渲染的默认风格约定：
 - **暗色主题**（深色背景 + 亮色文字），便于在深色界面/投影里阅读。

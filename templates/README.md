@@ -24,7 +24,13 @@
 - `is.xxx.prev`：上一季度（可链式：`.prev.prev`）
 - `is.xxx.prev_in_year`：同年上一季度（Q1 视为 0.0）
 
-## 3) 最小示例（bar trend：单季 = 当期累计 - 同年上期累计）
+## 3) 内置示例模板（本目录已有）
+
+- `net_profit_q.toml`：归母净利润趋势（bar trend）
+- `revenue_total_trend.toml`：营业总收入趋势（bar trend）
+- `bs_key_items_compare.toml`：资产负债表关键科目对比（bar compare）
+
+## 4) 最小示例（bar trend：单季 = 当期累计 - 同年上期累计）
 
 ```toml
 name = "net_profit_q"
@@ -44,7 +50,7 @@ name = "归母净利润"
 expr = "is.net_profit_parent - is.net_profit_parent.prev_in_year"
 ```
 
-## 4) 运行方式
+## 5) 运行方式
 
 > 若已通过 `pip install -e .` 安装为命令，可把 `python3 -m finreport_charts` 换成 `finchart`。
 
@@ -69,7 +75,7 @@ python3 -m finreport_charts run --code 600519 --start 2024-01-01 --end 2024-12-3
   --data-dir output --templates templates --template net_profit_q
 ```
 
-## 5) 输出位置
+## 6) 输出位置
 
 默认输出到：`{data_dir}/{公司名}_{code6}/charts/`。
 

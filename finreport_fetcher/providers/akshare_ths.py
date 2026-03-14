@@ -187,6 +187,71 @@ class AkshareThsProvider:
         out = pd.DataFrame(items, columns=["科目", "数值", "__level", "__is_header"])
         return out, meta
 
+    @staticmethod
+    def _postprocess_balance_sheet(df: pd.DataFrame) -> pd.DataFrame:
+        """Normalize THS balance sheet structure.
+
+        目标（用户约束）：
+        - 将表头前的若干“汇总行”归类到【报表核心指标】下。
+        - 在负债段结束后插入【股东权益】标题行。
+
+        说明：不依赖具体公司科目名称细节，仅做结构性整理。
+        """
+
+        if df is None or df.empty:
+            return df
+        if "科目" not in df.columns:
+            return df
+
+        out = df.copy().reset_index(drop=True)
+
+        def _hdr_row(name: str) -> pd.DataFrame:
+            return pd.DataFrame(
+                [{"科目": name, "数值": None, "__level": 0, "__is_header": True}],
+                columns=["科目", "数值", "__level", "__is_header"],
+            )
+
+        # 1) Core metrics: leading non-header rows before the first header.
+        try:
+            first_hdr_idx = int(out.index[out["__is_header"] == True][0])  # noqa: E712
+        except Exception:
+            first_hdr_idx = None
+
+        if first_hdr_idx is not None and first_hdr_idx > 0:
+            leading = out.iloc[:first_hdr_idx].copy()
+            rest = out.iloc[first_hdr_idx:].copy()
+            # indent these summary lines
+            leading["__level"] = leading["__level"].astype(int).map(lambda x: max(0, x) + 1)
+            out = pd.concat([
+                _hdr_row("报表核心指标"),
+                leading,
+                rest,
+            ], ignore_index=True)
+
+        # 2) Equity header: insert after the (later) total liabilities line.
+        names = out["科目"].astype(str)
+        # prefer the last exact match of "负债合计" (there is usually a summary one at the top too)
+        liab_idx = None
+        try:
+            liab_idx = int(out.index[(names == "负债合计") & (out["__is_header"] == False)][-1])  # noqa: E712
+        except Exception:
+            liab_idx = None
+
+        if liab_idx is not None and liab_idx + 1 < len(out):
+            # If next row is already an equity header, skip
+            next_name = str(out.iloc[liab_idx + 1]["科目"]).strip()
+            has_equity_hdr = (names == "股东权益").any() or (names == "所有者权益").any()
+            if (not has_equity_hdr) and next_name not in {"股东权益", "所有者权益"}:
+                top = out.iloc[: liab_idx + 1].copy()
+                bottom = out.iloc[liab_idx + 1 :].copy()
+                out = pd.concat([
+                    top,
+                    _hdr_row("股东权益"),
+                    bottom,
+                ], ignore_index=True)
+
+        return out
+
     def get_bundle(self, ts_code: str, period_end: date, statement_type: str) -> StatementBundle:
         import akshare as ak
 
@@ -198,6 +263,8 @@ class AkshareThsProvider:
         cf_raw = ak.stock_financial_cash_ths(symbol=code6, indicator="按报告期")
 
         bs, meta_bs = self._row_to_items(bs_raw, period_end=period_end, sheet_cn="资产负债表")
+        bs = self._postprocess_balance_sheet(bs)
+
         inc, meta_inc = self._row_to_items(is_raw, period_end=period_end, sheet_cn="利润表")
         cf, meta_cf = self._row_to_items(cf_raw, period_end=period_end, sheet_cn="现金流量表")
 

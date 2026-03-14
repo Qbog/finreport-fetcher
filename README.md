@@ -15,6 +15,7 @@
 文档：
 - 快速开始：[`docs/QUICKSTART.md`](docs/QUICKSTART.md)
 - 模板说明：[`docs/TEMPLATE_GUIDE.md`](docs/TEMPLATE_GUIDE.md)
+- 回归测试：[`docs/TESTING.md`](docs/TESTING.md)
 
 ---
 
@@ -63,8 +64,9 @@ pip install tushare
 - Excel 美化：标题行、冻结窗格、表头样式、交替底色、负数红色、千分位格式、自适应列宽
   - 不输出"报告期末日"列（改为每个 sheet 顶部标题展示）
   - 不输出 PDF 链接/本地路径列（改为标题下方注释行展示）
-  - **新增**：每行包含 `key` 列（模板标准键，如 `is.revenue`；即使未命中词典也会生成 key）
-  - **新增**：`科目` 列按“中文 + 可选英文括号”展示：有翻译才显示 ` (EN)`，无翻译不加括号
+  - **新增**：每行包含稳定的模板键 `key`（ASCII-only，如 `is.revenue_total` / `bs.cash`；即使未命中词典也会生成可读英文 key）
+  - **新增**：每行包含 `备注`（英文名称），用于你后续校对/补全词典映射；并且 **备注永远是最后一列**
+  - **固定列顺序**（跨数据源保持一致）：`科目 | 数值 | (空白列) | key | 备注`
   - **约束**：不再导出 `科目_CN` / `科目_EN` 两列（避免重复）
 - PDF：`--pdf` 下载，保存为 `output/{公司名}_{code6}/pdf/{code6}_{report_period}.pdf`
 

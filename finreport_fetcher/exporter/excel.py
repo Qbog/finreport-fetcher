@@ -11,11 +11,15 @@ class ExcelExportResult:
     path: str
 
 
-def _autofit_worksheet(ws):
+def _autofit_worksheet(ws, *, min_row: int = 1):
     """简单自适应列宽：按单元格字符串长度估算。
 
-    注意：存在合并单元格时，ws.columns 可能返回 MergedCell（没有 column_letter）。
-    这里改为按列索引遍历，跳过 MergedCell。
+    注意：
+    - 存在合并单元格时，ws.columns 可能返回 MergedCell（没有 column_letter）。
+      这里改为按列索引遍历，跳过 MergedCell。
+    - 对我们生成的财报 sheet：第 1 行标题、第 2 行注释通常很长，
+      会把第一列（科目列）错误撑得非常宽。
+      因此支持 min_row，用于忽略标题/注释行。
     """
 
     from openpyxl.cell.cell import MergedCell
@@ -23,18 +27,24 @@ def _autofit_worksheet(ws):
 
     import unicodedata
 
-    def _display_len(s: str) -> int:
-        total = 0
+    def _display_len(s: str) -> float:
+        """Rough width estimate.
+
+        备注：Excel 列宽并不是严格等宽字符。
+        之前对中文按 2 倍计会明显偏宽，因此这里使用更保守的系数。
+        """
+
+        total = 0.0
         for ch in s:
             if unicodedata.east_asian_width(ch) in {"W", "F"}:
-                total += 2
+                total += 1.2
             else:
-                total += 1
+                total += 1.0
         return total
 
     for col_idx in range(1, ws.max_column + 1):
-        max_len = 0
-        for row_idx in range(1, ws.max_row + 1):
+        max_len = 0.0
+        for row_idx in range(max(1, int(min_row)), ws.max_row + 1):
             cell = ws.cell(row_idx, col_idx)
             if isinstance(cell, MergedCell):
                 continue
@@ -46,7 +56,7 @@ def _autofit_worksheet(ws):
 
         col_letter = get_column_letter(col_idx)
         # True-ish autofit: small minimum, larger maximum
-        ws.column_dimensions[col_letter].width = min(max(4, max_len + 2), 80)
+        ws.column_dimensions[col_letter].width = float(min(max(4.0, max_len + 1.5), 60.0))
 
 
 def export_bundle_to_excel(
@@ -255,12 +265,13 @@ def export_bundle_to_excel(
         # 列宽：自适应 + 关键列最小宽度兜底
         from openpyxl.utils import get_column_letter
 
-        _autofit_worksheet(ws)
+        _autofit_worksheet(ws, min_row=3)
 
         v_letter = get_column_letter(value_col)
         s_letter = get_column_letter(subj_col)
-        ws.column_dimensions[v_letter].width = max(ws.column_dimensions[v_letter].width or 0, 18)
-        ws.column_dimensions[s_letter].width = max(ws.column_dimensions[s_letter].width or 0, 28)
+        ws.column_dimensions[v_letter].width = max(float(ws.column_dimensions[v_letter].width or 0), 16.0)
+        # 科目列不宜过宽（Excel 手动“自适应列宽”会更窄），这里给一个更温和的兜底。
+        ws.column_dimensions[s_letter].width = max(float(ws.column_dimensions[s_letter].width or 0), 16.0)
 
 
         # spacer 列宽（如果存在）
@@ -278,7 +289,7 @@ def export_bundle_to_excel(
     for k, v in meta.items():
         ws_meta.append([str(k), str(v)])
     ws_meta.freeze_panes = "A2"
-    _autofit_worksheet(ws_meta)
+    _autofit_worksheet(ws_meta, min_row=1)
 
     wb.save(out_path)
 

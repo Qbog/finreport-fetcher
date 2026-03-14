@@ -1,0 +1,18 @@
+# 单模板单文件示例：趋势分析（利润表 - 营业总收入）
+
+name = "revenue_total_trend"
+alias = "营业总收入"
+
+type = "bar"
+mode = "trend"
+
+title = "营业总收入（报告期）趋势"
+
+x_label = "报告期"
+y_label = "金额"
+
+statement = "利润表"
+
+[[bars]]
+name = "营业总收入"
+expr = "is.revenue_total"

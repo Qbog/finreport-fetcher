@@ -1,0 +1,43 @@
+# 单模板单文件示例：比较分析（资产负债表 - 关键科目）
+# compare 模式只取“一个期末”（默认取 --end 对应的最近可用季度；也可用 --as-of 指定）。
+
+name = "bs_key_items_compare"
+alias = "资产负债表关键科目对比"
+
+type = "bar"
+mode = "compare"
+
+title = "资产负债表关键科目对比"
+
+x_label = "科目"
+y_label = "金额"
+
+statement = "资产负债表"
+
+[[bars]]
+name = "货币资金"
+expr = "bs.cash"
+
+[[bars]]
+name = "应收账款"
+expr = "bs.accounts_receivable"
+
+[[bars]]
+name = "预付款项"
+expr = "bs.prepayments"
+
+[[bars]]
+name = "固定资产"
+expr = "bs.fixed_assets"
+
+[[bars]]
+name = "应付账款"
+expr = "bs.accounts_payable"
+
+[[bars]]
+name = "应付职工薪酬"
+expr = "bs.payroll_payable"
+
+[[bars]]
+name = "归属于母公司所有者权益合计"
+expr = "bs.total_equity_parent"
