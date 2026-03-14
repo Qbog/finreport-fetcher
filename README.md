@@ -93,24 +93,21 @@ python3 -m finreport_charts run \
 
 ### 输出目录结构
 
-默认输出到 `./output/finreports/`，并按公司归档到 `{公司名}_{code6}` 目录：
+默认输出到 `./output`，并按公司归档到 `{公司名}_{code6}` 目录：
 
 ```
 output/
-  finreports/
-    {公司名}_600519/
-      600519_merged_20241231.xlsx
-      600519_merged_20240930.xlsx
-      pdf/
-        600519_20241231.pdf
-        600519_20240930.pdf
   {公司名}_600519/
+    600519_merged_20241231.xlsx
+    600519_merged_20240930.xlsx
+    pdf/
+      600519_20241231.pdf
+      600519_20240930.pdf
     charts/
       *.png
       *.xlsx
 ```
 
-> 注意：fetcher 的财报数据现在单独放在 `finreports/` 子目录下，与图表输出分离。
 
 > 目录名中的 `{公司名}` 会尽量按 A 股正式简称解析；解析失败则退化为 code6。
 
@@ -135,12 +132,10 @@ output/
 
 ### 约定：数据目录（--data-dir）
 
-`--data-dir` 需要指向 **finreport_fetcher** 的输出根目录。程序会自动查找 `finreports/` 或 `reports/` 子目录作为数据根目录：
+`--data-dir` 需要指向 **finreport_fetcher** 的输出根目录：
 
-- Excel：`output/finreports/{公司名}_{code6}/{code6}_{statement}_{period}.xlsx`
-- PDF：`output/finreports/{公司名}_{code6}/pdf/{code6}_{period}.pdf`（PDF 与 Excel 不同层级；PDF 统一放入 `pdf/` 子目录）
-
-如果 `finreports/` 或 `reports/` 子目录不存在，程序会回退到直接使用 `--data-dir` 指定的目录（兼容旧版布局）。
+- Excel：`output/{公司名}_{code6}/{code6}_{statement}_{period}.xlsx`
+- PDF：`output/{公司名}_{code6}/pdf/{code6}_{period}.pdf`（PDF 与 Excel 不同层级；PDF 统一放入 `pdf/` 子目录）
 
 股价 CSV（未来由你的股价 fetcher 产生）默认约定位置：
 

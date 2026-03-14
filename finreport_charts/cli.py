@@ -686,17 +686,7 @@ def run(
         data_dir = Path("output") if Path("output").exists() else Path(".")
     data_dir = data_dir.resolve()
 
-    # Resolve data root: prefer finreports/ or reports/ subdir if exists
-    _DATA_ROOT_NAMES = ("finreports", "reports")
-    data_root = data_dir
-    if data_dir.name not in _DATA_ROOT_NAMES:
-        for sub in _DATA_ROOT_NAMES:
-            cand = data_dir / sub
-            if cand.exists() and cand.is_dir():
-                data_root = cand
-                break
-
-    company_dir = data_root / safe_dir_component(f"{(rs.name or rs.code6)}_{rs.code6}")
+    company_dir = data_dir / safe_dir_component(f"{(rs.name or rs.code6)}_{rs.code6}")
     if out_dir is None:
         out_dir = company_dir / "charts"
     out_dir = out_dir.resolve()
@@ -706,7 +696,7 @@ def run(
         rs=rs,
         start=s,
         end=e,
-        data_dir=data_root,
+        data_dir=data_dir,
         out_dir=out_dir,
         provider=provider,
         statement_type=statement_type,

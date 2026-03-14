@@ -346,22 +346,18 @@ top_n = 10
 
 ### 数据目录结构
 
-finreport_fetcher 输出的财报数据现在存放在 `finreports/` 子目录下：
+finreport_fetcher 输出的财报数据与图表结果都放在同一个公司目录下：
 
 ```
 output/
-  finreports/           # fetcher 数据根目录
-    {公司名}_{code6}/
-      {code6}_{statement}_{period}.xlsx
-      pdf/
-        {code6}_{period}.pdf
   {公司名}_{code6}/
+    {code6}_{statement}_{period}.xlsx
+    pdf/
+      {code6}_{period}.pdf
     charts/             # charts 输出目录
       *.png
       *.xlsx
 ```
-
-程序会自动识别 `finreports/` 或 `reports/` 子目录（优先使用已存在的），兼容旧版布局。
 
 ---
 

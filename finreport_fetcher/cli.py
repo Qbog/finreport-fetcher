@@ -84,22 +84,6 @@ def _resolve_symbol(code: str | None, name: str | None) -> ResolvedSymbol:
     raise typer.BadParameter("必须提供 --code 或 --name")
 
 
-_DATA_ROOT_NAMES = ("finreports", "reports")
-
-
-def _resolve_data_root(out_root: Path) -> Path:
-    """Resolve the actual data root for finreport exports."""
-
-    if out_root.name in _DATA_ROOT_NAMES:
-        return out_root
-
-    for sub in _DATA_ROOT_NAMES:
-        cand = out_root / sub
-        if cand.exists() and cand.is_dir():
-            return cand
-
-    return out_root / "finreports"
-
 
 def _fetch_one_period(
     ts_code: str,
@@ -199,7 +183,7 @@ def fetch(
     provider: str = typer.Option("auto", "--provider", help="auto/tushare/akshare"),
     statement_type: str = typer.Option("merged", "--statement-type", help="merged(合并)/parent(母公司)"),
     pdf: bool = typer.Option(False, "--pdf", help="下载对应报告期 PDF 原文，并写入 Excel"),
-    out_dir: Path = typer.Option(Path("output"), "--out", help="输出根目录（会写入 finreports/ 子目录）"),
+    out_dir: Path = typer.Option(Path("output"), "--out", help="输出目录"),
     no_clean: bool = typer.Option(False, "--no-clean", help="不清空输出目录，改为增量写入（供图表程序补数据使用）"),
     tushare_token: str | None = typer.Option(None, "--tushare-token", help="Tushare token（可选，未提供则尝试环境变量）"),
 ):
@@ -225,12 +209,11 @@ def fetch(
 
     # 每次提取前删除之前的数据：仅删除本次公司(code6)相关文件，不影响其他公司
     out_root = out_dir.resolve()
-    data_root = _resolve_data_root(out_root)
-    data_root.mkdir(parents=True, exist_ok=True)
+    out_root.mkdir(parents=True, exist_ok=True)
 
     company_name = rs.name or rs.code6
     company_dirname = safe_dir_component(f"{company_name}_{rs.code6}")
-    out_dir = data_root / company_dirname
+    out_dir = out_root / company_dirname
     out_dir.mkdir(parents=True, exist_ok=True)
 
     if not no_clean:
