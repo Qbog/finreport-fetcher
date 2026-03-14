@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import warnings
 from datetime import date
+from enum import IntEnum
 from pathlib import Path
 
 # 避免 pandas 在某些环境下对 numexpr/bottleneck 版本给出噪声警告
@@ -22,12 +23,72 @@ app = typer.Typer(add_completion=False)
 console = Console()
 
 
+class LogLevel(IntEnum):
+    """Log verbosity control.
+
+    Lower value => more verbose.
+    """
+
+    DEBUG = 10
+    INFO = 20
+    WARNING = 30
+    ERROR = 40
+
+
+_LOG_LEVEL: LogLevel = LogLevel.INFO
+
+
+def _parse_log_level(s: str) -> LogLevel:
+    ss = (s or "").strip().lower()
+    if ss in {"debug", "d"}:
+        return LogLevel.DEBUG
+    if ss in {"info", "i"}:
+        return LogLevel.INFO
+    if ss in {"warn", "warning", "w"}:
+        return LogLevel.WARNING
+    if ss in {"error", "err", "e"}:
+        return LogLevel.ERROR
+    raise typer.BadParameter("--log-level 仅支持: debug/info/warning/error")
+
+
+def log_print(level: LogLevel, msg: str, *, always: bool = False):
+    if always or level >= _LOG_LEVEL:
+        console.print(msg)
+
+
+def log_debug(msg: str):
+    log_print(LogLevel.DEBUG, f"[dim]{msg}[/dim]")
+
+
+def log_info(msg: str):
+    log_print(LogLevel.INFO, msg)
+
+
+def log_warn(msg: str):
+    log_print(LogLevel.WARNING, f"[yellow]{msg}[/yellow]")
+
+
+def log_error(msg: str):
+    log_print(LogLevel.ERROR, f"[red]{msg}[/red]")
+
+
 @app.callback()
-def _root():
+def _root(
+    log_level: str = typer.Option(
+        "info",
+        "--log-level",
+        "-l",
+        help="输出级别：debug/info/warning/error（默认 info）",
+        show_default=True,
+    ),
+):
     """A股财报抓取工具。
 
     使用 `fetch` 子命令按股票代码/名称抓取三大报表并导出 Excel。
     """
+
+    global _LOG_LEVEL
+    _LOG_LEVEL = _parse_log_level(log_level)
 
 
 @app.command()
@@ -259,7 +320,7 @@ def fetch(
                     out_dir=out_dir,
                 )
                 exported.append(p)
-                console.print(f"已导出: {p}")
+                log_info(f"已导出: {p}")
                 break
             except Exception as e:
                 last_err = e
@@ -286,24 +347,24 @@ def fetch(
                     out_dir=out_dir,
                 )
                 exported.append(p)
-                console.print(f"已导出: {p}")
+                log_info(f"已导出: {p}")
             except Exception as e:
                 failed.append((pe, str(e)))
-                console.print(f"[yellow]跳过 {pe.strftime('%Y-%m-%d')}：{e}[/yellow]")
+                log_warn(f"跳过 {pe.strftime('%Y-%m-%d')}：{e}")
                 continue
 
         if not exported:
             raise RuntimeError(f"范围内所有报告期均失败，共 {len(failed)} 期。示例错误: {failed[0] if failed else 'N/A'}")
 
         if failed:
-            console.print(f"[yellow]提示：范围内有 {len(failed)} 期未能抓取（已跳过）。[/yellow]")
+            log_warn(f"提示：范围内有 {len(failed)} 期未能抓取（已跳过）。")
             for pe, msg in failed[:10]:
-                console.print(f"  - {pe.strftime('%Y-%m-%d')}: {msg}")
+                log_warn(f"  - {pe.strftime('%Y-%m-%d')}: {msg}")
             if len(failed) > 10:
-                console.print(f"  ... 仅展示前 10 条")
+                log_warn("  ... 仅展示前 10 条")
 
-    console.print(f"完成，共导出 {len(exported)} 个文件。输出目录: {out_dir}")
-    console.print(f"提示：公司根目录为 {out_dir.parent}")
+    log_info(f"完成，共导出 {len(exported)} 个文件。输出目录: {out_dir}")
+    log_info(f"提示：公司根目录为 {out_dir.parent}")
 
 
 def main():

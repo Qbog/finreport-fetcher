@@ -4,6 +4,7 @@ import re
 import warnings
 from dataclasses import dataclass
 from datetime import date
+from enum import IntEnum
 from pathlib import Path
 
 # 避免 pandas 在某些环境下对 numexpr/bottleneck 版本给出噪声警告
@@ -44,6 +45,55 @@ from .utils.files import safe_slug
 
 app = typer.Typer(add_completion=False)
 console = Console()
+
+
+class LogLevel(IntEnum):
+    """Log verbosity control.
+
+    Lower value => more verbose.
+    """
+
+    DEBUG = 10
+    INFO = 20
+    WARNING = 30
+    ERROR = 40
+
+
+_LOG_LEVEL: LogLevel = LogLevel.INFO
+
+
+def _parse_log_level(s: str) -> LogLevel:
+    ss = (s or "").strip().lower()
+    if ss in {"debug", "d"}:
+        return LogLevel.DEBUG
+    if ss in {"info", "i"}:
+        return LogLevel.INFO
+    if ss in {"warn", "warning", "w"}:
+        return LogLevel.WARNING
+    if ss in {"error", "err", "e"}:
+        return LogLevel.ERROR
+    raise typer.BadParameter("--log-level 仅支持: debug/info/warning/error")
+
+
+def log_print(level: LogLevel, msg: str, *, always: bool = False):
+    if always or level >= _LOG_LEVEL:
+        console.print(msg)
+
+
+def log_debug(msg: str):
+    log_print(LogLevel.DEBUG, f"[dim]{msg}[/dim]")
+
+
+def log_info(msg: str):
+    log_print(LogLevel.INFO, msg)
+
+
+def log_warn(msg: str):
+    log_print(LogLevel.WARNING, f"[yellow]{msg}[/yellow]")
+
+
+def log_error(msg: str):
+    log_print(LogLevel.ERROR, f"[red]{msg}[/red]")
 
 
 @dataclass(frozen=True)
@@ -168,7 +218,7 @@ def _maybe_fetch_missing(c: CommonOpts, fetch_start: date | None = None) -> list
         return []
 
     fs = fetch_start or c.start
-    console.print(f"发现缺失财报 {len(missing)} 期，调用 finreport_fetcher 补齐到: {c.data_dir}")
+    log_info(f"发现缺失财报 {len(missing)} 期，调用 finreport_fetcher 补齐到: {c.data_dir}")
     still = ensure_finreports(
         code_or_name_args=["--code", c.rs.code6],
         code6=c.rs.code6,
@@ -182,14 +232,25 @@ def _maybe_fetch_missing(c: CommonOpts, fetch_start: date | None = None) -> list
         tushare_token=c.tushare_token,
     )
     if still:
-        console.print(f"[yellow]提示：补齐后仍缺失 {len(still)} 期财报，将跳过缺失期继续绘图：{still}[/yellow]")
+        log_warn(f"提示：补齐后仍缺失 {len(still)} 期财报，将跳过缺失期继续绘图：{still}")
 
     return still
 
 
 @app.callback()
-def _root():
+def _root(
+    log_level: str = typer.Option(
+        "info",
+        "--log-level",
+        "-l",
+        help="输出级别：debug/info/warning/error（默认 info）",
+        show_default=True,
+    ),
+):
     """基于 finreport_fetcher 输出，生成漂亮的财务图表（PNG + Excel(含原始数据+Excel图表)）。"""
+
+    global _LOG_LEVEL
+    _LOG_LEVEL = _parse_log_level(log_level)
 
 
 @app.command("bar")
@@ -804,9 +865,9 @@ def run(
         raise RuntimeError("未加载到任何模板")
 
     if list_only:
-        console.print("将运行以下模板：")
+        log_info("将运行以下模板：")
         for k in selected.keys():
-            console.print(f"  - {k}")
+            log_info(f"  - {k}")
         return
 
     # helpers
@@ -986,7 +1047,7 @@ def run(
                     vals[ident] = float(v)
                 return float(eval_expr(expr_s, vals))
             except ExprError as ex:
-                console.print(f"[yellow]表达式计算失败: {expr_s} ({ex})[/yellow]")
+                log_warn(f"表达式计算失败: {expr_s} ({ex})")
                 return None
 
         # single identifier / item
@@ -1014,7 +1075,7 @@ def run(
         if not x_label or not y_label:
             raise RuntimeError(f"模板缺少 x_label/y_label: {k}")
 
-        console.print(f"\n[bold]运行模板[/bold]: {k} → {fname_base}")
+        log_info(f"\n[bold]运行模板[/bold]: {k} → {fname_base}")
 
         # ---- bar / line ----
         if t_type in {"bar", "line"}:
@@ -1039,11 +1100,11 @@ def run(
                 # transform 配置已弃用：现在按表达式直接取值（不做 ttm/ytd/q 口径转换）。
                 # 若模板里仍写了 transform，仅提示并忽略。
                 if getattr(tpl, 'transform', None):
-                    console.print('[yellow]提示：模板字段 transform 已弃用，将被忽略（按 expr 原值取数）[/yellow]')
+                    log_debug("提示：模板字段 transform 已弃用，将被忽略（按 expr 原值取数）")
                 for b in bars or []:
                     if getattr(b, 'transform', None):
                         b_n = str(getattr(b, 'name', None) or getattr(b, 'expr', '')).strip() or 'value'
-                        console.print(f'[yellow]提示：bars.transform 已弃用，将被忽略：{b_n}[/yellow]')
+                        log_debug(f"提示：bars.transform 已弃用，将被忽略：{b_n}")
 
                 still = _maybe_fetch_missing(c)
                 if strict and still:
@@ -1076,7 +1137,7 @@ def run(
                     used_periods.append(pe)
 
                 if not rows:
-                    console.print(f"[yellow]提示：{k} 在该区间内没有可用数据（可能都缺失/未披露）。[/yellow]")
+                    log_warn(f"提示：{k} 在该区间内没有可用数据（可能都缺失/未披露）。")
                     continue
 
                 df_out = pd.DataFrame(rows)
@@ -1085,7 +1146,7 @@ def run(
                 actual_s = used_periods[0]
                 actual_e = used_periods[-1]
                 if actual_e < c.end:
-                    console.print(f"[yellow]提示：end={c.end} 对应最新报告期数据不可用，实际截至 {actual_e}。[/yellow]")
+                    log_warn(f"提示：end={c.end} 对应最新报告期数据不可用，实际截至 {actual_e}。")
 
                 out_png = c.out_dir / f"{fname_base}_{c.rs.code6}_{actual_s.strftime('%Y%m%d')}_{actual_e.strftime('%Y%m%d')}.png"
                 out_xlsx = c.out_dir / f"{fname_base}_{c.rs.code6}_{actual_s.strftime('%Y%m%d')}_{actual_e.strftime('%Y%m%d')}.xlsx"
@@ -1102,8 +1163,8 @@ def run(
                 render_png(df_out, title=title, x_col="period_end", series=series_cols2, out_png=out_png, x_label=x_label, y_label=y_label)
                 write_xlsx(df_out, title=title, x_col="period_end", series=series_cols2, out_xlsx=out_xlsx, x_label=x_label, y_label=y_label)
 
-                console.print(f"已生成: {out_png}")
-                console.print(f"已生成: {out_xlsx}")
+                log_info(f"已生成: {out_png}")
+                log_info(f"已生成: {out_xlsx}")
                 continue
 
             # ---- compare ----
@@ -1130,7 +1191,7 @@ def run(
                 tushare_token=c.tushare_token,
             )
             if still:
-                console.print(f"[yellow]提示：比较分析期末财报不可用: {still}[/yellow]")
+                log_warn(f"提示：比较分析期末财报不可用: {still}")
                 if strict:
                     raise RuntimeError(f"缺失财报 {len(still)} 期（strict 模式退出）：{still}")
 
@@ -1144,15 +1205,15 @@ def run(
                     pe2 = _prev_quarter_end(pe2)
                     xlsx2 = expected_xlsx_path(c.data_dir, c.rs.code6, c.statement_type, pe2, name=c.rs.name)
                     if xlsx2.exists():
-                        console.print(
-                            f"[yellow]提示：{pe.strftime('%Y-%m-%d')} 财报不可用，回退到 {pe2.strftime('%Y-%m-%d')}。[/yellow]"
+                        log_warn(
+                            f"提示：{pe.strftime('%Y-%m-%d')} 财报不可用，回退到 {pe2.strftime('%Y-%m-%d')}。"
                         )
                         pe = pe2
                         xlsx = xlsx2
                         break
 
             if not xlsx.exists():
-                console.print(f"[yellow]提示：比较分析缺少财报，跳过模板 {k}。[/yellow]")
+                log_warn(f"提示：比较分析缺少财报，跳过模板 {k}。")
                 continue
 
             statement = statement_default
@@ -1171,7 +1232,7 @@ def run(
 
             df_cmp = pd.DataFrame(rows).dropna(subset=["value"])
             if df_cmp.empty:
-                console.print(f"[yellow]提示：{k} 在该期末没有可用数据（可能科目缺失/表达式失败）。[/yellow]")
+                log_warn(f"提示：{k} 在该期末没有可用数据（可能科目缺失/表达式失败）。")
                 continue
 
             title = f"{c.rs.name or c.rs.code6} | {title0} | {pe.strftime('%Y-%m-%d')}"
@@ -1182,8 +1243,8 @@ def run(
             render_png(df_cmp, title=title, x_col="name", series=[("value", y_label)], out_png=out_png, x_label=x_label, y_label=y_label)
             write_xlsx(df_cmp, title=title, x_col="name", series=[("value", y_label)], out_xlsx=out_xlsx, x_label=x_label, y_label=y_label)
 
-            console.print(f"已生成: {out_png}")
-            console.print(f"已生成: {out_xlsx}")
+            log_info(f"已生成: {out_png}")
+            log_info(f"已生成: {out_xlsx}")
             continue
 
         # ---- pie ----
@@ -1228,7 +1289,7 @@ def run(
                 render_pie_png(items_top, title=title, out_png=out_png)
                 write_pie_excel(items_top, title=title, out_xlsx=out_xlsx)
 
-            console.print(f"完成 pie 模板: {k}")
+            log_info(f"完成 pie 模板: {k}")
             continue
 
         # ---- combo ----
@@ -1237,7 +1298,7 @@ def run(
             bar_item = getattr(tpl, "bar_item", None) or "营业总收入"
 
             if getattr(tpl, "transform", None):
-                console.print('[yellow]提示：combo.transform 已弃用，将被忽略（按 bar_item 表达式原值取数）[/yellow]')
+                log_debug("提示：combo.transform 已弃用，将被忽略（按 bar_item 表达式原值取数）")
 
             still = _maybe_fetch_missing(c)
             if strict and still:
@@ -1258,7 +1319,7 @@ def run(
 
             df = pd.DataFrame(rows).dropna(subset=["amount", "close"]).sort_values("period_end")
             if df.empty:
-                console.print(f"[yellow]提示：{k} 在该区间内没有可用数据（可能缺少财报或股价数据）。[/yellow]")
+                log_warn(f"提示：{k} 在该区间内没有可用数据（可能缺少财报或股价数据）。")
                 continue
 
             # 以实际有数据的报告期作为输出文件名范围（避免 end 对应期末未披露导致误导）
@@ -1266,7 +1327,7 @@ def run(
             actual_s = used_periods[0]
             actual_e = used_periods[-1]
             if actual_e < c.end:
-                console.print(f"[yellow]提示：end={c.end} 对应最新报告期数据不可用，实际截至 {actual_e}。[/yellow]")
+                log_warn(f"提示：end={c.end} 对应最新报告期数据不可用，实际截至 {actual_e}。")
 
             title = f"{c.rs.name or c.rs.code6} | {title0}"
 
@@ -1276,13 +1337,13 @@ def run(
             render_combo_png(df, title=title, x_col="period_end", bar_col="amount", line_col="close", out_png=out_png, bar_label=y_label, line_label="收盘价", x_label=x_label)
             write_combo_excel(df, title=title, x_col="period_end", bar_col="amount", line_col="close", out_xlsx=out_xlsx, bar_label=y_label, line_label="收盘价", x_label=x_label)
 
-            console.print(f"已生成: {out_png}")
-            console.print(f"已生成: {out_xlsx}")
+            log_info(f"已生成: {out_png}")
+            log_info(f"已生成: {out_xlsx}")
             continue
 
         raise RuntimeError(f"暂不支持的模板 type: {t_type} ({k})")
 
-    console.print(f"\n全部完成。输出目录: {c.out_dir}")
+    log_info(f"\n全部完成。输出目录: {c.out_dir}")
 
 
 
