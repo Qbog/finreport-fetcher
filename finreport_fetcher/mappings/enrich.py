@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import hashlib
 import re
 
 import pandas as pd
 
-from .subject_glossary import lookup_subject
+from .subject_glossary import lookup_subject, lookup_subject_by_key
 
 
 _STATEMENT_PREFIX = {
@@ -15,15 +14,98 @@ _STATEMENT_PREFIX = {
 }
 
 
+# Minimal CN->EN hints for auto-generated remark/key when glossary is missing.
+# Prefer filling `subject_glossary.py` for high-quality, stable mappings.
+_CN_EN_OVERRIDES: dict[str, str] = {
+    "负债和所有者权益合计": "Total liabilities and equity",
+    "负债和所有者权益总计": "Total liabilities and equity",
+    "所有者权益合计": "Total equity",
+    "所有者权益总计": "Total equity",
+    "资产合计": "Total assets",
+    "资产总计": "Total assets",
+}
+
+
+def _auto_en_from_cn(cn: str) -> str:
+    c = (cn or "").strip()
+    if not c:
+        return ""
+    if c in _CN_EN_OVERRIDES:
+        return _CN_EN_OVERRIDES[c]
+
+    # very small heuristic: keep it readable, not perfect
+    s = c
+    s = s.replace("现金流入", "cash inflow")
+    s = s.replace("现金流出", "cash outflow")
+    s = s.replace("现金", "cash")
+    s = s.replace("净额", "net")
+    s = s.replace("小计", "subtotal")
+    s = s.replace("合计", "total")
+    s = s.replace("总计", "total")
+    s = s.replace("经营活动", "operating activities")
+    s = s.replace("投资活动", "investing activities")
+    s = s.replace("筹资活动", "financing activities")
+    s = s.replace("资产", "assets")
+    s = s.replace("负债", "liabilities")
+    s = s.replace("所有者权益", "equity")
+    s = s.replace("股东权益", "equity")
+
+    # If still contains CJK, return empty (force user to add glossary later)
+    if re.search(r"[\u4e00-\u9fff]", s):
+        return ""
+
+    return s
+
+
+def _slugify_en(en: str) -> str:
+    ss = (en or "").strip().lower()
+    ss = re.sub(r"[^a-z0-9]+", "_", ss)
+    ss = re.sub(r"_+", "_", ss).strip("_")
+    return ss
+
+
 def _prefix_from_sheet(sheet_name_cn: str) -> str:
     return _STATEMENT_PREFIX.get(sheet_name_cn, "")
 
 
 _RE_NUM_PREFIX = re.compile(r"^\s*([一二三四五六七八九十]+|\d+)[、\.．]\s*")
+_RE_PREFIX_TAG = re.compile(r"^\s*(其中|加|减)[:：]\s*")
+
+
+def _leading_tag_prefix(raw: str) -> str:
+    """Return the leading tag prefix for display.
+
+    Examples:
+    - "其中：应收票据" -> "其中："
+    - "加：资产减值准备" -> "加："
+    - "减：所得税费用" -> "减："
+    """
+
+    s = (raw or "").strip()
+    if s.startswith(("其中：", "其中:")):
+        return "其中："
+    if s.startswith(("加：", "加:")):
+        return "加："
+    if s.startswith(("减：", "减:")):
+        return "减："
+    # Some sources use "其中" without colon
+    if s.startswith("其中"):
+        return "其中："
+    return ""
+_RE_ROMAN_PREFIX = re.compile(r"^\s*[（\(]?[一二三四五六七八九十]+[）\)]\s*")
 
 
 def _normalize_subject(s: str) -> str:
-    """Normalize subject display text to improve cross-provider consistency."""
+    """Normalize subject text to improve cross-provider consistency.
+
+    目标：将不同数据源里“同一科目”的显示差异归一化，便于 lookup_subject 命中。
+
+    典型处理：
+    - 去掉编号前缀："一、" / "1." / "（一）" 等
+    - 去掉提示前缀："其中：" / "加：" / "减："
+    - 去掉部分括号提示："（或股东权益）" 这种可选说明
+    - 去掉结尾冒号
+    """
 
     ss = (s or "").strip()
 
@@ -34,8 +116,20 @@ def _normalize_subject(s: str) -> str:
     # Remove common numbering prefixes: "一、" / "1." etc.
     ss = _RE_NUM_PREFIX.sub("", ss)
 
+    # Remove "（一）" / "(I)" like prefixes
+    ss = _RE_ROMAN_PREFIX.sub("", ss)
+
+    # Remove tags like "其中：" / "加：" / "减："
+    ss = _RE_PREFIX_TAG.sub("", ss)
+
     # Remove some verbose end-notes that appear in certain sources
     ss = re.sub(r"（净亏损以.*?填列）", "", ss)
+
+    # Remove optional hints like "（或股东权益）" / "（或股本）" etc.
+    ss = re.sub(r"（或[^）]+）", "", ss)
+
+    # Strip trailing ':'
+    ss = ss.rstrip("：:")
 
     # Normalize whitespace
     ss = re.sub(r"\s+", " ", ss).strip()
@@ -43,31 +137,19 @@ def _normalize_subject(s: str) -> str:
     return ss
 
 
-def _fallback_key(prefix: str, subj_norm: str) -> str:
-    """Generate ASCII-only stable key for unknown subjects.
-
-    Requirements:
-    - key must be fully ASCII (no CN chars)
-    - should be stable across providers as long as normalized subject string matches
-    """
-
-    token = f"{prefix}:{subj_norm}".encode("utf-8")
-    h10 = hashlib.sha1(token).hexdigest()[:10]
-    return f"{prefix}.unk.{h10}"
-
-
 def enrich_statement_df(df: pd.DataFrame, *, sheet_name_cn: str) -> pd.DataFrame:
-    """Add template-key + EN translation columns for a statement df.
+    """Add stable template key + English remark for a statement df.
 
     Input df should contain at least: 科目, 数值 (and may contain __level/__is_header).
 
     Output:
-    - Adds `key` column (guaranteed non-empty, unique within sheet)
-    - Rewrites `科目` display to: `中文 (English)` **only when English exists**
+    - Adds `key` column: stable, unique, **ASCII-only**.
+    - Adds `备注` column: English name (from curated glossary; if missing, leave blank).
+    - Canonicalizes `科目` to the glossary CN name when available (cross-provider consistency).
 
-    Notes:
-    - English is best-effort from curated glossary; unknown subjects keep English empty.
-    - This function does NOT output 科目_CN / 科目_EN columns (user requested to avoid duplication).
+    约束：
+    - key 不能包含中文或任何非 ASCII 字符。
+    - 不同数据源导出的同一科目，尽可能输出同一 key。
     """
 
     if df is None or df.empty:
@@ -82,13 +164,14 @@ def enrich_statement_df(df: pd.DataFrame, *, sheet_name_cn: str) -> pd.DataFrame
 
     cn_series_raw = out["科目"].astype(str)
 
-    # 2) Key + EN mapping (guarantee key, ASCII-only)
+    # 2) Key + English remark mapping
     keys: list[str] = []
     ens: list[str] = []
     cn_canon: list[str] = []
     seen: dict[str, int] = {}
 
     for cn_raw in cn_series_raw.tolist():
+        tag_prefix = _leading_tag_prefix(cn_raw)
         cn_norm = _normalize_subject(cn_raw)
 
         if prefix in {"is", "bs", "cf"}:
@@ -100,31 +183,66 @@ def enrich_statement_df(df: pd.DataFrame, *, sheet_name_cn: str) -> pd.DataFrame
         if spec:
             k = spec.key
             en = spec.en
-            cn_disp = spec.cn  # canonical CN for cross-provider consistency
+            cn_base = spec.cn  # canonical CN for cross-provider consistency
         else:
-            # For providers that return pure-English identifiers in 科目 (rare): keep as EN display.
-            if prefix and cn_norm and re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", cn_norm):
-                k = f"{prefix}.raw.{cn_norm.lower()}"
-                en = cn_norm
-                cn_disp = cn_norm
+            # 未映射科目：生成可读英文 key（不允许 hash）。
+            # 质量更高/更稳定的做法：把该科目补进 subject_glossary.py。
+            cn_base = cn_norm
+
+            # 1) If looks like an English identifier (e.g. tushare fields), derive from it.
+            if re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", cn_base):
+                en = cn_base.replace("_", " ").strip().title()
             else:
-                k = _fallback_key(prefix, cn_norm) if prefix else _fallback_key("unk", cn_norm)
-                en = ""
-                cn_disp = cn_norm
+                en = _auto_en_from_cn(cn_base)
+
+            if not en:
+                raise RuntimeError(f"未映射科目缺少英文名称，请补齐 subject_glossary 映射：{cn_base}")
+
+            slug = _slugify_en(en)
+            if not slug:
+                raise RuntimeError(f"未能从英文名称生成 key：{cn_base} -> {en}")
+
+            k = f"{prefix}.{slug}" if prefix else slug
+
+            # If the auto-generated key matches a curated spec, upgrade to canonical CN/EN.
+            spec2 = lookup_subject_by_key(k)
+            if spec2:
+                cn_base = spec2.cn
+                en = spec2.en
+
+        cn_disp = f"{tag_prefix}{cn_base}" if tag_prefix else cn_base
+
+        # Duplicate canonical rows (same spec without tagging) can be common across providers.
+        # Keep only the first occurrence to avoid __2 suffixes and maintain consistent output.
+        if spec and not tag_prefix and k in seen:
+            continue
+
+        # If this is a tagged sub-line (其中/加/减) and the base key already exists in this sheet,
+        # create a stable sub-key to avoid "__2" suffixes.
+        if tag_prefix and k in seen:
+            if tag_prefix == "其中：":
+                k = f"{k}.sub"
+            elif tag_prefix == "加：":
+                k = f"{k}.add"
+            elif tag_prefix == "减：":
+                k = f"{k}.minus"
 
         # Ensure uniqueness within a sheet
-        n = seen.get(k, 0)
-        if n:
-            k = f"{k}__{n+1}"
-            seen[k] = n + 1
-        else:
-            seen[k] = 1
+        if k:
+            n = seen.get(k, 0)
+            if n:
+                k = f"{k}__{n+1}"
+                seen[k] = n + 1
+            else:
+                seen[k] = 1
 
-        # Enforce ASCII-only key
-        try:
-            k.encode("ascii")
-        except Exception:
-            k = _fallback_key(prefix or "unk", cn_norm)
+            # Enforce ASCII-only key
+            try:
+                k.encode("ascii")
+            except Exception:
+                raise RuntimeError(f"key 必须为 ASCII：{k} ({cn_disp})")
+        else:
+            raise RuntimeError(f"未能为科目生成 key：{cn_disp}")
 
         keys.append(k)
         ens.append(en)
@@ -134,11 +252,13 @@ def enrich_statement_df(df: pd.DataFrame, *, sheet_name_cn: str) -> pd.DataFrame
     if "key" not in out.columns:
         out.insert(0, "key", keys)
 
-    # 3) Display subject: only append (EN) when EN exists
-    disp: list[str] = []
-    for cn, en in zip(cn_canon, ens):
-        disp.append(f"{cn} ({en})" if en else cn)
+    # Add English remark column (always present for stable format)
+    if "备注" not in out.columns:
+        out.insert(2, "备注", ens)
+    else:
+        out["备注"] = ens
 
-    out["科目"] = disp
+    # Canonical CN subject
+    out["科目"] = cn_canon
 
     return out

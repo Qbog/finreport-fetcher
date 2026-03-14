@@ -206,6 +206,7 @@ def _fetch_one_period(
         "provider_requested_order": [getattr(p, 'name', str(p)) for p in providers],
         "requested_statement_type": statement_type,
         "report_period_end": period_end.strftime("%Y-%m-%d"),
+        "excel_schema_version": "1",
         "pdf_title": pdf_title,
         "pdf_url": pdf_url,
         "pdf_local_path": pdf_path,

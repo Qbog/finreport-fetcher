@@ -74,8 +74,9 @@ def export_bundle_to_excel(
     cf_df = enrich_statement_df(cashflow_statement, sheet_name_cn="现金流量表")
 
     def view_df(df: pd.DataFrame) -> pd.DataFrame:
-        # 兼容老格式：至少输出 科目/数值/key（key 放最后）
-        preferred = ["科目", "数值", "key"]
+        # 固定导出列顺序（跨数据源保持一致）：科目 | 数值 | (spacer) | key | 备注
+        # 备注放在最后一列，便于后续人工校对英文名称。
+        preferred = ["科目", "数值", "key", "备注"]
         cols = [c for c in preferred if c in df.columns]
         if not cols:
             cols = [c for c in ["科目", "数值"] if c in df.columns]
