@@ -26,7 +26,7 @@ class Template:
     alias: str | None
 
     # Required
-    type: str  # bar|pie|combo
+    type: str  # bar|pie|combo|line
 
     # Common display fields
     title: str | None = None

@@ -21,6 +21,17 @@ def _autofit_worksheet(ws):
     from openpyxl.cell.cell import MergedCell
     from openpyxl.utils import get_column_letter
 
+    import unicodedata
+
+    def _display_len(s: str) -> int:
+        total = 0
+        for ch in s:
+            if unicodedata.east_asian_width(ch) in {"W", "F"}:
+                total += 2
+            else:
+                total += 1
+        return total
+
     for col_idx in range(1, ws.max_column + 1):
         max_len = 0
         for row_idx in range(1, ws.max_row + 1):
@@ -31,8 +42,7 @@ def _autofit_worksheet(ws):
             if v is None:
                 continue
             s = str(v)
-            if len(s) > max_len:
-                max_len = len(s)
+            max_len = max(max_len, _display_len(s))
 
         col_letter = get_column_letter(col_idx)
         # True-ish autofit: small minimum, larger maximum

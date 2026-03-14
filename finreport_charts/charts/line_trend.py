@@ -5,33 +5,10 @@ from pathlib import Path
 import pandas as pd
 
 from ..utils.mpl_style import apply_pretty_style
-from ..utils.numfmt import choose_unit_scale, fmt_scaled, fmt_tick
+from ..utils.numfmt import choose_unit_scale, fmt_tick
 
 
-def render_bar_png(
-    df: pd.DataFrame,
-    *,
-    title: str,
-    x_col: str,
-    y_col: str,
-    out_png: Path,
-    y_label: str = "",
-    x_label: str = "",
-):
-    """Single-series bar chart (backward compatible)."""
-
-    render_bars_png(
-        df,
-        title=title,
-        x_col=x_col,
-        series=[(y_col, y_col)],
-        out_png=out_png,
-        x_label=x_label,
-        y_label=y_label or y_col,
-    )
-
-
-def render_bars_png(
+def render_lines_png(
     df: pd.DataFrame,
     *,
     title: str,
@@ -41,13 +18,12 @@ def render_bars_png(
     x_label: str = "时间",
     y_label: str = "",
 ):
-    """Multi-series (grouped) bar chart.
+    """Multi-series line chart.
 
     series: [(col_name_in_df, display_label), ...]
     """
 
     import matplotlib.pyplot as plt
-    import numpy as np
     from matplotlib.ticker import FuncFormatter
 
     apply_pretty_style()
@@ -56,14 +32,11 @@ def render_bars_png(
     n = len(x)
     k = max(1, len(series))
 
-    idx = np.arange(n)
-    width = 0.8 / k
-
     # compute unit
     max_abs = 0.0
     for col, _label in series:
         try:
-            max_abs = max(max_abs, float(df[col].abs().max()))
+            max_abs = max(max_abs, float(pd.Series(df[col]).abs().max()))
         except Exception:
             pass
     us = choose_unit_scale(max_abs)
@@ -83,55 +56,22 @@ def render_bars_png(
         "#BAB0AC",
     ]
 
-    containers = []
     for j, (col, label) in enumerate(series):
         y = df[col].tolist()
-        offset = (j - (k - 1) / 2) * width
-        cont = ax.bar(
-            idx + offset,
+        ax.plot(
+            x,
             y,
-            width=width,
-            label=label,
             color=palette[j % len(palette)],
-            alpha=0.92,
+            marker="o",
+            linewidth=2,
+            label=label or col,
         )
-        containers.append(cont)
 
     ax.set_title(title)
     ax.set_xlabel(x_label or "时间")
     ax.set_ylabel(y_label)
-    ax.set_xticks(idx)
-    ax.set_xticklabels(x, rotation=45, ha="right")
-
-    # y-axis ticks with unit
+    ax.tick_params(axis="x", rotation=45)
     ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _pos: fmt_tick(v, us)))
-
-    # add value labels above bars
-    ymax = 0.0
-    ymin = 0.0
-    for cont in containers:
-        for p in cont.patches:
-            h = p.get_height()
-            if h is None:
-                continue
-            ymax = max(ymax, float(h))
-            ymin = min(ymin, float(h))
-
-    # headroom
-    span = max(1.0, ymax - ymin)
-    ax.set_ylim(ymin - 0.08 * span, ymax + 0.18 * span)
-
-    for cont in containers:
-        for p in cont.patches:
-            h = p.get_height()
-            if h is None:
-                continue
-            x0 = p.get_x() + p.get_width() / 2
-            txt = fmt_scaled(float(h), us)
-            if h >= 0:
-                ax.text(x0, h, txt, ha="center", va="bottom", fontsize=9, color="#EAEAEA")
-            else:
-                ax.text(x0, h, txt, ha="center", va="top", fontsize=9, color="#EAEAEA")
 
     if k > 1:
         ax.legend(loc="best")
@@ -142,30 +82,7 @@ def render_bars_png(
     plt.close(fig)
 
 
-def write_bar_excel(
-    df: pd.DataFrame,
-    *,
-    title: str,
-    x_col: str,
-    y_col: str,
-    out_xlsx: Path,
-    y_label: str = "",
-    x_label: str = "",
-):
-    """Single-series Excel output (backward compatible)."""
-
-    write_bars_excel(
-        df,
-        title=title,
-        x_col=x_col,
-        series=[(y_col, y_col)],
-        out_xlsx=out_xlsx,
-        x_label=x_label,
-        y_label=y_label or y_col,
-    )
-
-
-def write_bars_excel(
+def write_lines_excel(
     df: pd.DataFrame,
     *,
     title: str,
@@ -175,13 +92,13 @@ def write_bars_excel(
     x_label: str = "时间",
     y_label: str = "",
 ):
-    """Multi-series bar chart exported to Excel.
+    """Multi-series line chart exported to Excel.
 
     series: [(col_name_in_df, display_label), ...]
     """
 
     from openpyxl import Workbook
-    from openpyxl.chart import BarChart, Reference
+    from openpyxl.chart import LineChart, Reference
     from openpyxl.styles import Alignment, Font, PatternFill
 
     from ..utils.xlsx import autofit_columns
@@ -193,7 +110,6 @@ def write_bars_excel(
     ws.title = "data"
 
     # 标题
-    # 写入宽度取决于列数
     ncols = 1 + max(1, len(series))
     ws["A1"].value = title
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=ncols)
@@ -227,8 +143,7 @@ def write_bars_excel(
     ws_chart["A1"].value = title
     ws_chart["A1"].font = Font(bold=True, size=14)
 
-    chart = BarChart()
-    chart.type = "col"
+    chart = LineChart()
     chart.title = title
     chart.y_axis.title = y_label
     chart.x_axis.title = x_label or "时间"

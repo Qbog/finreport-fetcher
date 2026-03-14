@@ -23,7 +23,7 @@
 9. 每次提取前的清理：**只删除本次提取公司的历史文件**（同 code6 的 xlsx/pdf），不删除其他公司数据。
 
 ### 图表模板/计算
-10. 图表 transform 口径支持：单期(单季) / 累计(YTD) / TTM，并可在模板中使用。
+10. 图表不再使用 transform=ttm/ytd/q 这类配置；直接按 expr 取值/计算，并支持 expr 内跨期后缀（.YYYY.MM.DD / .prev / .prev_in_year）。
 11. 图表只通过模板执行：模板为 TOML，每个模板一个文件；支持 `--template <file>` 与 `--templates <dir>` 两种运行方式。
 12. 图表输出目录：`output/{公司名}_{公司代码}/charts/`。
 

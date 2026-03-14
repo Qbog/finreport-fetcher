@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -125,6 +126,29 @@ def ensure_finreports(
         if not expected_xlsx_path(data_dir, code6, statement_type, pe, name=company_name).exists()
     ]
     return still_missing
+
+
+_PROVIDER_RE = re.compile(r"数据源:\s*([0-9A-Za-z_]+)")
+
+
+def read_sheet_provider(xlsx_path: Path, sheet_name: str) -> str | None:
+    """Read provider tag from sheet title row (cell A1).
+
+    Expected format contains: '数据源: <provider>'
+    """
+
+    try:
+        from openpyxl import load_workbook
+
+        wb = load_workbook(xlsx_path, read_only=True, data_only=True)
+        ws = wb[sheet_name] if sheet_name in wb.sheetnames else wb.active
+        v = ws["A1"].value
+        wb.close()
+        s = str(v or "")
+        m = _PROVIDER_RE.search(s)
+        return m.group(1) if m else None
+    except Exception:
+        return None
 
 
 def read_statement_df(xlsx_path: Path, sheet_name: str) -> pd.DataFrame:

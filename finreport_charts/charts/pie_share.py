@@ -54,6 +54,8 @@ def write_pie_excel(items: list[tuple[str, float]], *, title: str, out_xlsx: Pat
     from openpyxl.chart import PieChart, Reference
     from openpyxl.styles import Alignment, Font, PatternFill
 
+    from ..utils.xlsx import autofit_columns
+
     out_xlsx.parent.mkdir(parents=True, exist_ok=True)
 
     wb = Workbook()
@@ -75,6 +77,8 @@ def write_pie_excel(items: list[tuple[str, float]], *, title: str, out_xlsx: Pat
         for cell in row:
             if isinstance(cell.value, (int, float)):
                 cell.number_format = "#,##0"
+
+    autofit_columns(ws)
 
     ws_chart = wb.create_sheet("chart")
     ws_chart["A1"].value = title

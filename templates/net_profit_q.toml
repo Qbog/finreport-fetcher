@@ -1,29 +1,24 @@
 # 单模板单文件示例：趋势分析（利润表-归母净利润 单季）
+#
+# 说明：不再使用 transform=ttm/ytd/q 这类配置；所有“口径/差分”都在 expr 里完成。
+# 这里用 is.net_profit_parent 的“累计值”减去同年上一季度累计值，得到单季值：
+#   Q1: prev_in_year 视为 0
+#   Q2/Q3/Q4: 用差分得到单季
 
 name = "net_profit_q"
 alias = "net_profit_q"
 
-# 必填：图表类型
-# - bar: 柱状图
-# - pie: 饼图
-# - combo: 双轴（柱+线）
 type = "bar"
 
-# 必填：标题（显示在图表上方）
 title = "归母净利润（单季）趋势"
 
-# 必填：坐标轴名称（bar/combo 使用）
 x_label = "报告期"
 y_label = "金额"
 
-# bar 必填：mode=trend/compare
 mode = "trend"
 
-# 默认报表（bars 里也可单独覆盖 statement）
 statement = "利润表"
 
-# 每根柱（series）一个配置块；trend 模式下，每个报告期会画出所有 bars（可做双柱/多柱）
 [[bars]]
 name = "归母净利润"
-expr = "is.net_profit"
-transform = "q"   # q|ytd|ttm|raw
+expr = "is.net_profit_parent - is.net_profit_parent.prev_in_year"

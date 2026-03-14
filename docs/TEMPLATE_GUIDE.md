@@ -25,6 +25,7 @@
 is.revenue          # 营业收入
 is.cogs             # 营业成本
 is.net_profit       # 净利润
+is.net_profit_parent # 归母净利润
 bs.cash             # 货币资金
 bs.advance_receipts # 预收款项
 bs.prepayments      # 预付款项
@@ -39,37 +40,40 @@ cf.net_cash_from_ops # 经营活动现金流量净额
 
 我们推荐 **一个模板一个 TOML 文件**，统一放在仓库根目录 `templates/` 下，并用 `finreport_charts run` 执行。
 
-> 强烈建议在 `[[bars]]` 里优先写 `expr = "<key>"`（例如 `is.net_profit`），而不是中文科目名，以保证跨公司复用与稳定匹配。
+> 强烈建议在 `[[bars]]` 里优先写 `expr = "<key>"`（例如 `is.net_profit_parent`），而不是中文科目名，以保证跨公司复用与稳定匹配。
 >
 > 支持跨期取数：`is.admin_expense.2024.12.31`（在 key 后追加 `.YYYY.MM.DD`）。
 
-### 2.1 柱状图趋势（bar）
+### 2.1 柱状图趋势（bar）与折线图（line）
 
-`templates/revenue_ttm.toml` 示例：
+bar 与 line 共用相同的 `[[bars]]` 配置，仅输出图表样式不同（柱状图 vs 折线图）。
+
+示例：单季归母净利润（由累计值差分得到）
 
 ```toml
-name = "revenue_ttm"
-alias = "revenue_ttm"
+name = "net_profit_q"
+alias = "net_profit_q"
 
-type = "bar"           # bar|pie|combo
-mode = "trend"         # trend|compare
+type = "bar"
+mode = "trend"
 
-title = "营业收入（TTM）趋势"
+title = "归母净利润（单季）趋势"
 x_label = "报告期"
 y_label = "金额"
 
 statement = "利润表"
 
 [[bars]]
-name = "营业收入"
-expr = "is.revenue"     # 推荐用 key；也支持表达式：is.sell_expense + is.admin_expense
-transform = "ttm"       # ttm|ytd|q|raw
+name = "归母净利润"
+expr = "is.net_profit_parent - is.net_profit_parent.prev_in_year"
 ```
 
-**transform 选项说明：**
-- `ttm`：滚动12个月（Trailing Twelve Months）
-- `ytd` / `raw`：累计值（Year to Date；raw 视为 ytd）
-- `q`：单季值（Quarter，通过差分计算）
+> 说明：不再使用 `transform=ttm/ytd/q/raw` 这类配置；现在 **只按 expr 取值**。
+
+表达式里的标识符支持一些后缀，便于跨期取数：
+- `is.xxx.2024.12.31`：指定报告期末（YYYY.MM.DD）
+- `is.xxx.prev`：上一季度（可链式：`.prev.prev`）
+- `is.xxx.prev_in_year`：同年上一季度（Q1 视为 0.0）
 
 ### 2.2 饼图占比（pie）
 
@@ -116,17 +120,41 @@ alias = "revenue_price"
 
 type = "combo"
 
-title = "营业收入（TTM）vs 股价"
+title = "营业收入 vs 股价"
 x_label = "报告期"
 y_label = "金额"
 
 statement = "利润表"
-bar_item = "is.revenue"
-transform = "ttm"
+# bar_item 支持 key/中文科目名/表达式
+bar_item = "is.revenue - is.revenue.prev_in_year"   # 单季营业收入
 # 股价线自动读取 data-dir/price/{code6}.csv
 ```
 
 > 说明：旧版 `charts.toml`（单文件多模板）解析器仍保留，但 CLI 仅支持 `finreport_charts run`；旧的 `bar/pie/combo/template` 子命令已弃用并会直接退出。
+
+### 2.4 折线图（line）
+
+折线图与 bar 共用 `[[bars]]` 配置（`trend`/`compare` 均可用），但输出为折线图样式。
+
+示例：单季营业收入（折线）
+
+```toml
+name = "revenue_q_line"
+alias = "revenue_q_line"
+
+type = "line"
+mode = "trend"
+
+title = "营业收入（单季）趋势"
+x_label = "报告期"
+y_label = "金额"
+
+statement = "利润表"
+
+[[bars]]
+name = "营业收入"
+expr = "is.revenue - is.revenue.prev_in_year"
+```
 
 ---
 
@@ -160,23 +188,19 @@ python3 -m finreport_charts run \
   --period q4,q2
 ```
 
-### 3.2 Transform 详解
+### 3.2 表达式跨期取数 / 差分
 
-```bash
-# TTM（滚动12个月）- 适合利润表、现金流量表
---transform ttm
+`finreport_charts run` 不再提供 `--transform`，也不再在模板里使用 `transform` 字段。
 
-# YTD（累计值）- 报表原始累计值
---transform ytd
+如果你需要“单季/差分/跨期”口径，请直接在 `expr` 里写：
 
-# 单季值 - 通过差分计算（Q2-Q1, Q3-Q2, Q4-Q3）
---transform q
-```
+- 单季（适用于利润表/现金流量表的累计口径）：
+  - `is.net_profit_parent - is.net_profit_parent.prev_in_year`
+  - `is.revenue - is.revenue.prev_in_year`
+- 取上一季度值：`bs.cash.prev`
+- 取指定期末：`bs.cash.2024.12.31`
 
-**注意：**
-- TTM 计算需要上一年数据，程序会自动补齐
-- 单季计算需要当年 Q1 数据，程序会自动从当年 1/1 开始补齐
-- 资产负债表通常不需要 TTM（存量科目），建议使用 `ytd` 或 `point`
+> `--period` 仍然存在：它只过滤绘图输出的报告期，不影响自动补数/取数。
 
 ### 3.3 使用模板（推荐：run）
 
@@ -240,16 +264,16 @@ date,close
 
 推荐把每个模板拆成单独文件，放到 `templates/` 目录。例如：
 
-`templates/revenue_ttm.toml`
+`templates/revenue_q.toml`（单季营业收入）
 
 ```toml
-name = "revenue_ttm"
-alias = "revenue_ttm"
+name = "revenue_q"
+alias = "revenue_q"
 
 type = "bar"
 mode = "trend"
 
-title = "营业收入（TTM）趋势"
+title = "营业收入（单季）趋势"
 x_label = "报告期"
 y_label = "金额"
 
@@ -257,15 +281,14 @@ statement = "利润表"
 
 [[bars]]
 name = "营业收入"
-expr = "is.revenue"
-transform = "ttm"
+expr = "is.revenue - is.revenue.prev_in_year"
 ```
 
-`templates/profit_quarter.toml`
+`templates/net_profit_q.toml`（单季归母净利润）
 
 ```toml
-name = "profit_quarter"
-alias = "profit_quarter"
+name = "net_profit_q"
+alias = "net_profit_q"
 
 type = "bar"
 mode = "trend"
@@ -278,11 +301,10 @@ statement = "利润表"
 
 [[bars]]
 name = "归母净利润"
-expr = "is.net_profit"
-transform = "q"
+expr = "is.net_profit_parent - is.net_profit_parent.prev_in_year"
 ```
 
-`templates/current_assets.toml`
+`templates/current_assets.toml`（流动资产构成：pie）
 
 ```toml
 name = "current_assets"
@@ -301,8 +323,6 @@ top_n = 10
 
 > 说明：旧版 `charts.toml` 写法的解析器仍保留，但 CLI 仅支持 `run`；建议统一迁移到单文件模板（templates/*.toml）。
 
-
----
 
 ## 6. 输出文件说明
 
@@ -324,6 +344,25 @@ top_n = 10
 {data_dir}/{公司名}_{code6}/charts/
 ```
 
+### 数据目录结构
+
+finreport_fetcher 输出的财报数据现在存放在 `finreports/` 子目录下：
+
+```
+output/
+  finreports/           # fetcher 数据根目录
+    {公司名}_{code6}/
+      {code6}_{statement}_{period}.xlsx
+      pdf/
+        {code6}_{period}.pdf
+  {公司名}_{code6}/
+    charts/             # charts 输出目录
+      *.png
+      *.xlsx
+```
+
+程序会自动识别 `finreports/` 或 `reports/` 子目录（优先使用已存在的），兼容旧版布局。
+
 ---
 
 ## 7. 常见问题
@@ -336,9 +375,10 @@ top_n = 10
 - 确认 key 前缀对应报表：`is.*`=利润表，`bs.*`=资产负债表，`cf.*`=现金流量表
 - 如果确实缺少映射：在 `finreport_fetcher/mappings/subject_glossary.py` 里补充 key→中文/英文映射
 
-### Q3: TTM 计算失败？
-- 确保数据包含上一年同季度和年报数据
-- 程序会自动尝试补齐缺失数据
+### Q3: 如何画“单季”而不是累计？
+利润表/现金流量表很多口径是累计值（YTD）。推荐在 expr 里用差分：
+- `is.net_profit_parent - is.net_profit_parent.prev_in_year`
+- `is.revenue - is.revenue.prev_in_year`
 
 ### Q4: 如何添加新的科目映射？
 编辑 `finreport_fetcher/mappings/subject_glossary.py`，添加新的 `SubjectSpec`：
@@ -346,18 +386,13 @@ top_n = 10
 SubjectSpec("is.your_key", "中文科目名", "English Name")
 ```
 
----
-
 ## 8. 命令速查表
 
 | 命令 | 用途 |
 |------|------|
-| `finreport_fetcher fetch --code XXX --start YYYY-MM-DD --end YYYY-MM-DD` | 抓取财报 |
-| `finreport_charts bar --code XXX --item XXX --transform ttm` | 柱状图趋势 |
-| `finreport_charts pie --code XXX --section XXX` | 饼图占比 |
-| `finreport_charts combo --code XXX --bar-item XXX` | 双轴组合图 |
-| `finreport_charts run --templates templates [--template xxx]` | 使用模板（推荐：单文件模板） |
+| `finreport_fetcher fetch --code XXX --start YYYY-MM-DD --end YYYY-MM-DD [--pdf]` | 抓取财报（可选下载 PDF） |
+| `finreport_charts run --templates templates [--template xxx] --code XXX --start ... --end ...` | 使用模板生成图表（推荐方式） |
 
----
+> 说明：`finreport_charts bar/pie/combo/template` 子命令已弃用，会提示并以退出码 2 退出。
 
 **提示：** 所有命令都支持 `--help` 查看详细参数说明。

@@ -72,29 +72,45 @@ pip install tushare
 ### 使用示例
 
 ```bash
-# 单个日期：取最近一期报告期
-python3 -m finreport_fetcher fetch --name 茅台 --date 2025-02-01 --pdf
+# 推荐：模板驱动（run）
+python3 -m finreport_charts run \
+  --code 600519 \
+  --start 2024-01-01 --end 2024-12-31 \
+  --data-dir output \
+  --templates templates \
+  --template net_profit_q
 
-# 日期范围：导出范围内所有报告期
-python3 -m finreport_fetcher fetch --code 600519 --start 2023-01-01 --end 2025-12-31 --pdf
+# 只想跑目录下全部模板：
+python3 -m finreport_charts run \
+  --code 600519 \
+  --start 2024-01-01 --end 2024-12-31 \
+  --data-dir output \
+  --templates templates \
+  --template "*"
 
-# 增量写入（不清空 output）
-python3 -m finreport_fetcher fetch --code 600519 --start 2024-01-01 --end 2024-12-31 --pdf --out output --no-clean
+# 说明：finreport_charts 的 bar/pie/combo/template 子命令已弃用，会提示并以退出码 2 退出
 ```
 
 ### 输出目录结构
 
-默认输出到 `./output`，并按公司归档到 `{公司名}_{code6}` 目录：
+默认输出到 `./output/finreports/`，并按公司归档到 `{公司名}_{code6}` 目录：
 
 ```
 output/
+  finreports/
+    {公司名}_600519/
+      600519_merged_20241231.xlsx
+      600519_merged_20240930.xlsx
+      pdf/
+        600519_20241231.pdf
+        600519_20240930.pdf
   {公司名}_600519/
-    600519_merged_20241231.xlsx
-    600519_merged_20240930.xlsx
-    pdf/
-      600519_20241231.pdf
-      600519_20240930.pdf
+    charts/
+      *.png
+      *.xlsx
 ```
+
+> 注意：fetcher 的财报数据现在单独放在 `finreports/` 子目录下，与图表输出分离。
 
 > 目录名中的 `{公司名}` 会尽量按 A 股正式简称解析；解析失败则退化为 code6。
 
@@ -110,15 +126,21 @@ output/
 - 支持 `--start/--end` 时间范围
 - 若 `--data-dir` 缺少所需报告期财报，程序会自动调用 `finreport_fetcher` 补齐（增量写入，不清空目录）
 - 支持：
-  - 财务科目趋势柱状图（支持 **TTM / YTD / 单季** 三种口径切换）
-  - 同型分析饼图（范围内每期一张，支持 `section` 或 `items`，支持 TopN+其他）
-  - 合并双轴图（财务柱 + 股价折线，股价来自 CSV：列 `date,close`）
+  - 柱状图趋势（bar）：按模板 `expr` 逐期取值/计算（不再使用 transform 口径配置）
+  - 折线图趋势（line）：与 bar 共用 `[[bars]]` 配置，输出折线图
+  - 同型分析饼图（pie）：范围内每期一张，支持 `section` 或 `items`，支持 TopN+其他
+  - 合并双轴图（combo）：财务柱 + 股价折线，股价来自 CSV：列 `date,close`
 - **模板驱动（推荐）**：每个模板一个 TOML 文件（`templates/*.toml`），通过 `finreport_charts run` 执行（支持跑全部模板或指定单个/多个模板）
 - **新增**：支持使用 `key`（如 `is.revenue`）替代中文科目名，实现跨公司标准化引用
 
 ### 约定：数据目录（--data-dir）
 
-`--data-dir` 需要指向 **finreport_fetcher** 的输出根目录：里面按公司分目录存放（`{公司名}_{code6}/`），且 **XLSX 与 PDF 同目录**。
+`--data-dir` 需要指向 **finreport_fetcher** 的输出根目录。程序会自动查找 `finreports/` 或 `reports/` 子目录作为数据根目录：
+
+- Excel：`output/finreports/{公司名}_{code6}/{code6}_{statement}_{period}.xlsx`
+- PDF：`output/finreports/{公司名}_{code6}/pdf/{code6}_{period}.pdf`（PDF 与 Excel 不同层级；PDF 统一放入 `pdf/` 子目录）
+
+如果 `finreports/` 或 `reports/` 子目录不存在，程序会回退到直接使用 `--data-dir` 指定的目录（兼容旧版布局）。
 
 股价 CSV（未来由你的股价 fetcher 产生）默认约定位置：
 
@@ -131,31 +153,22 @@ output/
 ### 使用示例
 
 ```bash
-# 1) 财务科目趋势柱状图（支持三种口径）
-python3 -m finreport_charts bar --code 600519 --start 2023-01-01 --end 2025-12-31 \
-  --statement 利润表 --item 营业总收入 --transform ttm \
-  --data-dir output --out charts_output
+# 推荐：模板驱动（run）
+python3 -m finreport_charts run \
+  --code 600519 \
+  --start 2024-01-01 --end 2024-12-31 \
+  --data-dir output \
+  --templates templates \
+  --template net_profit_q
 
-# 1a) 单季值（Q）- 通过差分计算
-python3 -m finreport_charts bar --code 600519 --start 2024-01-01 --end 2024-12-31 \
-  --statement 利润表 --item is.net_profit --transform q \
-  --data-dir output --out charts_output
-
-# 1b) 使用 key 替代中文科目名
-python3 -m finreport_charts bar --code 600519 --start 2023-01-01 --end 2025-12-31 \
-  --statement 利润表 --item is.revenue_total --transform ttm \
-  --data-dir output --out charts_output
-
-# 2) 饼图：按分组标题（范围内每期一张）
-python3 -m finreport_charts pie --name 茅台 --start 2024-01-01 --end 2024-12-31 \
-  --statement 资产负债表 --section 流动资产 --top-n 10 \
-  --data-dir output --out charts_output
-
-# 3) 合并双轴图：财务(柱) + 股价(线)
-python3 -m finreport_charts combo --code 600519 --start 2023-01-01 --end 2025-12-31 \
-  --statement 利润表 --bar-item 营业总收入 --bar-transform ttm \
-  --data-dir output --out charts_output \
-  --price-csv output/price/600519.csv
+# 过滤输出报告期（仅影响绘图输出，不影响补数/取数）
+python3 -m finreport_charts run \
+  --code 600519 \
+  --start 2023-01-01 --end 2025-12-31 \
+  --data-dir output \
+  --templates templates \
+  --template "*" \
+  --period q4,q2
 ```
 
 ### 模板化（TOML，推荐：单模板单文件）
@@ -190,11 +203,14 @@ python3 -m finreport_charts run --code 600519 --start 2024-01-01 --end 2024-12-3
 - `科目`：中英文对照展示（`中文 (English)`；无翻译则仅中文）
 - `数值`：金额（自动格式化，负数红色，千分位）
 
-### 2. Transform 口径切换
-柱状图和组合图支持三种数据口径：
-- `ttm` - 滚动12个月（默认）
-- `ytd` / `raw` - 累计值
-- `q` - 单季值（通过差分计算：Q2-Q1, Q3-Q2, Q4-Q3）
+### 2. 表达式跨期取数（替代 transform）
+表达式里的标识符支持后缀，便于在 `expr` 内做差分/跨期：
+- `.YYYY.MM.DD`：指定报告期末（例如 `bs.cash.2024.12.31`）
+- `.prev`：上一季度（可链式：`.prev.prev`）
+- `.prev_in_year`：同年上一季度（Q1 视为 0.0），适合把累计值差分为单季
+
+示例（单季归母净利润）：
+- `is.net_profit_parent - is.net_profit_parent.prev_in_year`
 
 ### 3. Key 引用
 支持使用标准 key（如 `is.revenue`）替代中文科目名，实现：

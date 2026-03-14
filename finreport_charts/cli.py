@@ -25,6 +25,7 @@ from finreport_fetcher.utils.symbols import (
 
 from .charts.bar_trend import render_bar_png, render_bars_png, write_bar_excel, write_bars_excel
 from .charts.combo_dual_axis import render_combo_png, write_combo_excel
+from .charts.line_trend import render_lines_png, write_lines_excel
 from .charts.pie_share import render_pie_png, topn_with_other, write_pie_excel
 from .data.finreport_store import (
     ensure_finreports,
@@ -34,12 +35,12 @@ from .data.finreport_store import (
     get_section_items,
     load_price_csv,
     price_on_or_before,
+    read_sheet_provider,
     read_statement_df,
 )
 from .templates.config import load_template_dir, load_template_file, load_templates
 from .utils.expr import ExprError, eval_expr, tokenize
 from .utils.files import safe_slug
-from .utils.ttm import quarter_from_ytd, ttm_from_ytd
 
 app = typer.Typer(add_completion=False)
 console = Console()
@@ -685,7 +686,17 @@ def run(
         data_dir = Path("output") if Path("output").exists() else Path(".")
     data_dir = data_dir.resolve()
 
-    company_dir = data_dir / safe_dir_component(f"{(rs.name or rs.code6)}_{rs.code6}")
+    # Resolve data root: prefer finreports/ or reports/ subdir if exists
+    _DATA_ROOT_NAMES = ("finreports", "reports")
+    data_root = data_dir
+    if data_dir.name not in _DATA_ROOT_NAMES:
+        for sub in _DATA_ROOT_NAMES:
+            cand = data_dir / sub
+            if cand.exists() and cand.is_dir():
+                data_root = cand
+                break
+
+    company_dir = data_root / safe_dir_component(f"{(rs.name or rs.code6)}_{rs.code6}")
     if out_dir is None:
         out_dir = company_dir / "charts"
     out_dir = out_dir.resolve()
@@ -695,7 +706,7 @@ def run(
         rs=rs,
         start=s,
         end=e,
-        data_dir=data_dir,
+        data_dir=data_root,
         out_dir=out_dir,
         provider=provider,
         statement_type=statement_type,
@@ -860,20 +871,72 @@ def run(
         if key not in _map_cache:
             _map_cache[key] = _value_map_for_statement(xlsx, statement)
         return _map_cache[key]
+    def _prev_quarter_end(pe: date) -> date:
+        """Previous quarter-end date (跨年)。"""
+        pe0 = _latest_quarter_end_on_or_before(pe)
+        mmdd = pe0.strftime('%m%d')
+        if mmdd == '0331':
+            return date(pe0.year - 1, 12, 31)
+        if mmdd == '0630':
+            return date(pe0.year, 3, 31)
+        if mmdd == '0930':
+            return date(pe0.year, 6, 30)
+        if mmdd == '1231':
+            return date(pe0.year, 9, 30)
+        # fallback: treat as the latest quarter-end and shift once
+        return date(pe0.year - 1, 12, 31)
+
+    def _prev_in_year_quarter_end(pe: date) -> date | None:
+        """Previous quarter-end date within the same year; Q1 -> None."""
+        pe0 = _latest_quarter_end_on_or_before(pe)
+        mmdd = pe0.strftime('%m%d')
+        if mmdd == '0331':
+            return None
+        if mmdd == '0630':
+            return date(pe0.year, 3, 31)
+        if mmdd == '0930':
+            return date(pe0.year, 6, 30)
+        if mmdd == '1231':
+            return date(pe0.year, 9, 30)
+        return None
 
     def _resolve_ident_value(ident: str, *, current_pe: date, default_statement: str) -> float | None:
-        ident_s = (ident or "").strip()
+        ident_s = (ident or '').strip()
         if not ident_s:
             return None
 
-        base, pe2 = _split_id_date(ident_s)
+        # Suffix modifiers (表达式内取值增强)：
+        #   .YYYY.MM.DD          -> 指定报告期
+        #   .prev                -> 上一季度（可链式：.prev.prev）
+        #   .prev_in_year         -> 同年上一季度（Q1 视为 0.0）
+        s0 = ident_s
+        prev_in_year = False
+        if s0.endswith('.prev_in_year'):
+            prev_in_year = True
+            s0 = s0[: -len('.prev_in_year')]
+
+        prev_n = 0
+        while s0.endswith('.prev'):
+            prev_n += 1
+            s0 = s0[: -len('.prev')]
+
+        base, pe2 = _split_id_date(s0)
         pe_use = pe2 or current_pe
+
+        if prev_in_year:
+            pe_prev = _prev_in_year_quarter_end(pe_use)
+            if pe_prev is None:
+                return 0.0
+            pe_use = pe_prev
+
+        for _ in range(prev_n):
+            pe_use = _prev_quarter_end(pe_use)
 
         statement = _statement_from_key(base, default_statement)
         xlsx = _xlsx_for_period(pe_use)
 
         # key path
-        if "." in base:
+        if '.' in base:
             vm = _values_map_for(pe_use, statement)
             if base in vm:
                 return float(vm[base])
@@ -933,75 +996,49 @@ def run(
 
         console.print(f"\n[bold]运行模板[/bold]: {k} → {fname_base}")
 
-        # ---- bar ----
-        if t_type == "bar":
+        # ---- bar / line ----
+        if t_type in {"bar", "line"}:
             mode = (getattr(tpl, "mode", None) or "trend").strip().lower()
             bars = getattr(tpl, "bars", None)
             statement_default = getattr(tpl, "statement", None) or "利润表"
 
+            chart_kind = "bar" if t_type == "bar" else "line"
+            render_png = render_bars_png if t_type == "bar" else render_lines_png
+            write_xlsx = write_bars_excel if t_type == "bar" else write_lines_excel
+
             if mode not in {"trend", "compare"}:
-                raise RuntimeError(f"bar 模板 mode 仅支持 trend/compare: {k}")
+                raise RuntimeError(f"{chart_kind} 模板 mode 仅支持 trend/compare: {k}")
 
             if not bars and mode == "trend":
-                raise RuntimeError(f"趋势 bar 模板必须提供 [[bars]]: {k}")
+                raise RuntimeError(f"趋势 {chart_kind} 模板必须提供 [[bars]]: {k}")
 
             # ---- trend ----
             if mode == "trend":
                 # requirement: must have start/end (already required by CLI)
                 periods_out = _filter_periods(quarter_ends_between(c.start, c.end))
-
-                # decide fetch_start based on transforms
-                transforms = []
+                # transform 配置已弃用：现在按表达式直接取值（不做 ttm/ytd/q 口径转换）。
+                # 若模板里仍写了 transform，仅提示并忽略。
+                if getattr(tpl, 'transform', None):
+                    console.print('[yellow]提示：模板字段 transform 已弃用，将被忽略（按 expr 原值取数）[/yellow]')
                 for b in bars or []:
-                    transforms.append(str(getattr(b, "transform", None) or "ttm").lower())
-                if any(t == "ttm" for t in transforms):
-                    fetch_start = date(c.start.year - 1, 1, 1)
-                elif any(t == "q" for t in transforms):
-                    fetch_start = date(c.start.year, 1, 1)
-                else:
-                    fetch_start = c.start
+                    if getattr(b, 'transform', None):
+                        b_n = str(getattr(b, 'name', None) or getattr(b, 'expr', '')).strip() or 'value'
+                        console.print(f'[yellow]提示：bars.transform 已弃用，将被忽略：{b_n}[/yellow]')
 
-                _maybe_fetch_missing(c, fetch_start=fetch_start)
-
-                periods_all = quarter_ends_between(fetch_start, c.end)
-
-                # compute ytd/raw series for each bar
-                series_ytd_by_name: dict[str, dict[date, float]] = {}
-
-                for pe in periods_all:
-                    for b in bars or []:
-                        b_name = str(getattr(b, "name", None) or getattr(b, "expr", "")).strip() or "value"
-                        b_expr = str(getattr(b, "expr", "")).strip()
-                        b_stmt = str(getattr(b, "statement", None) or statement_default)
-
-                        v_raw = _eval_expr_or_item(b_expr, current_pe=pe, default_statement=b_stmt)
-                        if v_raw is None:
-                            continue
-                        series_ytd_by_name.setdefault(b_name, {})[pe] = float(v_raw)
+                _maybe_fetch_missing(c)
 
                 # build output df (one row per period)
                 rows: list[dict[str, object]] = []
                 for pe in periods_out:
-                    row: dict[str, object] = {"period_end": pe.strftime("%Y-%m-%d")}
+                    row: dict[str, object] = {'period_end': pe.strftime('%Y-%m-%d')}
                     for b in bars or []:
-                        b_name = str(getattr(b, "name", None) or getattr(b, "expr", "")).strip() or "value"
-                        b_t = str(getattr(b, "transform", None) or "ttm").lower()
-                        t2 = "ytd" if b_t == "raw" else b_t
-                        ytd_map = series_ytd_by_name.get(b_name) or {}
-                        y_raw = ytd_map.get(pe)
-                        if y_raw is None:
-                            row[b_name] = None
-                            continue
-                        if t2 == "ttm":
-                            row[b_name] = ttm_from_ytd(pe, ytd_map)
-                        elif t2 == "q":
-                            row[b_name] = quarter_from_ytd(pe, ytd_map)
-                        else:
-                            row[b_name] = y_raw
+                        b_name = str(getattr(b, 'name', None) or getattr(b, 'expr', '')).strip() or 'value'
+                        b_expr = str(getattr(b, 'expr', '')).strip()
+                        b_stmt = str(getattr(b, 'statement', None) or statement_default)
+                        row[b_name] = _eval_expr_or_item(b_expr, current_pe=pe, default_statement=b_stmt)
                     rows.append(row)
 
                 df_out = pd.DataFrame(rows)
-
                 title = f"{c.rs.name or c.rs.code6} | {title0}"
                 out_png = c.out_dir / f"{fname_base}_{c.rs.code6}_{c.start.strftime('%Y%m%d')}_{c.end.strftime('%Y%m%d')}.png"
                 out_xlsx = c.out_dir / f"{fname_base}_{c.rs.code6}_{c.start.strftime('%Y%m%d')}_{c.end.strftime('%Y%m%d')}.xlsx"
@@ -1015,8 +1052,8 @@ def run(
                     seen.add(col)
                     series_cols2.append((col,label))
 
-                render_bars_png(df_out, title=title, x_col="period_end", series=series_cols2, out_png=out_png, x_label=x_label, y_label=y_label)
-                write_bars_excel(df_out, title=title, x_col="period_end", series=series_cols2, out_xlsx=out_xlsx, x_label=x_label, y_label=y_label)
+                render_png(df_out, title=title, x_col="period_end", series=series_cols2, out_png=out_png, x_label=x_label, y_label=y_label)
+                write_xlsx(df_out, title=title, x_col="period_end", series=series_cols2, out_xlsx=out_xlsx, x_label=x_label, y_label=y_label)
 
                 console.print(f"已生成: {out_png}")
                 console.print(f"已生成: {out_xlsx}")
@@ -1072,8 +1109,8 @@ def run(
             out_png = c.out_dir / f"{fname_base}_{c.rs.code6}_{pe.strftime('%Y%m%d')}.png"
             out_xlsx = c.out_dir / f"{fname_base}_{c.rs.code6}_{pe.strftime('%Y%m%d')}.xlsx"
 
-            render_bars_png(df_cmp, title=title, x_col="name", series=[("value", y_label)], out_png=out_png, x_label=x_label, y_label=y_label)
-            write_bars_excel(df_cmp, title=title, x_col="name", series=[("value", y_label)], out_xlsx=out_xlsx, x_label=x_label, y_label=y_label)
+            render_png(df_cmp, title=title, x_col="name", series=[("value", y_label)], out_png=out_png, x_label=x_label, y_label=y_label)
+            write_xlsx(df_cmp, title=title, x_col="name", series=[("value", y_label)], out_xlsx=out_xlsx, x_label=x_label, y_label=y_label)
 
             console.print(f"已生成: {out_png}")
             console.print(f"已生成: {out_xlsx}")
@@ -1125,16 +1162,11 @@ def run(
         if t_type == "combo":
             statement = getattr(tpl, "statement", None) or "利润表"
             bar_item = getattr(tpl, "bar_item", None) or "营业总收入"
-            transform = getattr(tpl, "transform", None) or "ttm"
 
-            t3 = "ytd" if transform == "raw" else str(transform).lower()
-            if t3 == "ttm":
-                fetch_start = date(c.start.year - 1, 1, 1)
-            elif t3 == "q":
-                fetch_start = date(c.start.year, 1, 1)
-            else:
-                fetch_start = c.start
-            _maybe_fetch_missing(c, fetch_start=fetch_start)
+            if getattr(tpl, "transform", None):
+                console.print('[yellow]提示：combo.transform 已弃用，将被忽略（按 bar_item 表达式原值取数）[/yellow]')
+
+            _maybe_fetch_missing(c)
 
             price_csv = c.data_dir / "price" / f"{c.rs.code6}.csv"
             if not price_csv.exists():
@@ -1143,29 +1175,11 @@ def run(
             df_price = load_price_csv(price_csv)
             periods = _filter_periods(quarter_ends_between(c.start, c.end))
 
-            ytd_map: dict[date, float] = {}
-            for pe in quarter_ends_between(fetch_start, c.end):
-                xlsx = expected_xlsx_path(c.data_dir, c.rs.code6, c.statement_type, pe, name=c.rs.name)
-                if not xlsx.exists():
-                    continue
-                v = get_item_value(xlsx, statement, bar_item)
-                if v is None:
-                    continue
-                ytd_map[pe] = float(v)
-
             rows = []
             for pe in periods:
-                v_raw = ytd_map.get(pe)
-                if v_raw is None:
-                    continue
-                if t3 == "ttm":
-                    v = ttm_from_ytd(pe, ytd_map)
-                elif t3 == "q":
-                    v = quarter_from_ytd(pe, ytd_map)
-                else:
-                    v = v_raw
+                amount = _eval_expr_or_item(str(bar_item), current_pe=pe, default_statement=statement)
                 px = price_on_or_before(df_price, pe)
-                rows.append({"period_end": pe.strftime("%Y-%m-%d"), "amount": v, "close": px})
+                rows.append({"period_end": pe.strftime("%Y-%m-%d"), "amount": amount, "close": px})
 
             df = pd.DataFrame(rows).dropna(subset=["amount", "close"])
             title = f"{c.rs.name or c.rs.code6} | {title0}"

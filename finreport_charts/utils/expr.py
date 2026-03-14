@@ -13,7 +13,7 @@ class ExprError(Exception):
 
 
 _TOKEN_RE = re.compile(
-    r"\s*(?:(?P<num>(?:\d+\.\d+)|(?:\d+))|(?P<id>[A-Za-z_][A-Za-z0-9_\.]*?)|(?P<op>[\+\-\*/\(\)]))"
+    r"\s*(?:(?P<num>(?:\d+\.\d+)|(?:\d+))|(?P<id>[A-Za-z_][A-Za-z0-9_\.]*)|(?P<op>[\+\-\*/\(\)]))"
 )
 
 
