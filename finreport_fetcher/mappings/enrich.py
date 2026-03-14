@@ -137,6 +137,36 @@ def _normalize_subject(s: str) -> str:
     return ss
 
 
+def _as_float(v) -> float | None:
+    try:
+        if v is None or (isinstance(v, float) and pd.isna(v)):
+            return None
+        if pd.isna(v):
+            return None
+        return float(v)
+    except Exception:
+        return None
+
+
+def _is_redundant_duplicate_value(v, first) -> bool:
+    """Heuristic to drop obvious duplicated lines.
+
+    Many providers repeat totals or placeholder 0 lines. If a canonical key repeats and
+    the later value is empty/0 or equals the first value, we can safely drop it.
+    """
+
+    fv = _as_float(v)
+    f1 = _as_float(first)
+
+    if fv is None:
+        return True
+    if abs(fv) < 1e-12:
+        return True
+    if f1 is None:
+        return False
+    return abs(fv - f1) < 1e-9
+
+
 def enrich_statement_df(df: pd.DataFrame, *, sheet_name_cn: str) -> pd.DataFrame:
     """Add stable template key + English remark for a statement df.
 
@@ -168,9 +198,16 @@ def enrich_statement_df(df: pd.DataFrame, *, sheet_name_cn: str) -> pd.DataFrame
     keys: list[str] = []
     ens: list[str] = []
     cn_canon: list[str] = []
+    # seen: used keys inside this sheet (for uniqueness)
     seen: dict[str, int] = {}
 
-    for cn_raw in cn_series_raw.tolist():
+    # canonical key tracking (for duplicate handling)
+    canon_first_value: dict[str, object] = {}
+    canon_dup_count: dict[str, int] = {}
+
+    keep_rows: list[int] = []
+
+    for i, cn_raw in enumerate(cn_series_raw.tolist()):
         tag_prefix = _leading_tag_prefix(cn_raw)
         cn_norm = _normalize_subject(cn_raw)
 
@@ -212,29 +249,39 @@ def enrich_statement_df(df: pd.DataFrame, *, sheet_name_cn: str) -> pd.DataFrame
 
         cn_disp = f"{tag_prefix}{cn_base}" if tag_prefix else cn_base
 
-        # Duplicate canonical rows (same spec without tagging) can be common across providers.
-        # Keep only the first occurrence to avoid __2 suffixes and maintain consistent output.
-        if spec and not tag_prefix and k in seen:
-            continue
+        canon_k = k
+        v = out.iloc[i]["数值"] if "数值" in out.columns else None
 
-        # If this is a tagged sub-line (其中/加/减) and the base key already exists in this sheet,
-        # create a stable sub-key to avoid "__2" suffixes.
-        if tag_prefix and k in seen:
+        # 1) Tagged sub-lines: derive stable sub-key when base exists.
+        if tag_prefix and canon_k in canon_first_value:
             if tag_prefix == "其中：":
-                k = f"{k}.sub"
+                k = f"{canon_k}.sub"
             elif tag_prefix == "加：":
-                k = f"{k}.add"
+                k = f"{canon_k}.add"
             elif tag_prefix == "减：":
-                k = f"{k}.minus"
-
-        # Ensure uniqueness within a sheet
-        if k:
-            n = seen.get(k, 0)
-            if n:
-                k = f"{k}__{n+1}"
-                seen[k] = n + 1
+                k = f"{canon_k}.minus"
             else:
-                seen[k] = 1
+                k = canon_k
+
+        # 2) Repeated canonical lines: drop obvious duplicates; otherwise keep with stable suffix.
+        elif canon_k in canon_first_value:
+            if _is_redundant_duplicate_value(v, canon_first_value[canon_k]):
+                continue
+            canon_dup_count[canon_k] = canon_dup_count.get(canon_k, 1) + 1
+            k = f"{canon_k}.dup{canon_dup_count[canon_k]}"
+
+        else:
+            canon_first_value[canon_k] = v
+            canon_dup_count[canon_k] = 1
+            k = canon_k
+
+        # Ensure uniqueness within this sheet
+        if k:
+            base = k
+            n = seen.get(base, 0) + 1
+            seen[base] = n
+            if n > 1:
+                k = f"{base}__{n}"
 
             # Enforce ASCII-only key
             try:
@@ -244,9 +291,13 @@ def enrich_statement_df(df: pd.DataFrame, *, sheet_name_cn: str) -> pd.DataFrame
         else:
             raise RuntimeError(f"未能为科目生成 key：{cn_disp}")
 
+        keep_rows.append(i)
         keys.append(k)
         ens.append(en)
         cn_canon.append(cn_disp)
+
+    # Drop rows we decided to skip (duplicate placeholders/totals)
+    out = out.iloc[keep_rows].copy().reset_index(drop=True)
 
     # Insert key as the first column for readability
     if "key" not in out.columns:
