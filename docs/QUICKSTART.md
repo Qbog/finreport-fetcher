@@ -5,6 +5,8 @@
 > 你只需要关心两个命令：
 > - 抓财报：`finfetch fetch ...`（或 `python3 -m finreport_fetcher fetch ...`）
 > - 画图：`finchart run ...`（或 `python3 -m finreport_charts run ...`）
+>
+> 两个命令都支持 `--log-level/-l` 控制输出级别：`debug/info/warning/error`。
 
 ---
 

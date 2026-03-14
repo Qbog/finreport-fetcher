@@ -376,12 +376,18 @@ output/
 ## 7. 常见问题
 
 ### Q1: 如何查看所有可用的 key？
-打开生成的财报 Excel，查看 `key` 列。或在代码中查看 `subject_glossary.py`。
+打开生成的财报 Excel，查看 `key` 列。
+
+说明：
+- `key` **保证为 ASCII**（只包含英文/数字/点号/下划线），便于模板引用。
+- 已映射科目会使用 `subject_glossary.py` 里定义的稳定 key（例如 `is.revenue`）。
+- 未映射科目会生成形如 `is.unk.<hash>` / `bs.unk.<hash>` 的 key（同一科目在不同数据源只要名称一致就会一致）。
 
 ### Q2: expr/key 找不到怎么办？
 - 优先使用 Excel 里的 `key` 列（每行都有 key）
 - 确认 key 前缀对应报表：`is.*`=利润表，`bs.*`=资产负债表，`cf.*`=现金流量表
-- 如果确实缺少映射：在 `finreport_fetcher/mappings/subject_glossary.py` 里补充 key→中文/英文映射
+- 如果你看到的是 `*.unk.<hash>`：说明该科目还没有被“标准化映射”，建议补齐映射
+- 补映射方式：在 `finreport_fetcher/mappings/subject_glossary.py` 里添加 `SubjectSpec(key, cn, en, aliases=...)`
 
 ### Q3: 如何画“单季”而不是累计？
 利润表/现金流量表很多口径是累计值（YTD）。推荐在 expr 里用差分：
