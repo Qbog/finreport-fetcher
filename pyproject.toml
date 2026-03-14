@@ -24,6 +24,7 @@ dev = ["pytest>=8.0.0"]
 [project.scripts]
 finfetch = "finreport_fetcher.cli:app"
 finchart = "finreport_charts.cli:app"
+finprice = "finprice_fetcher.cli:app"
 
 [tool.ruff]
 line-length = 100
@@ -35,7 +36,7 @@ select = ["E", "F", "I"]
 line-length = 100
 
 [tool.setuptools.packages.find]
-include = ["finreport_fetcher*", "finreport_charts*"]
+include = ["finreport_fetcher*", "finreport_charts*", "finprice_fetcher*"]
 exclude = ["output*", "templates*"]
 
 [build-system]

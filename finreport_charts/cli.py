@@ -1168,53 +1168,8 @@ def run(
                 continue
 
             # ---- compare ----
-            # determine as_of
-            if getattr(tpl, "period_end", None):
-                pe0 = parse_date(str(getattr(tpl, "period_end")))
-            elif as_of:
-                pe0 = parse_date(as_of)
-            else:
-                pe0 = _latest_quarter_end_on_or_before(c.end)
-            pe = _latest_quarter_end_on_or_before(pe0)
-
-            # ensure the one period exists
-            still = ensure_finreports(
-                code_or_name_args=["--code", c.rs.code6],
-                code6=c.rs.code6,
-                start=pe,
-                end=pe,
-                data_dir=c.data_dir,
-                provider=c.provider,
-                statement_type=c.statement_type,
-                pdf=c.pdf,
-                company_name=c.rs.name,
-                tushare_token=c.tushare_token,
-            )
-            if still:
-                log_warn(f"提示：比较分析期末财报不可用: {still}")
-                if strict:
-                    raise RuntimeError(f"缺失财报 {len(still)} 期（strict 模式退出）：{still}")
-
-            xlsx = expected_xlsx_path(c.data_dir, c.rs.code6, c.statement_type, pe, name=c.rs.name)
-
-            # 若 end/as-of 对应期末未披露：自动回退到最近一期可用财报（向前找最多 12 个季度）
-            if not xlsx.exists():
-                pe2 = pe
-                xlsx2 = xlsx
-                for _ in range(12):
-                    pe2 = _prev_quarter_end(pe2)
-                    xlsx2 = expected_xlsx_path(c.data_dir, c.rs.code6, c.statement_type, pe2, name=c.rs.name)
-                    if xlsx2.exists():
-                        log_warn(
-                            f"提示：{pe.strftime('%Y-%m-%d')} 财报不可用，回退到 {pe2.strftime('%Y-%m-%d')}。"
-                        )
-                        pe = pe2
-                        xlsx = xlsx2
-                        break
-
-            if not xlsx.exists():
-                log_warn(f"提示：比较分析缺少财报，跳过模板 {k}。")
-                continue
+            # 约定：当用户提供 --start/--end 时，比较分析会对时间范围内每个报告期各生成一张图。
+            # 若显式指定了 --as-of 或模板 period_end，则按“单期末”输出。
 
             statement = statement_default
 
@@ -1222,29 +1177,150 @@ def run(
             if not bars:
                 raise RuntimeError(f"compare 模式必须在模板中显式配置 [[bars]]: {k}")
 
-            rows = []
-            for b in bars:
-                b_name = str(getattr(b, "name", None) or getattr(b, "expr", "")).strip() or "value"
-                b_expr = str(getattr(b, "expr", "")).strip()
-                b_stmt = str(getattr(b, "statement", None) or statement)
-                v = _eval_expr_or_item(b_expr, current_pe=pe, default_statement=b_stmt)
-                rows.append({"name": b_name, "value": v})
+            # ---- single-period compare ----
+            if getattr(tpl, "period_end", None) or as_of:
+                if getattr(tpl, "period_end", None):
+                    pe0 = parse_date(str(getattr(tpl, "period_end")))
+                else:
+                    pe0 = parse_date(as_of)
 
-            df_cmp = pd.DataFrame(rows).dropna(subset=["value"])
-            if df_cmp.empty:
-                log_warn(f"提示：{k} 在该期末没有可用数据（可能科目缺失/表达式失败）。")
+                pe = _latest_quarter_end_on_or_before(pe0)
+
+                still = ensure_finreports(
+                    code_or_name_args=["--code", c.rs.code6],
+                    code6=c.rs.code6,
+                    start=pe,
+                    end=pe,
+                    data_dir=c.data_dir,
+                    provider=c.provider,
+                    statement_type=c.statement_type,
+                    pdf=c.pdf,
+                    company_name=c.rs.name,
+                    tushare_token=c.tushare_token,
+                )
+                if still:
+                    log_warn(f"提示：比较分析期末财报不可用: {still}")
+                    if strict:
+                        raise RuntimeError(f"缺失财报 {len(still)} 期（strict 模式退出）：{still}")
+
+                xlsx = expected_xlsx_path(c.data_dir, c.rs.code6, c.statement_type, pe, name=c.rs.name)
+
+                # 若对应期末未披露：自动回退到最近一期可用财报（向前找最多 12 个季度）
+                if not xlsx.exists():
+                    pe2 = pe
+                    xlsx2 = xlsx
+                    for _ in range(12):
+                        pe2 = _prev_quarter_end(pe2)
+                        xlsx2 = expected_xlsx_path(
+                            c.data_dir, c.rs.code6, c.statement_type, pe2, name=c.rs.name
+                        )
+                        if xlsx2.exists():
+                            log_warn(
+                                f"提示：{pe.strftime('%Y-%m-%d')} 财报不可用，回退到 {pe2.strftime('%Y-%m-%d')}。"
+                            )
+                            pe = pe2
+                            xlsx = xlsx2
+                            break
+
+                if not xlsx.exists():
+                    log_warn(f"提示：比较分析缺少财报，跳过模板 {k}。")
+                    continue
+
+                rows = []
+                for b in bars:
+                    b_name = str(getattr(b, "name", None) or getattr(b, "expr", "")).strip() or "value"
+                    b_expr = str(getattr(b, "expr", "")).strip()
+                    b_stmt = str(getattr(b, "statement", None) or statement)
+                    v = _eval_expr_or_item(b_expr, current_pe=pe, default_statement=b_stmt)
+                    rows.append({"name": b_name, "value": v})
+
+                df_cmp = pd.DataFrame(rows).dropna(subset=["value"])
+                if df_cmp.empty:
+                    log_warn(f"提示：{k} 在该期末没有可用数据（可能科目缺失/表达式失败）。")
+                    continue
+
+                title = f"{c.rs.name or c.rs.code6} | {title0} | {pe.strftime('%Y-%m-%d')}"
+                out_png = c.out_dir / f"{fname_base}_{c.rs.code6}_{pe.strftime('%Y%m%d')}.png"
+                out_xlsx = c.out_dir / f"{fname_base}_{c.rs.code6}_{pe.strftime('%Y%m%d')}.xlsx"
+
+                render_png(
+                    df_cmp,
+                    title=title,
+                    x_col="name",
+                    series=[("value", y_label)],
+                    out_png=out_png,
+                    x_label=x_label,
+                    y_label=y_label,
+                )
+                write_xlsx(
+                    df_cmp,
+                    title=title,
+                    x_col="name",
+                    series=[("value", y_label)],
+                    out_xlsx=out_xlsx,
+                    x_label=x_label,
+                    y_label=y_label,
+                )
+
+                log_info(f"已生成: {out_png}")
+                log_info(f"已生成: {out_xlsx}")
                 continue
 
-            title = f"{c.rs.name or c.rs.code6} | {title0} | {pe.strftime('%Y-%m-%d')}"
+            # ---- per-period compare (range) ----
+            periods_cmp = _filter_periods(quarter_ends_between(c.start, min(c.end, date.today())))
 
-            out_png = c.out_dir / f"{fname_base}_{c.rs.code6}_{pe.strftime('%Y%m%d')}.png"
-            out_xlsx = c.out_dir / f"{fname_base}_{c.rs.code6}_{pe.strftime('%Y%m%d')}.xlsx"
+            still = _maybe_fetch_missing(c)
+            if strict and still:
+                raise RuntimeError(f"缺失财报 {len(still)} 期（strict 模式退出）：{still}")
 
-            render_png(df_cmp, title=title, x_col="name", series=[("value", y_label)], out_png=out_png, x_label=x_label, y_label=y_label)
-            write_xlsx(df_cmp, title=title, x_col="name", series=[("value", y_label)], out_xlsx=out_xlsx, x_label=x_label, y_label=y_label)
+            any_ok = False
+            for pe in periods_cmp:
+                xlsx = expected_xlsx_path(c.data_dir, c.rs.code6, c.statement_type, pe, name=c.rs.name)
+                if not xlsx.exists():
+                    continue
 
-            log_info(f"已生成: {out_png}")
-            log_info(f"已生成: {out_xlsx}")
+                rows = []
+                for b in bars:
+                    b_name = str(getattr(b, "name", None) or getattr(b, "expr", "")).strip() or "value"
+                    b_expr = str(getattr(b, "expr", "")).strip()
+                    b_stmt = str(getattr(b, "statement", None) or statement)
+                    v = _eval_expr_or_item(b_expr, current_pe=pe, default_statement=b_stmt)
+                    rows.append({"name": b_name, "value": v})
+
+                df_cmp = pd.DataFrame(rows).dropna(subset=["value"])
+                if df_cmp.empty:
+                    continue
+
+                any_ok = True
+                title = f"{c.rs.name or c.rs.code6} | {title0} | {pe.strftime('%Y-%m-%d')}"
+                out_png = c.out_dir / f"{fname_base}_{c.rs.code6}_{pe.strftime('%Y%m%d')}.png"
+                out_xlsx = c.out_dir / f"{fname_base}_{c.rs.code6}_{pe.strftime('%Y%m%d')}.xlsx"
+
+                render_png(
+                    df_cmp,
+                    title=title,
+                    x_col="name",
+                    series=[("value", y_label)],
+                    out_png=out_png,
+                    x_label=x_label,
+                    y_label=y_label,
+                )
+                write_xlsx(
+                    df_cmp,
+                    title=title,
+                    x_col="name",
+                    series=[("value", y_label)],
+                    out_xlsx=out_xlsx,
+                    x_label=x_label,
+                    y_label=y_label,
+                )
+
+                log_info(f"已生成: {out_png}")
+                log_info(f"已生成: {out_xlsx}")
+
+            if not any_ok:
+                log_warn(f"提示：{k} 在该区间内没有可用数据（可能缺失/未披露）。")
+
             continue
 
         # ---- pie ----

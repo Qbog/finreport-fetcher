@@ -2,8 +2,9 @@
 
 这份文档给你一条**最短路径**：从“抓财报”到“用模板出图”。
 
-> 你只需要关心两个命令：
+> 你只需要关心三个命令：
 > - 抓财报：`finfetch fetch ...`（或 `python3 -m finreport_fetcher fetch ...`）
+> - 抓股价：`finprice fetch ...`（或 `python3 -m finprice_fetcher fetch ...`）
 > - 画图：`finchart run ...`（或 `python3 -m finreport_charts run ...`）
 >
 > 两个命令都支持 `--log-level/-l` 控制输出级别：`debug/info/warning/error`。
@@ -104,9 +105,31 @@ output/贵州茅台_600519/charts/
 
 ---
 
-## 3) 下一步：写你自己的模板
+## 3) （可选）抓取股价数据（用于 combo 双轴图）
+
+> `combo` 图表会读取：`{data-dir}/price/{code6}.csv`，要求至少包含两列：`date,close`。
+
+示例：抓取贵州茅台 2024 年日频股价（优先 tushare，失败自动回退 akshare）：
+
+```bash
+finprice fetch --code 600519 \
+  --start 2024-01-01 --end 2024-12-31 \
+  --frequency daily \
+  --provider auto \
+  --out output
+```
+
+输出：
+
+```
+output/price/600519.csv
+```
+
+---
+
+## 4) 下一步：写你自己的模板
 
 - 模板目录：`templates/`
 - 模板说明：见 [TEMPLATE_GUIDE.md](TEMPLATE_GUIDE.md)
 
-推荐优先使用 Excel 里的 `key`（例如 `is.revenue`），模板更稳定、跨公司复用更好。
+推荐优先使用 Excel 里的 `key`（例如 `is.revenue_total` / `bs.cash`），模板更稳定、跨公司复用更好。

@@ -52,7 +52,14 @@ def _autofit_worksheet(ws, *, min_row: int = 1):
             if v is None:
                 continue
             s = str(v)
-            max_len = max(max_len, _display_len(s))
+            indent = 0
+            try:
+                indent = int(getattr(cell.alignment, "indent", 0) or 0)
+            except Exception:
+                indent = 0
+
+            # 缩进会占用可视宽度，但不体现在字符串长度里；这里把缩进折算进列宽估算。
+            max_len = max(max_len, _display_len(s) + indent * 1.2)
 
         col_letter = get_column_letter(col_idx)
         # True-ish autofit: small minimum, larger maximum
@@ -270,8 +277,9 @@ def export_bundle_to_excel(
         v_letter = get_column_letter(value_col)
         s_letter = get_column_letter(subj_col)
         ws.column_dimensions[v_letter].width = max(float(ws.column_dimensions[v_letter].width or 0), 16.0)
-        # 科目列不宜过宽（Excel 手动“自适应列宽”会更窄），这里给一个更温和的兜底。
-        ws.column_dimensions[s_letter].width = max(float(ws.column_dimensions[s_letter].width or 0), 16.0)
+        # 科目列：用户反馈仍有遮挡，因此提高最小宽度；同时做上限避免极端撑爆。
+        subj_w = float(ws.column_dimensions[s_letter].width or 0)
+        ws.column_dimensions[s_letter].width = min(max(subj_w, 22.0), 45.0)
 
 
         # spacer 列宽（如果存在）

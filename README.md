@@ -11,11 +11,13 @@
 
 - `finreport_fetcher/`：财报抓取程序（已实现）
 - `finreport_charts/`：图表生成程序（新增）
+- `finprice_fetcher/`：股价抓取程序（新增）
 
 文档：
 - 快速开始：[`docs/QUICKSTART.md`](docs/QUICKSTART.md)
 - 模板说明：[`docs/TEMPLATE_GUIDE.md`](docs/TEMPLATE_GUIDE.md)
 - 回归测试：[`docs/TESTING.md`](docs/TESTING.md)
+- 股价抓取：见下文 `finprice`（输出 `output/price/{code6}.csv` 供 combo 图使用）
 
 ---
 
@@ -129,6 +131,8 @@ output/
   - `*.png`：图片
   - `*.xlsx`：原始数据 + Excel 内置图表
 - 支持 `--start/--end` 时间范围
+  - `mode=trend`：范围内生成 1 张趋势图（1 个 png + 1 个 xlsx）
+  - `mode=compare`：范围内**每个报告期**生成 1 张比较图（每期 1 个 png + 1 个 xlsx）；如需单期末可用 `--as-of` 或模板 `period_end`
 - 若 `--data-dir` 缺少所需报告期财报，程序会自动调用 `finreport_fetcher` 补齐（增量写入，不清空目录）
 - 支持：
   - 柱状图趋势（bar）：按模板 `expr` 逐期取值/计算（不再使用 transform 口径配置）
@@ -136,7 +140,7 @@ output/
   - 同型分析饼图（pie）：范围内每期一张，支持 `section` 或 `items`，支持 TopN+其他
   - 合并双轴图（combo）：财务柱 + 股价折线，股价来自 CSV：列 `date,close`
 - **模板驱动（推荐）**：每个模板一个 TOML 文件（`templates/*.toml`），通过 `finreport_charts run` 执行（支持跑全部模板或指定单个/多个模板）
-- **新增**：支持使用 `key`（如 `is.revenue`）替代中文科目名，实现跨公司标准化引用
+- **新增**：支持使用 `key`（如 `is.revenue_total` / `bs.cash`）替代中文科目名，实现跨公司标准化引用
 
 ### 约定：数据目录（--data-dir）
 
@@ -145,7 +149,7 @@ output/
 - Excel：`output/{公司名}_{code6}/reports/{code6}_{statement}_{period}.xlsx`
 - PDF：`output/{公司名}_{code6}/pdf/{code6}_{period}.pdf`（PDF 与 Excel 不同层级；PDF 统一放入 `pdf/` 子目录）
 
-股价 CSV（未来由你的股价 fetcher 产生）默认约定位置：
+股价 CSV（由 `finprice fetch` 生成）默认约定位置：
 
 ```
 {data-dir}/price/{code6}.csv
@@ -202,10 +206,13 @@ python3 -m finreport_charts run --code 600519 --start 2024-01-01 --end 2024-12-3
 
 ## 新增功能说明（v0.2）
 
-### 1. 财报 Excel 新增列
-- `key`：模板标准键（如 `is.revenue`, `bs.cash`），且**每行都有 key**
-- `科目`：中英文对照展示（`中文 (English)`；无翻译则仅中文）
+### 1. 财报 Excel 固定格式（跨数据源一致）
+导出列顺序固定为：`科目 | 数值 | (空白列) | key | 备注`（**备注永远在最后一列**）。
+
+- `科目`：规范中文科目名（来自 `subject_glossary`，必要时保留“其中/加/减”前缀）
 - `数值`：金额（自动格式化，负数红色，千分位）
+- `key`：模板标准键（ASCII-only，如 `is.revenue_total` / `bs.cash`），且**每行都有 key**
+- `备注`：英文名称（用于校对/补全映射）
 
 ### 2. 表达式跨期取数（替代 transform）
 表达式里的标识符支持后缀，便于在 `expr` 内做差分/跨期：
@@ -217,12 +224,37 @@ python3 -m finreport_charts run --code 600519 --start 2024-01-01 --end 2024-12-3
 - `is.net_profit_parent - is.net_profit_parent.prev_in_year`
 
 ### 3. Key 引用
-支持使用标准 key（如 `is.revenue`）替代中文科目名，实现：
+支持使用标准 key（如 `is.revenue_total` / `bs.cash`）替代中文科目名，实现：
 - 跨公司标准化引用
 - 避免中文科目名差异问题
 - 便于模板复用
 
 详见 [docs/TEMPLATE_GUIDE.md](docs/TEMPLATE_GUIDE.md)
+
+---
+
+## 3) finprice_fetcher（股价抓取）
+
+用于给 `combo` 双轴图提供 `{data-dir}/price/{code6}.csv`。
+
+示例（日频）：
+
+```bash
+finprice fetch --code 600519 \
+  --start 2024-01-01 --end 2024-12-31 \
+  --frequency daily \
+  --provider auto \
+  --out output
+```
+
+- provider：`auto|akshare|tushare`（auto 默认 token 有则 tushare，否则 akshare）
+- frequency：`daily|weekly|monthly`（tushare 目前仅支持 daily；周/月请用 akshare）
+
+输出：
+
+```
+output/price/600519.csv
+```
 
 ---
 
