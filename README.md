@@ -12,6 +12,10 @@
 - `finreport_fetcher/`：财报抓取程序（已实现）
 - `finreport_charts/`：图表生成程序（新增）
 
+文档：
+- 快速开始：[`docs/QUICKSTART.md`](docs/QUICKSTART.md)
+- 模板说明：[`docs/TEMPLATE_GUIDE.md`](docs/TEMPLATE_GUIDE.md)
+
 ---
 
 ## 安装
@@ -22,9 +26,9 @@
 cd a_share_finreport_fetcher
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -U pip
+pip install -U pip setuptools wheel
 
-# 安装为 editable（会提供 finfetch 命令；也支持 python -m finreport_fetcher）
+# 安装为 editable（会提供 finfetch / finchart 命令；也支持 python -m finreport_fetcher / finreport_charts）
 pip install -e .
 
 # 如需 tushare（可选）：
@@ -73,6 +77,7 @@ pip install tushare
 
 ```bash
 # 推荐：模板驱动（run）
+# （若已 `pip install -e .` 安装为命令，可把 `python3 -m finreport_charts` 换成 `finchart`）
 python3 -m finreport_charts run \
   --code 600519 \
   --start 2024-01-01 --end 2024-12-31 \
@@ -150,6 +155,7 @@ output/
 
 ```bash
 # 推荐：模板驱动（run）
+# （若已 `pip install -e .` 安装为命令，可把 `python3 -m finreport_charts` 换成 `finchart`）
 python3 -m finreport_charts run \
   --code 600519 \
   --start 2024-01-01 --end 2024-12-31 \

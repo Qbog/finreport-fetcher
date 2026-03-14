@@ -46,6 +46,8 @@ expr = "is.net_profit_parent - is.net_profit_parent.prev_in_year"
 
 ## 4) 运行方式
 
+> 若已通过 `pip install -e .` 安装为命令，可把 `python3 -m finreport_charts` 换成 `finchart`。
+
 - 运行模板目录下全部模板：
 
 ```bash

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import warnings
 from datetime import date
 from pathlib import Path
 
+# 避免 pandas 在某些环境下对 numexpr/bottleneck 版本给出噪声警告
+warnings.filterwarnings("ignore", message=r"Pandas requires version.*", category=UserWarning)
+
 import typer
 from rich.console import Console
-
 from rich.prompt import IntPrompt
 
 from .exporter.excel import export_bundle_to_excel

@@ -10,7 +10,7 @@ class BarBlock:
     name: str
     expr: str
     statement: str | None = None
-    transform: str | None = None  # ttm|ytd|q|raw
+    transform: str | None = None  # DEPRECATED: legacy ttm|ytd|q|raw（run 模式会忽略）
 
 
 @dataclass(frozen=True)
@@ -46,7 +46,7 @@ class Template:
 
     # Combo-specific
     bar_item: str | None = None
-    transform: str | None = None
+    transform: str | None = None  # DEPRECATED: legacy transform（run 模式会忽略）
     line: str | None = None
 
 

@@ -40,6 +40,11 @@ cf.net_cash_from_ops # 经营活动现金流量净额
 
 我们推荐 **一个模板一个 TOML 文件**，统一放在仓库根目录 `templates/` 下，并用 `finreport_charts run` 执行。
 
+图表渲染的默认风格约定：
+- **暗色主题**（深色背景 + 亮色文字），便于在深色界面/投影里阅读。
+- 金额类 Y 轴刻度会自动按数量级显示中文单位（`亿/万/元`）。
+- 柱状图会在柱子上方显示数值标签（同样按单位缩放）。
+
 > 强烈建议在 `[[bars]]` 里优先写 `expr = "<key>"`（例如 `is.net_profit_parent`），而不是中文科目名，以保证跨公司复用与稳定匹配。
 >
 > 支持跨期取数：`is.admin_expense.2024.12.31`（在 key 后追加 `.YYYY.MM.DD`）。
@@ -161,6 +166,8 @@ expr = "is.revenue - is.revenue.prev_in_year"
 ## 3. 命令行使用
 
 ### 3.1 基础命令
+
+> 若已通过 `pip install -e .` 安装为命令，可把 `python3 -m finreport_charts` 换成 `finchart`。
 
 ```bash
 # 运行模板目录下全部模板
