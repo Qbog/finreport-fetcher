@@ -253,7 +253,8 @@ def fetch(
     """抓取股价数据（CSV），用于 combo 图表等。
 
     输出：
-    - {out}/price/{code6}.csv（默认）
+    - {out}/{公司名}_{code6}/price/{code6}.csv
+    - {out}/{公司名}_{code6}/price/{code6}.xlsx
     """
 
     c = _common(
@@ -298,7 +299,15 @@ def fetch(
         raise typer.BadParameter("--provider 仅支持 auto|akshare|tushare")
 
     df.to_csv(out_path, index=False)
-    log_info(f"已输出: {out_path} (provider={src}, frequency={c.frequency}, rows={len(df)})")
+
+    out_xlsx = out_dir / f"{c.rs.code6}.xlsx"
+    # 价格表 Excel：方便人工查看/二次处理
+    with pd.ExcelWriter(out_xlsx, engine="openpyxl") as w:
+        df.to_excel(w, sheet_name="price", index=False)
+
+    log_info(
+        f"已输出: {out_path} / {out_xlsx} (provider={src}, frequency={c.frequency}, rows={len(df)})"
+    )
 
 
 def main():

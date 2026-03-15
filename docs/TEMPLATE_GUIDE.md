@@ -185,7 +185,7 @@ y_label = "金额"
 statement = "利润表"
 # bar_item 支持 key/中文科目名/表达式
 bar_item = "is.revenue - is.revenue.prev_in_year"   # 单季营业收入
-# 股价线自动读取 data-dir/{公司名}_{code6}/price/{code6}.csv（兼容 data-dir/price/{code6}.csv）
+# 股价线自动读取 data-dir/{公司名}_{code6}/price/{code6}.csv（兼容 data-dir/price/{code6}.csv；finprice 同时会生成同名 .xlsx 便于人工查看）
 ```
 
 > 说明：旧版 `charts.toml`（单文件多模板）解析器仍保留，但 CLI 仅支持 `finreport_charts run`；旧的 `bar/pie/combo/template` 子命令已弃用并会直接退出。
@@ -320,7 +320,7 @@ date,close
 ...
 ```
 
-保存位置：`data-dir/{公司名}_{code6}/price/{code6}.csv`（兼容 `data-dir/price/{code6}.csv`）
+保存位置：`data-dir/{公司名}_{code6}/price/{code6}.csv` + 同名 `.xlsx`（兼容 `data-dir/price/{code6}.csv`）
 
 ---
 

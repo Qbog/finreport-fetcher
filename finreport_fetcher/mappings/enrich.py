@@ -183,6 +183,9 @@ def _patch_balance_sheet_structure(df: pd.DataFrame) -> pd.DataFrame:
         out["__level"] = 0
     if "__is_header" not in out.columns:
         out["__is_header"] = False
+    # 标记：结构性重复行（例如“报表核心指标”只是聚焦展示，但对应科目仍应在原区块里保留一份）
+    if "__dup_keep" not in out.columns:
+        out["__dup_keep"] = False
 
     # ---- core metrics header (first 4 lines) ----
     subj0 = out["科目"].astype(str).tolist()
@@ -207,6 +210,90 @@ def _patch_balance_sheet_structure(df: pd.DataFrame) -> pd.DataFrame:
             for r in range(1, 5):
                 out.at[r, "__level"] = 1
                 out.at[r, "__is_header"] = False
+
+        # ---- duplicate core metrics into their native sections ----
+        # “报表核心指标”只是聚焦展示；核心科目在资产/负债/权益区块底部也应存在一份（同花顺/东方财富/雪球风格）。
+        subj2 = out["科目"].astype(str).tolist()
+        norm2 = [_normalize_subject(s) for s in subj2]
+
+        # find core header idx
+        core_hdr_idx = None
+        for i, n in enumerate(norm2):
+            if n == "报表核心指标" and bool(out.iloc[i].get("__is_header")):
+                core_hdr_idx = i
+                break
+
+        if core_hdr_idx is not None and (core_hdr_idx + 4) < len(out):
+            core_end = core_hdr_idx + 4
+            core_rows: dict[str, dict] = {}
+            for j in range(core_hdr_idx + 1, core_end + 1):
+                n = _normalize_subject(str(out.iloc[j].get("科目", "")))
+                if n in core_set:
+                    core_rows[n] = out.iloc[j].to_dict()
+
+            def _has_later(nm: str) -> bool:
+                return any(x == nm for x in norm2[core_end + 1 :])
+
+            def _insert_dup(at_idx: int, row_dict: dict) -> None:
+                nonlocal out, subj2, norm2
+                row2 = {c: None for c in out.columns}
+                row2.update(row_dict)
+                row2["__level"] = 0
+                row2["__is_header"] = False
+                row2["__dup_keep"] = True
+                top = out.iloc[:at_idx].copy()
+                bot = out.iloc[at_idx:].copy()
+                out = pd.concat([top, pd.DataFrame([row2]), bot], ignore_index=True)
+                subj2 = out["科目"].astype(str).tolist()
+                norm2 = [_normalize_subject(s) for s in subj2]
+
+            # 1) 资产总计：放在负债开始之前（资产区块末尾）
+            asset_nm = "资产总计" if "资产总计" in core_rows else ("资产合计" if "资产合计" in core_rows else None)
+            if asset_nm and not _has_later(_normalize_subject(asset_nm)):
+                liab_markers = {
+                    "流动负债",
+                    "非流动负债",
+                    "流动负债合计",
+                    "非流动负债合计",
+                    "负债合计",
+                }
+                liab_start = None
+                for i in range(core_end + 1, len(norm2)):
+                    if norm2[i] in liab_markers:
+                        liab_start = i
+                        break
+                if liab_start is not None:
+                    _insert_dup(liab_start, core_rows[_normalize_subject(asset_nm)])
+
+            # 2) 负债合计：放在非流动负债合计之后（若无则放在股东权益标题之前）
+            liab_nm = "负债合计" if "负债合计" in core_rows else None
+            if liab_nm and not _has_later("负债合计"):
+                idx_after = None
+                for i in range(len(norm2)):
+                    if i <= core_end:
+                        continue
+                    if norm2[i] == "非流动负债合计":
+                        idx_after = i + 1
+                        break
+                if idx_after is None:
+                    for i in range(len(norm2)):
+                        if i <= core_end:
+                            continue
+                        if norm2[i] == "股东权益" and bool(out.iloc[i].get("__is_header")):
+                            idx_after = i
+                            break
+                if idx_after is not None:
+                    _insert_dup(idx_after, core_rows["负债合计"])
+
+            # 3) 所有者权益合计：放在表末尾
+            eq_nm = None
+            for cand in ["所有者权益合计", "所有者权益总计", "股东权益合计", "股东权益总计"]:
+                k2 = _normalize_subject(cand)
+                if k2 in core_rows:
+                    eq_nm = k2
+                    break
+            if eq_nm and not _has_later(eq_nm):
+                _insert_dup(len(out), core_rows[eq_nm])
 
     # ---- equity header ----
     subj = out["科目"].astype(str).tolist()
@@ -343,6 +430,7 @@ def enrich_statement_df(df: pd.DataFrame, *, sheet_name_cn: str) -> pd.DataFrame
 
         canon_k = k
         v = out.iloc[i]["数值"] if "数值" in out.columns else None
+        force_keep_dup = bool(out.iloc[i].get("__dup_keep")) if "__dup_keep" in out.columns else False
 
         # 1) Tagged sub-lines: derive stable sub-key when base exists.
         if tag_prefix and canon_k in canon_first_value:
@@ -357,7 +445,9 @@ def enrich_statement_df(df: pd.DataFrame, *, sheet_name_cn: str) -> pd.DataFrame
 
         # 2) Repeated canonical lines: drop obvious duplicates; otherwise keep with stable suffix.
         elif canon_k in canon_first_value:
-            if _is_redundant_duplicate_value(v, canon_first_value[canon_k]):
+            # 结构性重复（例如：核心指标在资产/负债/权益区块也要保留一份）必须保留，
+            # 即便数值与首个 canonical 行相同。
+            if not force_keep_dup and _is_redundant_duplicate_value(v, canon_first_value[canon_k]):
                 continue
             canon_dup_count[canon_k] = canon_dup_count.get(canon_k, 1) + 1
             k = f"{canon_k}.dup{canon_dup_count[canon_k]}"

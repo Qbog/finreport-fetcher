@@ -113,6 +113,18 @@ SUBJECT_SPECS: list[SubjectSpec] = [
     SubjectSpec("bs.total_cash", "总现金", "Total cash"),
     SubjectSpec("bs.trading_fin_assets", "交易性金融资产", "Trading financial assets"),
     SubjectSpec(
+        "bs.derivative_fin_assets",
+        "衍生金融资产",
+        "Derivative financial assets",
+        aliases=("衍生金融工具资产",),
+    ),
+    SubjectSpec(
+        "bs.derivative_fin_liabilities",
+        "衍生金融负债",
+        "Derivative financial liabilities",
+        aliases=("衍生金融工具负债",),
+    ),
+    SubjectSpec(
         "bs.afs_fin_assets",
         "可供出售金融资产",
         "Available-for-sale financial assets",
@@ -162,6 +174,15 @@ SUBJECT_SPECS: list[SubjectSpec] = [
     SubjectSpec("bs.total_assets", "资产总计", "Total assets", aliases=("资产合计",)), 
 
     SubjectSpec("bs.short_term_borrowings", "短期借款", "Short-term borrowings"),
+    SubjectSpec(
+        "bs.fin_liabilities_fvpl",
+        "以公允价值计量且其变动计入当期损益的金融负债",
+        "Financial liabilities at fair value through profit or loss",
+        aliases=(
+            "公允价值计量且其变动计入当期损益的金融负债",
+            "以公允价值计量且其变动计入当期损益的金融负债合计",
+        ),
+    ),
     SubjectSpec("bs.notes_payable", "应付票据", "Notes payable", aliases=("其中：应付票据",)),
     SubjectSpec("bs.accounts_payable", "应付账款", "Accounts payable"),
     SubjectSpec(
@@ -428,6 +449,12 @@ SUBJECT_SPECS: list[SubjectSpec] = [
         "cf.cash_received_from_borrowings",
         "取得借款收到的现金",
         "Cash received from borrowings",
+    ),
+    SubjectSpec(
+        "cf.cash_received_from_bond_issuance",
+        "发行债券收到的现金",
+        "Cash received from bond issuance",
+        aliases=("发行债券收到现金",),
     ),
     SubjectSpec(
         "cf.cash_received_from_investments",

@@ -279,8 +279,14 @@ def export_bundle_to_excel(
         ws.column_dimensions[v_letter].width = max(float(ws.column_dimensions[v_letter].width or 0), 16.0)
         # 科目列：考虑缩进（indent）后仍可能遮挡，因此提高最小宽度；同时做上限避免极端撑爆。
         subj_w = float(ws.column_dimensions[s_letter].width or 0)
-        # 用户反馈仍遮挡：进一步提高最小宽度
-        ws.column_dimensions[s_letter].width = min(max(subj_w, 36.0), 80.0)
+
+        # 科目列宽：不同报表的科目长度差异很大（现金流量表通常更长）。
+        if sname == "现金流量表":
+            min_w, max_w = 52.0, 120.0
+        else:
+            min_w, max_w = 40.0, 90.0
+
+        ws.column_dimensions[s_letter].width = min(max(subj_w, min_w), max_w)
 
 
         # spacer 列宽（如果存在）

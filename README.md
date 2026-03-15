@@ -17,7 +17,7 @@
 - 快速开始：[`docs/QUICKSTART.md`](docs/QUICKSTART.md)
 - 模板说明：[`docs/TEMPLATE_GUIDE.md`](docs/TEMPLATE_GUIDE.md)
 - 回归测试：[`docs/TESTING.md`](docs/TESTING.md)
-- 股价抓取：见下文 `finprice`（输出 `output/{公司名}_{code6}/price/{code6}.csv` 供 combo 图使用）
+- 股价抓取：见下文 `finprice`（输出 `output/{公司名}_{code6}/price/{code6}.csv` + 同名 `.xlsx` 供 combo 图使用/人工查看）
 
 ---
 
@@ -138,7 +138,7 @@ output/
   - 柱状图趋势（bar）：按模板 `expr` 逐期取值/计算（不再使用 transform 口径配置）
   - 折线图趋势（line）：与 bar 共用 `[[bars]]` 配置，输出折线图
   - 同型分析饼图（pie）：范围内每期一张，支持 `section` 或 `items`，支持 TopN+其他
-  - 合并双轴图（combo）：财务柱 + 股价折线，股价来自 CSV：列 `date,close`
+  - 合并双轴图（combo）：财务柱 + 股价折线，股价来自 CSV（列 `date,close`；同时会生成同名 `.xlsx` 便于人工查看）
 - **模板驱动（推荐）**：每个模板一个 TOML 文件（`templates/*.toml`），通过 `finreport_charts run` 执行（支持跑全部模板或指定单个/多个模板）
 - **新增**：支持使用 `key`（如 `is.revenue_total` / `bs.cash`）替代中文科目名，实现跨公司标准化引用
 
@@ -149,15 +149,29 @@ output/
 - Excel：`output/{公司名}_{code6}/reports/{code6}_{statement}_{period}.xlsx`
 - PDF：`output/{公司名}_{code6}/pdf/{code6}_{period}.pdf`（PDF 与 Excel 不同层级；PDF 统一放入 `pdf/` 子目录）
 
-股价 CSV（由 `finprice fetch` 生成）默认约定位置（优先新路径，兼容旧路径）：
+股价数据（由 `finprice fetch` 生成）默认约定位置（优先新路径，兼容旧路径）：
 
 ```
 {data-dir}/{公司名}_{code6}/price/{code6}.csv
+{data-dir}/{公司名}_{code6}/price/{code6}.xlsx
 ```
 
 （兼容旧路径：`{data-dir}/price/{code6}.csv`）
 
-列名要求：`date, close`。
+CSV 列名要求：`date, close`。
+
+### 常见报错：未映射科目缺少英文名称
+
+当你看到类似错误：
+
+- `未映射科目缺少英文名称，请补齐 subject_glossary 映射：XXX`
+
+含义：当前数据源返回了科目 `XXX`，但我们的标准科目表（`finreport_fetcher/mappings/subject_glossary.py`）里没有对应的英文名与稳定 key。
+
+处理方式：
+1. 在 `subject_glossary.py` 新增一条 `SubjectSpec("<prefix>.<ascii_key>", "XXX", "<English>")`（prefix 为 `bs/is/cf`）。
+2. 运行回归测试：`scripts/regression_test.sh` 或 `python3 -m pytest -q`。
+3. 重新执行 `finreport_fetcher fetch ...`。
 
 ### 使用示例
 
@@ -256,6 +270,7 @@ finprice fetch --code 600519 \
 
 ```
 output/贵州茅台_600519/price/600519.csv
+output/贵州茅台_600519/price/600519.xlsx
 ```
 
 ---
