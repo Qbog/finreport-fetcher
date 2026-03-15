@@ -245,7 +245,7 @@ python3 -m finreport_charts run --code 600519 --start 2024-01-01 --end 2024-12-3
 - 避免中文科目名差异问题
 - 便于模板复用
 
-详见 [docs/TEMPLATE_GUIDE.md](docs/TEMPLATE_GUIDE.md)
+详见 [docs/README.md](docs/README.md) 与 [docs/TEMPLATE_GUIDE.md](docs/TEMPLATE_GUIDE.md)
 
 ---
 
