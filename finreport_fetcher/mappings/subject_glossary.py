@@ -481,6 +481,18 @@ SUBJECT_SPECS: list[SubjectSpec] = [
 
     # -------------------- Balance Sheet (BS) --------------------
     SubjectSpec("bs.section.core_metrics", "报表核心指标", "Core metrics"),
+    SubjectSpec(
+        "bs.section.assets",
+        "资产",
+        "Assets",
+        common_in=("bank", "insurance", "securities"),
+    ),
+    SubjectSpec(
+        "bs.section.liabilities",
+        "负债",
+        "Liabilities",
+        common_in=("bank", "insurance", "securities"),
+    ),
     SubjectSpec("bs.section.current_assets", "流动资产", "Current assets"),
     SubjectSpec("bs.section.non_current_assets", "非流动资产", "Non-current assets"),
     SubjectSpec("bs.section.current_liabilities", "流动负债", "Current liabilities"),

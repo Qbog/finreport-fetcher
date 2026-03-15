@@ -71,6 +71,13 @@ def detect_company_category(
             pass
 
     # 2) heuristic fallback
+    code6 = (ts_code or "").split(".")[0].strip()
+
+    # 少量金融行业公司简称不含“银行/证券/保险”，用 code 白名单兜底。
+    # 说明：A 股保险公司数量很少，维护成本低；同时能显著提升分类准确性。
+    if code6 in {"601318", "601628", "601336", "601601", "601319"}:
+        return CompanyCategoryInfo(category=CATEGORY_INSURANCE, industry=None, source="heuristic")
+
     nm = (name or "").strip()
     if "银行" in nm:
         return CompanyCategoryInfo(category=CATEGORY_BANK, industry=None, source="heuristic")

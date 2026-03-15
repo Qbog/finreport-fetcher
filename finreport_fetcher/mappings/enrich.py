@@ -485,6 +485,166 @@ def _patch_balance_sheet_structure_bank(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def _patch_balance_sheet_structure_insurance(df: pd.DataFrame) -> pd.DataFrame:
+    """Insurance: add high-level headers (资产/负债/股东权益) + indentation.
+
+    保险资产负债表从 akshare_ths 等数据源取到的明细通常是“平铺”的：没有“资产/负债”大类标题，且缺少缩进。
+    这里按银行的展示风格补齐三段式结构，让 Excel 更直观。
+    """
+
+    out = _patch_balance_sheet_structure(df)
+
+    if "科目" not in out.columns:
+        return out
+
+    if "__level" not in out.columns:
+        out["__level"] = 0
+    if "__is_header" not in out.columns:
+        out["__is_header"] = False
+
+    subj = out["科目"].astype(str).tolist()
+    norm = [_normalize_subject(s) for s in subj]
+
+    # locate core header
+    core_hdr_idx = None
+    for i, n in enumerate(norm):
+        if n == "报表核心指标" and bool(out.iloc[i].get("__is_header")):
+            core_hdr_idx = i
+            break
+    core_end = (core_hdr_idx + 4) if core_hdr_idx is not None else -1
+
+    # Find first detail line after core metrics (skip headers)
+    detail_start = None
+    for i in range(core_end + 1, len(out)):
+        if bool(out.iloc[i].get("__is_header")):
+            continue
+        if norm[i] in {
+            "资产合计",
+            "资产总计",
+            "负债合计",
+            "负债总计",
+            "所有者权益合计",
+            "所有者权益总计",
+            "归属于母公司所有者权益合计",
+            "归属于母公司所有者权益总计",
+        }:
+            continue
+        detail_start = i
+        break
+
+    if detail_start is None:
+        return out
+
+    def _insert_header(at_idx: int, title: str) -> int:
+        nonlocal out, subj, norm
+        header = {c: None for c in out.columns}
+        header.update({"科目": title, "数值": None, "__level": 0, "__is_header": True})
+        top = out.iloc[:at_idx].copy()
+        bot = out.iloc[at_idx:].copy()
+        out = pd.concat([top, pd.DataFrame([header]), bot], ignore_index=True)
+        subj = out["科目"].astype(str).tolist()
+        norm = [_normalize_subject(s) for s in subj]
+        return at_idx
+
+    # Assets header
+    if not any((n == "资产" and bool(out.iloc[i].get("__is_header"))) for i, n in enumerate(norm)):
+        _insert_header(detail_start, "资产")
+        detail_start += 1
+
+    # Equity header
+    equity_hdr = None
+    for i in range(detail_start, len(out)):
+        if norm[i] in {"股东权益", "所有者权益"} and bool(out.iloc[i].get("__is_header")):
+            equity_hdr = i
+            break
+
+    scan_end = equity_hdr if equity_hdr is not None else len(out)
+
+    # Liabilities header markers (insurance-specific + common)
+    liab_markers = {
+        # common financial liability markers
+        "应付债券",
+        "卖出回购金融资产款",
+        "拆入资金",
+        "吸收存款",
+        "交易性金融负债",
+        "衍生金融负债",
+        "其他负债",
+        "负债合计",
+        "负债总计",
+        "流动负债",
+        "非流动负债",
+        # insurance
+        "预收保费",
+        "应付赔付款",
+        "应付保单红利",
+        "保险合同准备金",
+        "未到期责任准备金",
+        "未决赔款准备金",
+        "寿险责任准备金",
+        "长期健康险责任准备金",
+        "保户储金及投资款",
+        "应付分保账款",
+        "应付手续费及佣金",
+        "应付手续费",
+        "应付佣金",
+        "应付再保险账款",
+        "应付分保保费",
+    }
+
+    liab_start = None
+    for i in range(detail_start, scan_end):
+        if bool(out.iloc[i].get("__is_header")):
+            continue
+        if norm[i] in liab_markers:
+            liab_start = i
+            break
+
+    if liab_start is not None:
+        if not (norm[liab_start - 1] == "负债" and bool(out.iloc[liab_start - 1].get("__is_header"))):
+            _insert_header(liab_start, "负债")
+            if equity_hdr is not None:
+                equity_hdr += 1
+            liab_start += 1
+
+    # Indentation: assets until liabilities, liabilities until equity, equity until end
+    assets_end = (liab_start - 1) if liab_start is not None else scan_end
+    for i in range(detail_start, assets_end):
+        if bool(out.iloc[i].get("__is_header")):
+            continue
+        try:
+            lvl = int(out.at[i, "__level"])
+        except Exception:
+            lvl = 0
+        if lvl < 1:
+            out.at[i, "__level"] = 1
+
+    if liab_start is not None:
+        liab_end = scan_end
+        for i in range(liab_start, liab_end):
+            if bool(out.iloc[i].get("__is_header")):
+                continue
+            try:
+                lvl = int(out.at[i, "__level"])
+            except Exception:
+                lvl = 0
+            if lvl < 1:
+                out.at[i, "__level"] = 1
+
+    if equity_hdr is not None:
+        for i in range(equity_hdr + 1, len(out)):
+            if bool(out.iloc[i].get("__is_header")):
+                continue
+            try:
+                lvl = int(out.at[i, "__level"])
+            except Exception:
+                lvl = 0
+            if lvl < 1:
+                out.at[i, "__level"] = 1
+
+    return out
+
+
 def enrich_statement_df(
     df: pd.DataFrame,
     *,
@@ -517,11 +677,19 @@ def enrich_statement_df(
     if "科目" not in out.columns:
         return out
 
-    # 结构修补：不同数据源的资产负债表经常缺少“报表核心指标/股东权益”等分组标题。
+    # 确保缩进/分组列存在（否则 Excel 无法做缩进/分组渲染）。
+    if "__level" not in out.columns:
+        out["__level"] = 0
+    if "__is_header" not in out.columns:
+        out["__is_header"] = False
+
+    # 结构修补：不同数据源的资产负债表经常缺少“报表核心指标/股东权益/资产/负债”等分组标题。
     # 在 enrich 层统一补齐，确保跨 provider 输出结构一致。
     if sheet_name_cn == "资产负债表":
         if company_category == "bank":
             out = _patch_balance_sheet_structure_bank(out)
+        elif company_category == "insurance":
+            out = _patch_balance_sheet_structure_insurance(out)
         else:
             out = _patch_balance_sheet_structure(out)
 
@@ -703,5 +871,30 @@ def enrich_statement_df(
 
     # Canonical CN subject
     out["科目"] = cn_canon
+
+    # 将 section 行标记为标题行（用于 Excel 着色/缩进）。
+    if "key" in out.columns and "__is_header" in out.columns:
+        kser = out["key"].astype(str)
+        out.loc[kser.str.startswith(("bs.section.", "is.section.", "cf.section.")), "__is_header"] = True
+
+    # 对标题行下的明细行统一做一层缩进（保留已有更深的 __level）。
+    # 例外：核心指标区块通常希望保持“顶格”展示，不自动缩进。
+    if "__level" in out.columns and "__is_header" in out.columns and "key" in out.columns:
+        header_idxs = [i for i, v in enumerate(out["__is_header"].tolist()) if bool(v)]
+        for j, h in enumerate(header_idxs):
+            hk = str(out.at[h, "key"])
+            if hk == "bs.section.core_metrics":
+                continue
+            start = h + 1
+            end = header_idxs[j + 1] if (j + 1) < len(header_idxs) else len(out)
+            for i in range(start, end):
+                if bool(out.at[i, "__is_header"]):
+                    continue
+                try:
+                    lvl = int(out.at[i, "__level"])
+                except Exception:
+                    lvl = 0
+                if lvl < 1:
+                    out.at[i, "__level"] = 1
 
     return out
