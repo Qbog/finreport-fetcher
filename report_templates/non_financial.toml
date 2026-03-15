@@ -72,6 +72,7 @@ keys = [
   "bs.surplus_reserve",
   "bs.retained_earnings",
   "bs.other_comprehensive_income",
+  "bs.fx_translation_difference",
   "bs.treasury_stock",
   "bs.total_equity_parent",
   "bs.minority_equity",

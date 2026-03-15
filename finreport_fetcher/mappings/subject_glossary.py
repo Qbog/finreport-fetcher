@@ -131,6 +131,56 @@ SUBJECT_SPECS: list[SubjectSpec] = [
         "Cash and deposits with central bank",
         common_in=("bank",),
     ),
+    SubjectSpec(
+        "bs.deposits_with_other_banks",
+        "存放同业款项",
+        "Deposits with other banks",
+        common_in=("bank",),
+        aliases=("存放同业",),
+    ),
+    SubjectSpec(
+        "bs.lent_funds",
+        "拆出资金",
+        "Lent funds",
+        common_in=("bank",),
+    ),
+    SubjectSpec(
+        "bs.fin_assets_purchased_for_resale",
+        "买入返售金融资产",
+        "Financial assets purchased for resale",
+        common_in=("bank",),
+    ),
+    SubjectSpec(
+        "bs.loans_and_advances",
+        "发放贷款及垫款",
+        "Loans and advances",
+        common_in=("bank",),
+        aliases=("发放贷款和垫款",),
+    ),
+    SubjectSpec(
+        "bs.htm_investments",
+        "持有至到期投资",
+        "Held-to-maturity investments",
+        common_in=("bank",),
+    ),
+    SubjectSpec(
+        "bs.investments_receivable",
+        "应收款项类投资",
+        "Receivable investments",
+        common_in=("bank",),
+    ),
+    SubjectSpec(
+        "bs.precious_metals",
+        "贵金属",
+        "Precious metals",
+        common_in=("bank",),
+    ),
+    SubjectSpec(
+        "bs.other_assets",
+        "其他资产",
+        "Other assets",
+        common_in=("bank",),
+    ),
 
     SubjectSpec("bs.total_cash", "总现金", "Total cash"),
     SubjectSpec("bs.trading_fin_assets", "交易性金融资产", "Trading financial assets"),
@@ -201,6 +251,47 @@ SUBJECT_SPECS: list[SubjectSpec] = [
     SubjectSpec("bs.total_non_current_assets", "非流动资产合计", "Total non-current assets"),
     SubjectSpec("bs.total_assets", "资产总计", "Total assets", aliases=("资产合计",)), 
 
+    # Bank-specific liabilities
+    SubjectSpec(
+        "bs.borrowings_from_central_bank",
+        "向中央银行借款",
+        "Borrowings from central bank",
+        common_in=("bank",),
+    ),
+    SubjectSpec(
+        "bs.deposits_from_other_banks",
+        "同业及其他金融机构存放款项",
+        "Deposits from other banks and financial institutions",
+        common_in=("bank",),
+        aliases=("同业存放款项", "同业存放"),
+    ),
+    SubjectSpec(
+        "bs.borrowed_funds",
+        "拆入资金",
+        "Borrowed funds",
+        common_in=("bank",),
+    ),
+    SubjectSpec(
+        "bs.fin_assets_sold_for_repurchase",
+        "卖出回购金融资产款",
+        "Financial assets sold for repurchase",
+        common_in=("bank",),
+        aliases=("卖出回购金融资产款项",),
+    ),
+    SubjectSpec(
+        "bs.customer_deposits",
+        "吸收存款",
+        "Customer deposits",
+        common_in=("bank",),
+        aliases=("吸收存款及同业存放", "吸收存款及同业存放款项"),
+    ),
+    SubjectSpec(
+        "bs.other_liabilities",
+        "其他负债",
+        "Other liabilities",
+        common_in=("bank",),
+    ),
+
     SubjectSpec("bs.short_term_borrowings", "短期借款", "Short-term borrowings"),
     SubjectSpec(
         "bs.fin_liabilities_fvpl",
@@ -266,8 +357,35 @@ SUBJECT_SPECS: list[SubjectSpec] = [
     SubjectSpec("bs.share_capital", "实收资本（或股本）", "Share capital", aliases=("实收资本(或股本)",)), 
     SubjectSpec("bs.capital_reserve", "资本公积", "Capital reserve"),
     SubjectSpec("bs.surplus_reserve", "盈余公积", "Surplus reserve"),
+
+    # Bank/insurance may disclose these equity items explicitly
+    SubjectSpec(
+        "bs.general_risk_reserve",
+        "一般风险准备",
+        "General risk reserve",
+        common_in=("bank",),
+    ),
+    SubjectSpec(
+        "bs.other_equity_instruments",
+        "其他权益工具",
+        "Other equity instruments",
+        common_in=("bank",),
+    ),
+    SubjectSpec(
+        "bs.preferred_shares",
+        "优先股",
+        "Preferred shares",
+        common_in=("bank", "insurance"),
+    ),
+
     SubjectSpec("bs.retained_earnings", "未分配利润", "Retained earnings"),
     SubjectSpec("bs.other_comprehensive_income", "其他综合收益", "Other comprehensive income"),
+    SubjectSpec(
+        "bs.fx_translation_difference",
+        "外币报表折算差额",
+        "Foreign currency translation differences",
+        aliases=("外币报表折算差额(合计)",),
+    ),
     SubjectSpec("bs.treasury_stock", "库存股", "Treasury stock"),
     SubjectSpec(
         "bs.total_equity_parent",
