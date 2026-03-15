@@ -135,13 +135,21 @@ def ensure_finreports(
 
         # 不用 check_call：单期失败时继续其他期，并把缺失留给 still_missing。
         # 同时捕获输出，避免在 finreport_charts 场景下打印冗长 traceback。
-        subprocess.run(
+        res = subprocess.run(
             args,
             check=False,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
         )
+        if res.returncode != 0:
+            # 只打印最后一行错误，既能定位问题，又不会刷屏。
+            err = (res.stderr or "").strip().splitlines()
+            tail = err[-1] if err else "(no stderr)"
+            print(
+                f"提示：补数失败 {code6} {pe.strftime('%Y-%m-%d')} (rc={res.returncode}): {tail}",
+                file=sys.stderr,
+            )
 
     still_missing = [
         pe

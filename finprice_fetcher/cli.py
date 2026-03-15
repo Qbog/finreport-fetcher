@@ -14,6 +14,7 @@ import typer
 from rich.console import Console
 
 from finreport_fetcher.utils.dates import parse_date
+from finreport_fetcher.utils.paths import safe_dir_component
 from finreport_fetcher.utils.symbols import ResolvedSymbol, fuzzy_match_name, load_a_share_name_map, parse_code
 
 
@@ -266,7 +267,9 @@ def fetch(
         tushare_token=tushare_token,
     )
 
-    out_dir = c.out_dir / "price"
+    # 输出到公司归档目录：{out}/{公司名}_{code6}/price/{code6}.csv
+    company_dir = safe_dir_component(f"{(c.rs.name or c.rs.code6)}_{c.rs.code6}")
+    out_dir = c.out_dir / company_dir / "price"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{c.rs.code6}.csv"
 

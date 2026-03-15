@@ -47,20 +47,17 @@ color = "#4E79A7"
 name = "负债"
 color = "#E15759"
 
-  # 说明："短期负债"这里暂用流动负债合计（bs.total_current_liabilities）。
-  # 如你希望用“短期借款”，改为 bs.short_term_borrowings。
   [[bars.children]]
-  name = "短期负债"
-  expr = "bs.total_current_liabilities"
+  name = "短期借款"
+  expr = "bs.short_term_borrowings"
 
   [[bars.children]]
   name = "应付账款"
   expr = "bs.accounts_payable"
 
-  # 说明：很多公司已改用“合同负债”，此处使用 contract_liabilities。
   [[bars.children]]
-  name = "预收账款"
-  expr = "bs.contract_liabilities"
+  name = "预收款项"
+  expr = "bs.advance_receipts"
 
   [[bars.children]]
   name = "应付职工薪酬"

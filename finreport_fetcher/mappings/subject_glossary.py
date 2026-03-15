@@ -112,6 +112,12 @@ SUBJECT_SPECS: list[SubjectSpec] = [
     SubjectSpec("bs.cash", "货币资金", "Cash and cash equivalents"),
     SubjectSpec("bs.total_cash", "总现金", "Total cash"),
     SubjectSpec("bs.trading_fin_assets", "交易性金融资产", "Trading financial assets"),
+    SubjectSpec(
+        "bs.afs_fin_assets",
+        "可供出售金融资产",
+        "Available-for-sale financial assets",
+        aliases=("可供出售金融资产合计",),
+    ),
     SubjectSpec("bs.notes_receivable", "应收票据", "Notes receivable"),
     SubjectSpec("bs.accounts_receivable", "应收账款", "Accounts receivable"),
     SubjectSpec(
@@ -133,6 +139,10 @@ SUBJECT_SPECS: list[SubjectSpec] = [
         "Construction in progress",
         aliases=("在建工程合计", "其中：在建工程"),
     ),
+    SubjectSpec("bs.engineering_materials", "工程物资", "Engineering materials"),
+    SubjectSpec("bs.investment_property", "投资性房地产", "Investment property"),
+    SubjectSpec("bs.fixed_assets_disposal", "固定资产清理", "Disposal of fixed assets"),
+    SubjectSpec("bs.goodwill", "商誉", "Goodwill"),
     SubjectSpec("bs.intangible_assets", "无形资产", "Intangible assets"),
     SubjectSpec("bs.long_term_deferred_expenses", "长期待摊费用", "Long-term deferred expenses"),
     SubjectSpec("bs.long_term_equity_investment", "长期股权投资", "Long-term equity investment"),
@@ -161,16 +171,21 @@ SUBJECT_SPECS: list[SubjectSpec] = [
     ),
     SubjectSpec("bs.interest_payable", "应付利息", "Interest payable", aliases=("其中：应付利息",)),
     SubjectSpec("bs.dividends_payable", "应付股利", "Dividends payable"),
-    SubjectSpec("bs.advance_receipts", "预收款项", "Advance receipts"),
+    SubjectSpec(
+        "bs.advance_receipts",
+        "预收款项",
+        "Advance receipts",
+        aliases=("预收账款", "预收款", "预收款项"),
+    ),
     SubjectSpec(
         "bs.contract_liabilities",
         "合同负债",
         "Contract liabilities",
-        aliases=("预收账款", "预收款项"),
     ),
     SubjectSpec("bs.payroll_payable", "应付职工薪酬", "Employee benefits payable"),
     SubjectSpec("bs.taxes_payable", "应交税费", "Taxes payable"),
     SubjectSpec("bs.other_payables", "其他应付款", "Other payables", aliases=("其他应付款合计",)), 
+    SubjectSpec("bs.special_payables", "专项应付款", "Special payables"),
     SubjectSpec(
         "bs.ncl_due_within_one_year",
         "一年内到期的非流动负债",
@@ -383,9 +398,19 @@ SUBJECT_SPECS: list[SubjectSpec] = [
         "Other cash paid relating to investing activities",
     ),
     SubjectSpec(
+        "cf.cash_received_other_inv",
+        "收到其他与投资活动有关的现金",
+        "Other cash received relating to investing activities",
+    ),
+    SubjectSpec(
         "cf.cash_received_from_disposal_of_subsidiaries",
         "处置子公司及其他营业单位收到的现金净额",
         "Net cash received from disposal of subsidiaries and other business units",
+    ),
+    SubjectSpec(
+        "cf.net_cash_paid_to_acquire_subsidiaries",
+        "取得子公司及其他营业单位支付的现金净额",
+        "Net cash paid to acquire subsidiaries and other business units",
     ),
 
     SubjectSpec(
@@ -424,6 +449,11 @@ SUBJECT_SPECS: list[SubjectSpec] = [
         "cf.cash_paid_for_dividends_interest",
         "分配股利、利润或偿付利息支付的现金",
         "Cash paid for dividends, profit distributions and interest",
+    ),
+    SubjectSpec(
+        "cf.dividends_paid_to_minority_interests",
+        "子公司支付给少数股东的股利、利润",
+        "Dividends and profit paid by subsidiaries to minority interests",
     ),
     SubjectSpec(
         "cf.cash_received_other_fin",

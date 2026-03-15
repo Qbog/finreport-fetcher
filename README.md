@@ -17,7 +17,7 @@
 - 快速开始：[`docs/QUICKSTART.md`](docs/QUICKSTART.md)
 - 模板说明：[`docs/TEMPLATE_GUIDE.md`](docs/TEMPLATE_GUIDE.md)
 - 回归测试：[`docs/TESTING.md`](docs/TESTING.md)
-- 股价抓取：见下文 `finprice`（输出 `output/price/{code6}.csv` 供 combo 图使用）
+- 股价抓取：见下文 `finprice`（输出 `output/{公司名}_{code6}/price/{code6}.csv` 供 combo 图使用）
 
 ---
 
@@ -149,11 +149,13 @@ output/
 - Excel：`output/{公司名}_{code6}/reports/{code6}_{statement}_{period}.xlsx`
 - PDF：`output/{公司名}_{code6}/pdf/{code6}_{period}.pdf`（PDF 与 Excel 不同层级；PDF 统一放入 `pdf/` 子目录）
 
-股价 CSV（由 `finprice fetch` 生成）默认约定位置：
+股价 CSV（由 `finprice fetch` 生成）默认约定位置（优先新路径，兼容旧路径）：
 
 ```
-{data-dir}/price/{code6}.csv
+{data-dir}/{公司名}_{code6}/price/{code6}.csv
 ```
+
+（兼容旧路径：`{data-dir}/price/{code6}.csv`）
 
 列名要求：`date, close`。
 
@@ -235,7 +237,7 @@ python3 -m finreport_charts run --code 600519 --start 2024-01-01 --end 2024-12-3
 
 ## 3) finprice_fetcher（股价抓取）
 
-用于给 `combo` 双轴图提供 `{data-dir}/price/{code6}.csv`。
+用于给 `combo` 双轴图提供 `{data-dir}/{公司名}_{code6}/price/{code6}.csv`（兼容 `{data-dir}/price/{code6}.csv`）。
 
 示例（日频）：
 
@@ -253,7 +255,7 @@ finprice fetch --code 600519 \
 输出：
 
 ```
-output/price/600519.csv
+output/贵州茅台_600519/price/600519.csv
 ```
 
 ---

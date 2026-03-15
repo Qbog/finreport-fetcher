@@ -193,6 +193,26 @@ def _common(
     )
 
 
+def _default_price_csv_path(c: CommonOpts) -> Path:
+    """Default price CSV path.
+
+    优先读取公司归档目录：
+    - {data_dir}/{公司名}_{code6}/price/{code6}.csv
+
+    兼容旧路径：
+    - {data_dir}/price/{code6}.csv
+    """
+
+    company_dir = safe_dir_component(f"{(c.rs.name or c.rs.code6)}_{c.rs.code6}")
+    p1 = c.data_dir / company_dir / "price" / f"{c.rs.code6}.csv"
+    p2 = c.data_dir / "price" / f"{c.rs.code6}.csv"
+    if p1.exists():
+        return p1
+    if p2.exists():
+        return p2
+    return p1
+
+
 def _maybe_fetch_missing(c: CommonOpts, fetch_start: date | None = None) -> list[date]:
     """Ensure finreport xlsx exists for required periods.
 
@@ -459,7 +479,7 @@ def combo_dual_axis(
     _maybe_fetch_missing(c, fetch_start=fetch_start)
 
     if price_csv is None:
-        price_csv = c.data_dir / "price" / f"{c.rs.code6}.csv"
+        price_csv = _default_price_csv_path(c)
 
     if not price_csv.exists():
         raise RuntimeError(f"未找到股价 CSV: {price_csv}")
@@ -664,7 +684,7 @@ def run_template(
             fetch_start = c.start
         _maybe_fetch_missing(c, fetch_start=fetch_start)
 
-        price_csv = c.data_dir / "price" / f"{c.rs.code6}.csv"
+        price_csv = _default_price_csv_path(c)
         if not price_csv.exists():
             raise RuntimeError(f"未找到股价 CSV: {price_csv}")
 
@@ -1470,7 +1490,7 @@ def run(
             if strict and still:
                 raise RuntimeError(f"缺失财报 {len(still)} 期（strict 模式退出）：{still}")
 
-            price_csv = c.data_dir / "price" / f"{c.rs.code6}.csv"
+            price_csv = _default_price_csv_path(c)
             if not price_csv.exists():
                 raise RuntimeError(f"未找到股价 CSV: {price_csv}")
 

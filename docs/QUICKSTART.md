@@ -107,7 +107,7 @@ output/贵州茅台_600519/charts/
 
 ## 3) （可选）抓取股价数据（用于 combo 双轴图）
 
-> `combo` 图表会读取：`{data-dir}/price/{code6}.csv`，要求至少包含两列：`date,close`。
+> `combo` 图表会优先读取：`{data-dir}/{公司名}_{code6}/price/{code6}.csv`（兼容旧路径 `{data-dir}/price/{code6}.csv`），要求至少包含两列：`date,close`。
 
 示例：抓取贵州茅台 2024 年日频股价（优先 tushare，失败自动回退 akshare）：
 
@@ -122,7 +122,7 @@ finprice fetch --code 600519 \
 输出：
 
 ```
-output/price/600519.csv
+output/贵州茅台_600519/price/600519.csv
 ```
 
 ---
