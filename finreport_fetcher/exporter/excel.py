@@ -277,9 +277,9 @@ def export_bundle_to_excel(
         v_letter = get_column_letter(value_col)
         s_letter = get_column_letter(subj_col)
         ws.column_dimensions[v_letter].width = max(float(ws.column_dimensions[v_letter].width or 0), 16.0)
-        # 科目列：用户反馈仍有遮挡，因此提高最小宽度；同时做上限避免极端撑爆。
+        # 科目列：考虑缩进（indent）后仍可能遮挡，因此提高最小宽度；同时做上限避免极端撑爆。
         subj_w = float(ws.column_dimensions[s_letter].width or 0)
-        ws.column_dimensions[s_letter].width = min(max(subj_w, 22.0), 45.0)
+        ws.column_dimensions[s_letter].width = min(max(subj_w, 28.0), 60.0)
 
 
         # spacer 列宽（如果存在）

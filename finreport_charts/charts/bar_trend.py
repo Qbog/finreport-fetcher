@@ -40,6 +40,8 @@ def render_bars_png(
     out_png: Path,
     x_label: str = "时间",
     y_label: str = "",
+    series_colors: list[str | None] | None = None,
+    x_colors: list[str | None] | None = None,
 ):
     """Multi-series (grouped) bar chart.
 
@@ -83,18 +85,48 @@ def render_bars_png(
         "#BAB0AC",
     ]
 
+    def _norm_hex(c: str | None) -> str | None:
+        if not c:
+            return None
+        s = str(c).strip()
+        if not s:
+            return None
+        if s.startswith("#"):
+            s = s[1:]
+        if len(s) == 6:
+            return f"#{s}"
+        return None
+
     containers = []
     for j, (col, label) in enumerate(series):
         y = df[col].tolist()
         offset = (j - (k - 1) / 2) * width
-        cont = ax.bar(
-            idx + offset,
-            y,
-            width=width,
-            label=label,
-            color=palette[j % len(palette)],
-            alpha=0.92,
-        )
+
+        # color policy:
+        # - multi-series: per-series color (series_colors[j]) or palette
+        # - single-series: allow per-x color list (x_colors)
+        if k == 1 and x_colors:
+            colors = [_norm_hex(c) or palette[0] for c in x_colors]
+            cont = ax.bar(
+                idx + offset,
+                y,
+                width=width,
+                label=label,
+                color=colors,
+                alpha=0.92,
+            )
+        else:
+            c0 = None
+            if series_colors and j < len(series_colors):
+                c0 = _norm_hex(series_colors[j])
+            cont = ax.bar(
+                idx + offset,
+                y,
+                width=width,
+                label=label,
+                color=c0 or palette[j % len(palette)],
+                alpha=0.92,
+            )
         containers.append(cont)
 
     ax.set_title(title)
@@ -174,6 +206,8 @@ def write_bars_excel(
     out_xlsx: Path,
     x_label: str = "时间",
     y_label: str = "",
+    series_colors: list[str | None] | None = None,
+    x_colors: list[str | None] | None = None,
 ):
     """Multi-series bar chart exported to Excel.
 
@@ -239,6 +273,40 @@ def write_bars_excel(
     chart.set_categories(cats)
     chart.width = 22
     chart.height = 12
+
+    def _hex6(c: str | None) -> str | None:
+        if not c:
+            return None
+        s = str(c).strip()
+        if not s:
+            return None
+        if s.startswith("#"):
+            s = s[1:]
+        if len(s) == 6:
+            return s.upper()
+        return None
+
+    # Apply colors
+    try:
+        from openpyxl.chart.series import DataPoint
+
+        for j, s in enumerate(chart.series):
+            c0 = _hex6(series_colors[j]) if series_colors and j < len(series_colors) else None
+            if c0:
+                s.graphicalProperties.solidFill = c0
+
+            # per-point colors for single-series compare charts
+            if len(chart.series) == 1 and x_colors:
+                s.dPt = []
+                for i, xc in enumerate(x_colors):
+                    cc = _hex6(xc)
+                    if not cc:
+                        continue
+                    dp = DataPoint(idx=i)
+                    dp.graphicalProperties.solidFill = cc
+                    s.dPt.append(dp)
+    except Exception:
+        pass
 
     ws_chart.add_chart(chart, "A3")
 

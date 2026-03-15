@@ -1083,6 +1083,41 @@ def run(
             bars = getattr(tpl, "bars", None)
             statement_default = getattr(tpl, "statement", None) or "利润表"
 
+            def _flatten_bar_blocks(
+                blocks,
+                *,
+                prefix: str | None = None,
+                parent_statement: str | None = None,
+                parent_color: str | None = None,
+            ):
+                """Flatten nested bars into leaf blocks.
+
+                - group blocks (no expr, has children) act as containers
+                - statement/color inherit from parent when missing
+                - leaf display name includes group prefix: e.g. "资产/货币资金"
+                """
+
+                out = []
+                for b in blocks or []:
+                    b_name = str(getattr(b, "name", None) or "").strip() or "value"
+                    b_expr = getattr(b, "expr", None)
+                    b_stmt = str(getattr(b, "statement", None) or parent_statement or statement_default)
+                    b_color = getattr(b, "color", None) or parent_color
+
+                    name_full = f"{prefix}/{b_name}" if prefix else b_name
+
+                    # leaf
+                    if b_expr:
+                        out.append({"name": name_full, "expr": str(b_expr).strip(), "statement": b_stmt, "color": b_color})
+
+                    # children
+                    kids = getattr(b, "children", None)
+                    if kids:
+                        # group prefix uses current node name_full
+                        out.extend(_flatten_bar_blocks(kids, prefix=name_full, parent_statement=b_stmt, parent_color=b_color))
+
+                return out
+
             chart_kind = "bar" if t_type == "bar" else "line"
             render_png = render_bars_png if t_type == "bar" else render_lines_png
             write_xlsx = write_bars_excel if t_type == "bar" else write_lines_excel
@@ -1110,6 +1145,10 @@ def run(
                 if strict and still:
                     raise RuntimeError(f"缺失财报 {len(still)} 期（strict 模式退出）：{still}")
 
+                bars_flat = _flatten_bar_blocks(bars)
+                if not bars_flat:
+                    raise RuntimeError(f"趋势 {chart_kind} 模板缺少可用 bars（叶子节点需提供 expr）: {k}")
+
                 # build output df (one row per period)
                 rows: list[dict[str, object]] = []
                 used_periods: list[date] = []
@@ -1121,10 +1160,10 @@ def run(
 
                     row: dict[str, object] = {"period_end": pe.strftime("%Y-%m-%d")}
                     any_val = False
-                    for b in bars or []:
-                        b_name = str(getattr(b, "name", None) or getattr(b, "expr", "")).strip() or "value"
-                        b_expr = str(getattr(b, "expr", "")).strip()
-                        b_stmt = str(getattr(b, "statement", None) or statement_default)
+                    for b in bars_flat:
+                        b_name = str(b["name"])
+                        b_expr = str(b["expr"])
+                        b_stmt = str(b.get("statement") or statement_default)
                         v = _eval_expr_or_item(b_expr, current_pe=pe, default_statement=b_stmt)
                         row[b_name] = v
                         if v is not None:
@@ -1151,17 +1190,44 @@ def run(
                 out_png = c.out_dir / f"{fname_base}_{c.rs.code6}_{actual_s.strftime('%Y%m%d')}_{actual_e.strftime('%Y%m%d')}.png"
                 out_xlsx = c.out_dir / f"{fname_base}_{c.rs.code6}_{actual_s.strftime('%Y%m%d')}_{actual_e.strftime('%Y%m%d')}.xlsx"
 
-                series_cols = [(str(getattr(b, 'name', None) or getattr(b, 'expr', '')).strip() or 'value', str(getattr(b, 'name', None) or getattr(b, 'expr', '')).strip() or 'value') for b in (bars or [])]
+                series_cols = [(b["name"], b["name"]) for b in bars_flat]
+                series_colors = [b.get("color") for b in bars_flat]
+
                 # de-dup in case of duplicate names
-                seen=set(); series_cols2=[]
-                for col,label in series_cols:
+                seen = set()
+                series_cols2 = []
+                series_colors2 = []
+                for (col, label), colr in zip(series_cols, series_colors):
                     if col in seen:
                         continue
                     seen.add(col)
-                    series_cols2.append((col,label))
+                    series_cols2.append((col, label))
+                    series_colors2.append(colr)
 
-                render_png(df_out, title=title, x_col="period_end", series=series_cols2, out_png=out_png, x_label=x_label, y_label=y_label)
-                write_xlsx(df_out, title=title, x_col="period_end", series=series_cols2, out_xlsx=out_xlsx, x_label=x_label, y_label=y_label)
+                extra = {}
+                if t_type == "bar":
+                    extra["series_colors"] = series_colors2
+
+                render_png(
+                    df_out,
+                    title=title,
+                    x_col="period_end",
+                    series=series_cols2,
+                    out_png=out_png,
+                    x_label=x_label,
+                    y_label=y_label,
+                    **extra,
+                )
+                write_xlsx(
+                    df_out,
+                    title=title,
+                    x_col="period_end",
+                    series=series_cols2,
+                    out_xlsx=out_xlsx,
+                    x_label=x_label,
+                    y_label=y_label,
+                    **extra,
+                )
 
                 log_info(f"已生成: {out_png}")
                 log_info(f"已生成: {out_xlsx}")
@@ -1176,6 +1242,10 @@ def run(
             # 比较分析：完全由模板 bars 控制（不自动枚举“全部科目”）
             if not bars:
                 raise RuntimeError(f"compare 模式必须在模板中显式配置 [[bars]]: {k}")
+
+            bars_flat = _flatten_bar_blocks(bars)
+            if not bars_flat:
+                raise RuntimeError(f"compare 模式缺少可用 bars（叶子节点需提供 expr）: {k}")
 
             # ---- single-period compare ----
             if getattr(tpl, "period_end", None) or as_of:
@@ -1227,14 +1297,18 @@ def run(
                     continue
 
                 rows = []
-                for b in bars:
-                    b_name = str(getattr(b, "name", None) or getattr(b, "expr", "")).strip() or "value"
-                    b_expr = str(getattr(b, "expr", "")).strip()
-                    b_stmt = str(getattr(b, "statement", None) or statement)
+                x_colors = []
+                for b in bars_flat:
+                    b_name = str(b["name"]).strip() or "value"
+                    b_expr = str(b["expr"]).strip()
+                    b_stmt = str(b.get("statement") or statement)
                     v = _eval_expr_or_item(b_expr, current_pe=pe, default_statement=b_stmt)
+                    if v is None:
+                        continue
                     rows.append({"name": b_name, "value": v})
+                    x_colors.append(b.get("color"))
 
-                df_cmp = pd.DataFrame(rows).dropna(subset=["value"])
+                df_cmp = pd.DataFrame(rows)
                 if df_cmp.empty:
                     log_warn(f"提示：{k} 在该期末没有可用数据（可能科目缺失/表达式失败）。")
                     continue
@@ -1242,6 +1316,10 @@ def run(
                 title = f"{c.rs.name or c.rs.code6} | {title0} | {pe.strftime('%Y-%m-%d')}"
                 out_png = c.out_dir / f"{fname_base}_{c.rs.code6}_{pe.strftime('%Y%m%d')}.png"
                 out_xlsx = c.out_dir / f"{fname_base}_{c.rs.code6}_{pe.strftime('%Y%m%d')}.xlsx"
+
+                extra = {}
+                if t_type == "bar":
+                    extra["x_colors"] = x_colors
 
                 render_png(
                     df_cmp,
@@ -1251,6 +1329,7 @@ def run(
                     out_png=out_png,
                     x_label=x_label,
                     y_label=y_label,
+                    **extra,
                 )
                 write_xlsx(
                     df_cmp,
@@ -1260,6 +1339,7 @@ def run(
                     out_xlsx=out_xlsx,
                     x_label=x_label,
                     y_label=y_label,
+                    **extra,
                 )
 
                 log_info(f"已生成: {out_png}")
@@ -1280,14 +1360,18 @@ def run(
                     continue
 
                 rows = []
-                for b in bars:
-                    b_name = str(getattr(b, "name", None) or getattr(b, "expr", "")).strip() or "value"
-                    b_expr = str(getattr(b, "expr", "")).strip()
-                    b_stmt = str(getattr(b, "statement", None) or statement)
+                x_colors = []
+                for b in bars_flat:
+                    b_name = str(b["name"]).strip() or "value"
+                    b_expr = str(b["expr"]).strip()
+                    b_stmt = str(b.get("statement") or statement)
                     v = _eval_expr_or_item(b_expr, current_pe=pe, default_statement=b_stmt)
+                    if v is None:
+                        continue
                     rows.append({"name": b_name, "value": v})
+                    x_colors.append(b.get("color"))
 
-                df_cmp = pd.DataFrame(rows).dropna(subset=["value"])
+                df_cmp = pd.DataFrame(rows)
                 if df_cmp.empty:
                     continue
 
@@ -1295,6 +1379,10 @@ def run(
                 title = f"{c.rs.name or c.rs.code6} | {title0} | {pe.strftime('%Y-%m-%d')}"
                 out_png = c.out_dir / f"{fname_base}_{c.rs.code6}_{pe.strftime('%Y%m%d')}.png"
                 out_xlsx = c.out_dir / f"{fname_base}_{c.rs.code6}_{pe.strftime('%Y%m%d')}.xlsx"
+
+                extra = {}
+                if t_type == "bar":
+                    extra["x_colors"] = x_colors
 
                 render_png(
                     df_cmp,
@@ -1304,6 +1392,7 @@ def run(
                     out_png=out_png,
                     x_label=x_label,
                     y_label=y_label,
+                    **extra,
                 )
                 write_xlsx(
                     df_cmp,
@@ -1313,6 +1402,7 @@ def run(
                     out_xlsx=out_xlsx,
                     x_label=x_label,
                     y_label=y_label,
+                    **extra,
                 )
 
                 log_info(f"已生成: {out_png}")

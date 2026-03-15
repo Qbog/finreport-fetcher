@@ -162,7 +162,12 @@ SUBJECT_SPECS: list[SubjectSpec] = [
     SubjectSpec("bs.interest_payable", "应付利息", "Interest payable", aliases=("其中：应付利息",)),
     SubjectSpec("bs.dividends_payable", "应付股利", "Dividends payable"),
     SubjectSpec("bs.advance_receipts", "预收款项", "Advance receipts"),
-    SubjectSpec("bs.contract_liabilities", "合同负债", "Contract liabilities"),
+    SubjectSpec(
+        "bs.contract_liabilities",
+        "合同负债",
+        "Contract liabilities",
+        aliases=("预收账款", "预收款项"),
+    ),
     SubjectSpec("bs.payroll_payable", "应付职工薪酬", "Employee benefits payable"),
     SubjectSpec("bs.taxes_payable", "应交税费", "Taxes payable"),
     SubjectSpec("bs.other_payables", "其他应付款", "Other payables", aliases=("其他应付款合计",)), 

@@ -114,6 +114,7 @@ def test_export_excel_schema_and_autofit(tmp_path: Path):
     # 科目列宽不应被 A1/A2 长标题撑爆
     subj_width = ws.column_dimensions["A"].width
     assert subj_width is not None
-    assert float(subj_width) <= 25.0
+    # 不应被标题撑爆；但也需要足够宽避免遮挡
+    assert 16.0 <= float(subj_width) <= 60.0
 
     wb.close()

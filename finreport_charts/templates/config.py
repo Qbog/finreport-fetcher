@@ -7,9 +7,17 @@ from typing import Any
 
 @dataclass(frozen=True)
 class BarBlock:
+    """A bar definition.
+
+    支持嵌套：如果只提供 children（不提供 expr），则该节点作为“分组”，不直接出柱。
+    分组节点的 color/statement 会向下继承到 children（children 可覆盖）。
+    """
+
     name: str
-    expr: str
+    expr: str | None = None
     statement: str | None = None
+    color: str | None = None  # e.g. "#4E79A7"
+    children: list["BarBlock"] | None = None
     transform: str | None = None  # DEPRECATED: legacy ttm|ytd|q|raw（run 模式会忽略）
 
 
@@ -69,6 +77,43 @@ def _as_str(v: Any) -> str | None:
 
 
 def _parse_bar_blocks(data: dict[str, Any]) -> list[BarBlock] | None:
+    def _parse_one(b: dict[str, Any], *, parent_statement: str | None = None, parent_color: str | None = None) -> BarBlock | None:
+        name = _as_str(b.get("name") or b.get("label"))
+        expr = _as_str(b.get("expr") or b.get("item"))
+        statement = _as_str(b.get("statement")) or parent_statement
+        color = _as_str(b.get("color") or b.get("颜色")) or parent_color
+        transform = _as_str(b.get("transform"))
+
+        # children (nested)
+        children_raw = b.get("children")
+        children: list[BarBlock] | None = None
+        if isinstance(children_raw, list):
+            tmp: list[BarBlock] = []
+            for c in children_raw:
+                if not isinstance(c, dict):
+                    continue
+                cc = _parse_one(c, parent_statement=statement, parent_color=color)
+                if cc:
+                    tmp.append(cc)
+            children = tmp or None
+
+        # group node
+        if not expr and children:
+            return BarBlock(name=name or "group", expr=None, statement=statement, color=color, children=children, transform=transform)
+
+        # leaf node
+        if not expr:
+            return None
+
+        return BarBlock(
+            name=name or expr,
+            expr=expr,
+            statement=statement,
+            color=color,
+            children=children,
+            transform=transform,
+        )
+
     # New style: [[bars]]
     bars = data.get("bars")
     if isinstance(bars, list):
@@ -76,19 +121,10 @@ def _parse_bar_blocks(data: dict[str, Any]) -> list[BarBlock] | None:
         for b in bars:
             if not isinstance(b, dict):
                 continue
-            name = _as_str(b.get("name") or b.get("label"))
-            expr = _as_str(b.get("expr") or b.get("item"))
-            if not expr:
-                continue
-            out.append(
-                BarBlock(
-                    name=name or expr,
-                    expr=expr,
-                    statement=_as_str(b.get("statement")),
-                    transform=_as_str(b.get("transform")),
-                )
-            )
-        return out
+            bb = _parse_one(b)
+            if bb:
+                out.append(bb)
+        return out or None
 
     # Legacy style: item + optional alias
     item = _as_str(data.get("item"))

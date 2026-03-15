@@ -29,6 +29,7 @@
 - `net_profit_q.toml`：归母净利润趋势（bar trend）
 - `revenue_total_trend.toml`：营业总收入趋势（bar trend）
 - `bs_key_items_compare.toml`：资产负债表关键科目对比（bar compare）
+- `balance_sheet_analysis.toml`：资产负债表分析（bar compare，含嵌套分组 + 颜色示例）
 
 ## 4) 最小示例（bar trend：单季 = 当期累计 - 同年上期累计）
 

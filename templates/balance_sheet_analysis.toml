@@ -1,0 +1,71 @@
+# 资产负债表分析（柱状比较图）
+# - compare 模式：当传入 --start/--end 时，会对区间内每个报告期分别生成 1 张图
+# - 支持嵌套分组与颜色（子项可覆盖，未覆盖则继承分组颜色）
+
+name = "balance_sheet_analysis"
+alias = "资产负债表分析"
+
+type = "bar"
+mode = "compare"
+
+title = "资产负债表分析（资产 vs 负债）"
+
+x_label = "科目"
+y_label = "金额"
+
+statement = "资产负债表"
+
+[[bars]]
+name = "资产"
+color = "#4E79A7"
+
+  [[bars.children]]
+  name = "货币资金"
+  expr = "bs.cash"
+
+  [[bars.children]]
+  name = "应收账款"
+  expr = "bs.accounts_receivable"
+
+  [[bars.children]]
+  name = "预付账款"
+  expr = "bs.prepayments"
+
+  [[bars.children]]
+  name = "存货"
+  expr = "bs.inventories"
+
+  [[bars.children]]
+  name = "固定资产"
+  expr = "bs.fixed_assets"
+
+  [[bars.children]]
+  name = "无形资产"
+  expr = "bs.intangible_assets"
+
+[[bars]]
+name = "负债"
+color = "#E15759"
+
+  # 说明："短期负债"这里暂用流动负债合计（bs.total_current_liabilities）。
+  # 如你希望用“短期借款”，改为 bs.short_term_borrowings。
+  [[bars.children]]
+  name = "短期负债"
+  expr = "bs.total_current_liabilities"
+
+  [[bars.children]]
+  name = "应付账款"
+  expr = "bs.accounts_payable"
+
+  # 说明：很多公司已改用“合同负债”，此处使用 contract_liabilities。
+  [[bars.children]]
+  name = "预收账款"
+  expr = "bs.contract_liabilities"
+
+  [[bars.children]]
+  name = "应付职工薪酬"
+  expr = "bs.payroll_payable"
+
+  [[bars.children]]
+  name = "非流动负债合计"
+  expr = "bs.total_non_current_liabilities"
