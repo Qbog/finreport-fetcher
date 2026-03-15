@@ -123,6 +123,15 @@ SUBJECT_SPECS: list[SubjectSpec] = [
     ),
 
     SubjectSpec("bs.cash", "货币资金", "Cash and cash equivalents"),
+
+    # Bank-specific
+    SubjectSpec(
+        "bs.cash_and_deposits_with_central_bank",
+        "现金及存放中央银行款项",
+        "Cash and deposits with central bank",
+        common_in=("bank",),
+    ),
+
     SubjectSpec("bs.total_cash", "总现金", "Total cash"),
     SubjectSpec("bs.trading_fin_assets", "交易性金融资产", "Trading financial assets"),
     SubjectSpec(
