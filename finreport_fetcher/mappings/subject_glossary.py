@@ -63,6 +63,7 @@ SUBJECT_SPECS: list[SubjectSpec] = [
         aliases=(
             "其中：联营企业和合营企业的投资收益",
             "对联营企业和合营企业的投资收益",
+            "对联营公司的投资收益",
         ),
     ),
     SubjectSpec("is.interest_income", "利息收入", "Interest income"),
@@ -70,6 +71,7 @@ SUBJECT_SPECS: list[SubjectSpec] = [
         "is.net_interest_income",
         "利息净收入",
         "Net interest income",
+        aliases=("净利息收入",),
         common_in=("bank",),
     ),
     SubjectSpec(
@@ -120,6 +122,7 @@ SUBJECT_SPECS: list[SubjectSpec] = [
         "is.other_operating_cost",
         "其他业务成本",
         "Other operating cost",
+        aliases=("其他业务支出",),
         common_in=("bank",),
     ),
     SubjectSpec(
@@ -288,7 +291,12 @@ SUBJECT_SPECS: list[SubjectSpec] = [
     SubjectSpec("is.non_operating_income", "营业外收入", "Non-operating income"),
     SubjectSpec("is.non_operating_expense", "营业外支出", "Non-operating expense"),
     SubjectSpec("is.total_profit", "利润总额", "Total profit"),
-    SubjectSpec("is.income_tax", "所得税费用", "Income tax expense"),
+    SubjectSpec(
+        "is.income_tax",
+        "所得税费用",
+        "Income tax expense",
+        aliases=("所得税",),
+    ),
     SubjectSpec("is.net_profit", "净利润", "Net profit"),
     SubjectSpec(
         "is.net_profit_continuing",
@@ -338,6 +346,138 @@ SUBJECT_SPECS: list[SubjectSpec] = [
     SubjectSpec("is.eps", "每股收益", "Earnings per share"),
     SubjectSpec("is.eps_basic", "基本每股收益", "Basic EPS"),
     SubjectSpec("is.eps_diluted", "稀释每股收益", "Diluted EPS"),
+    SubjectSpec(
+        "is.retained_earnings_begin",
+        "年初未分配利润",
+        "Retained earnings (beginning)",
+        common_in=("bank",),
+    ),
+    SubjectSpec(
+        "is.distributable_profit",
+        "可供分配的利润",
+        "Profit available for distribution",
+        common_in=("bank",),
+    ),
+    SubjectSpec(
+        "is.transfer_to_general_risk_reserve",
+        "提取一般风险准备",
+        "Transfer to general risk reserve",
+        common_in=("bank",),
+    ),
+    SubjectSpec(
+        "is.profit_available_to_shareholders",
+        "可供股东分配的利润",
+        "Profit available to shareholders",
+        common_in=("bank",),
+    ),
+    SubjectSpec(
+        "is.retained_earnings_end",
+        "未分配利润",
+        "Undistributed profit",
+        common_in=("bank",),
+    ),
+    SubjectSpec(
+        "is.transfer_to_statutory_surplus_reserve",
+        "提取法定盈余公积",
+        "Transfer to statutory surplus reserve",
+        common_in=("bank",),
+    ),
+    SubjectSpec(
+        "is.discretionary_surplus_reserve_appropriation",
+        "提取任意盈余公积",
+        "Transfer to discretionary surplus reserve",
+        common_in=("bank",),
+        common=False,
+        note="非通用科目：部分金融公司在利润分配时才会列示。",
+    ),
+    SubjectSpec(
+        "is.dividends_payable",
+        "应付普通股股利",
+        "Dividends payable",
+        common=False,
+        common_in=("bank",),
+    ),
+    SubjectSpec(
+        "is.preferred_dividend_payable",
+        "应付优先股股利",
+        "Preferred dividends payable",
+        common_in=("bank",),
+        common=False,
+    ),
+    SubjectSpec(
+        "is.oci_not_reclassed",
+        "以后不能重分类进损益的其他综合收益",
+        "OCI not reclassified to profit or loss",
+        common_in=("bank",),
+    ),
+    SubjectSpec(
+        "is.oci_reclassed",
+        "以后将重分类进损益的其他综合收益",
+        "OCI reclassified to profit or loss",
+        common_in=("bank",),
+    ),
+    SubjectSpec(
+        "is.oci_fx_translation",
+        "外币财务报表折算差额",
+        "Foreign currency translation differences (OCI)",
+        common_in=("bank",),
+    ),
+    SubjectSpec(
+        "is.perpetual_bond_interest",
+        "应付永续债利息",
+        "Interest on perpetual bonds",
+        common_in=("bank",),
+        common=False,
+    ),
+    SubjectSpec(
+        "is.other_debt_investments_fv_change",
+        "其他债权投资公允价值变动",
+        "Fair value changes on other debt investments",
+        common_in=("bank",),
+        common=False,
+    ),
+    SubjectSpec(
+        "is.other_debt_investments_credit_impairment",
+        "其他债权投资信用减值准备",
+        "Credit impairment on other debt investments",
+        common_in=("bank",),
+        common=False,
+    ),
+    SubjectSpec(
+        "is.other_equity_instruments_fv_change",
+        "其他权益工具投资公允价值变动",
+        "Fair value changes on other equity instruments",
+        common_in=("bank",),
+        common=False,
+    ),
+    SubjectSpec(
+        "is.amortized_cost_fin_assets_gain",
+        "以摊余成本计量的金融资产终止确认产生的收益",
+        "Gain on derecognition of amortized cost financial assets",
+        common_in=("bank",),
+        common=False,
+    ),
+    SubjectSpec(
+        "is.other_asset_impairment_loss",
+        "其他资产减值损失",
+        "Other asset impairment loss",
+        common_in=("bank",),
+        common=False,
+    ),
+    SubjectSpec(
+        "is.minority_equity_change",
+        "少数股东权益",
+        "Changes in minority interests",
+        common_in=("bank",),
+        common=False,
+    ),
+    SubjectSpec(
+        "is.reclassification_from_equity_method",
+        "权益法下重分类进损益的其他综合收益",
+        "OCI reclassified under equity method",
+        common_in=("bank",),
+        common=False,
+    ),
 
     # -------------------- Balance Sheet (BS) --------------------
     SubjectSpec("bs.section.core_metrics", "报表核心指标", "Core metrics"),
@@ -352,13 +492,19 @@ SUBJECT_SPECS: list[SubjectSpec] = [
         aliases=("所有者权益", "所有者权益（或股东权益）"),
     ),
 
-    SubjectSpec("bs.cash", "货币资金", "Cash and cash equivalents"),
+    SubjectSpec(
+        "bs.cash",
+        "货币资金",
+        "Cash and cash equivalents",
+        aliases=("现金",),
+    ),
 
     # Bank-specific
     SubjectSpec(
         "bs.cash_and_deposits_with_central_bank",
         "现金及存放中央银行款项",
         "Cash and deposits with central bank",
+        aliases=("存放中央银行款",),
         common_in=("bank",),
     ),
     SubjectSpec(
@@ -399,6 +545,12 @@ SUBJECT_SPECS: list[SubjectSpec] = [
         "Allowance for loan losses",
         common=False,
         note="非通用科目：部分银行会单列贷款损失准备，口径不一。",
+    ),
+    SubjectSpec(
+        "bs.fixed_asset_impairment_provision",
+        "固定资产减值准备",
+        "Allowance for impairment of fixed assets",
+        common_in=("bank",),
     ),
     SubjectSpec(
         "bs.debt_investments",
@@ -460,6 +612,7 @@ SUBJECT_SPECS: list[SubjectSpec] = [
         "bs.perpetual_bonds",
         "永续债",
         "Perpetual bonds",
+        aliases=("应付债券：永续债",),
         common=False,
         note="非通用科目：存在永续债融资时出现，分类口径可能为负债或权益。",
     ),
@@ -520,6 +673,18 @@ SUBJECT_SPECS: list[SubjectSpec] = [
         aliases=("可供出售金融资产合计",),
         common=False,
         note="非通用科目：多与旧准则/特定披露口径相关，部分公司可能不再单列。",
+    ),
+    SubjectSpec(
+        "bs.fin_assets_amortized_cost",
+        "以摊余成本计量的金融资产",
+        "Financial assets measured at amortized cost",
+        common_in=("bank",),
+    ),
+    SubjectSpec(
+        "bs.fin_assets_fvoci",
+        "以公允价值计量且其变动计入其他综合收益的金融资产",
+        "Financial assets at fair value through OCI",
+        common_in=("bank",),
     ),
     SubjectSpec("bs.notes_receivable", "应收票据", "Notes receivable"),
     SubjectSpec("bs.accounts_receivable", "应收账款", "Accounts receivable"),
@@ -692,6 +857,12 @@ SUBJECT_SPECS: list[SubjectSpec] = [
         aliases=("长期应付款合计", "其中：长期应付款"),
     ),
     SubjectSpec(
+        "bs.deferred_income",
+        "递延收益",
+        "Deferred income",
+        common_in=("bank",),
+    ),
+    SubjectSpec(
         "bs.deferred_income_non_current",
         "递延收益-非流动负债",
         "Deferred income (non-current liabilities)",
@@ -734,6 +905,13 @@ SUBJECT_SPECS: list[SubjectSpec] = [
         "优先股",
         "Preferred shares",
         common_in=("bank", "insurance"),
+    ),
+    SubjectSpec(
+        "bs.preferred_bonds_payable",
+        "应付债券：优先股",
+        "Preferred bonds payable",
+        common_in=("bank",),
+        note="非通用科目：主要在存在优先股/永续债融资的金融机构里单列。",
     ),
 
     SubjectSpec("bs.retained_earnings", "未分配利润", "Retained earnings"),
@@ -1091,6 +1269,7 @@ SUBJECT_SPECS: list[SubjectSpec] = [
         "cf.cash_received_from_disposal_of_long_term_assets",
         "处置固定资产、无形资产和其他长期资产收回的现金净额",
         "Net cash received from disposal of long-term assets",
+        aliases=("处置固定资产、无形资产及其他资产而收到的现金",),
     ),
     SubjectSpec(
         "cf.cash_paid_for_purchase_of_long_term_assets",
@@ -1138,6 +1317,7 @@ SUBJECT_SPECS: list[SubjectSpec] = [
         "cf.cash_received_from_borrowings",
         "取得借款收到的现金",
         "Cash received from borrowings",
+        aliases=("拆入资金现金流入",),
     ),
     SubjectSpec(
         "cf.cash_received_from_bond_issuance",
@@ -1151,6 +1331,7 @@ SUBJECT_SPECS: list[SubjectSpec] = [
         "cf.cash_received_from_investments",
         "吸收投资收到的现金",
         "Cash received from investments",
+        aliases=("吸收投资所收到的现金",),
     ),
     SubjectSpec(
         "cf.cash_received_from_minority_investment_in_subsidiaries",
@@ -1162,11 +1343,13 @@ SUBJECT_SPECS: list[SubjectSpec] = [
         "cf.cash_paid_for_debt_repayment",
         "偿还债务支付的现金",
         "Cash paid for debt repayment",
+        aliases=("偿还债务所支付的现金",),
     ),
     SubjectSpec(
         "cf.cash_paid_for_dividends_interest",
         "分配股利、利润或偿付利息支付的现金",
         "Cash paid for dividends, profit distributions and interest",
+        aliases=("偿付利息所支付的现金",),
     ),
     SubjectSpec(
         "cf.dividends_paid_to_minority_interests",
@@ -1182,6 +1365,25 @@ SUBJECT_SPECS: list[SubjectSpec] = [
         "cf.cash_paid_other_fin",
         "支付其他与筹资活动有关的现金",
         "Other cash paid relating to financing activities",
+    ),
+    SubjectSpec(
+        "cf.cashflow_hedging_reserve",
+        "现金流量套期储备",
+        "Cash flow hedging reserve",
+        common=False,
+        note="非通用科目：仅在进行现金流量套期时披露。",
+    ),
+    SubjectSpec(
+        "cf.cashflow_hedging_effective",
+        "现金流量套期损益的有效部分",
+        "Effective portion of cash flow hedging gains/losses",
+        common=False,
+    ),
+    SubjectSpec(
+        "cf.remeasurement_of_defined_benefit_plan_changes",
+        "重新计量设定受益计划变动额",
+        "Remeasurement of defined benefit plan changes",
+        common=False,
     ),
 
     SubjectSpec(
@@ -1212,6 +1414,12 @@ SUBJECT_SPECS: list[SubjectSpec] = [
         "现金的期末余额",
         "Cash balance at end of period",
     ),
+    SubjectSpec(
+        "cf.trading_fin_assets_net_increase",
+        "为交易目的而持有的金融资产净增加额",
+        "Net increase in trading financial assets",
+        common_in=("bank",),
+    ),
 
     # Financial institutions special cashflow items (bank/securities/insurance)
     SubjectSpec(
@@ -1232,6 +1440,7 @@ SUBJECT_SPECS: list[SubjectSpec] = [
         "cf.bank.net_increase_customer_deposits_and_interbank_deposits",
         "客户存款和同业存放款项净增加额",
         "Net increase in customer deposits and interbank deposits",
+        aliases=("客户存款",),
         common_in=("bank",),
     ),
     SubjectSpec(
@@ -1257,6 +1466,55 @@ SUBJECT_SPECS: list[SubjectSpec] = [
         "cf.bank.net_increase_deposits_with_central_bank_and_other_banks",
         "存放中央银行和同业款项净增加额",
         "Net increase in deposits with central bank and other banks",
+        aliases=("存放中央银行",),
+        common_in=("bank",),
+    ),
+    SubjectSpec(
+        "cf.bank.cash_received_from_placements",
+        "收回的拆出资金净额",
+        "Net cash received from placements",
+        common_in=("bank",),
+    ),
+    SubjectSpec(
+        "cf.bank.cash_paid_for_placements",
+        "拆出资金净现金流出",
+        "Net cash paid for placements",
+        common_in=("bank",),
+    ),
+    SubjectSpec(
+        "cf.bank.net_increase_repo_funds",
+        "吸收的卖出回购项净额",
+        "Net increase in sold repo funds",
+        common_in=("bank",),
+    ),
+    SubjectSpec(
+        "cf.bank.cash_received_from_repo",
+        "收回的买入返售项净额",
+        "Net cash received from reverse repos",
+        common_in=("bank",),
+    ),
+    SubjectSpec(
+        "cf.bank.cash_paid_for_repo",
+        "支付买入返售款项净额",
+        "Net cash paid for reverse repos",
+        common_in=("bank",),
+    ),
+    SubjectSpec(
+        "cf.bank.cash_paid_to_repay_central_bank_borrowings",
+        "偿还中央银行借款",
+        "Cash paid to repay central bank borrowings",
+        common_in=("bank",),
+    ),
+    SubjectSpec(
+        "cf.bank.cash_paid_to_repay_repo",
+        "偿还卖出回购款项净额",
+        "Cash paid to repay repo borrowings",
+        common_in=("bank",),
+    ),
+    SubjectSpec(
+        "cf.bank.cash_paid_to_repay_borrowed_funds",
+        "偿还同业及其他金融机构拆入净额",
+        "Cash paid to repay borrowed funds from other financial institutions",
         common_in=("bank",),
     ),
 
