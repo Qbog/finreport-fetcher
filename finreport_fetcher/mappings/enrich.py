@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import re
 
 import pandas as pd
@@ -55,6 +56,10 @@ def _auto_en_from_cn(cn: str) -> str:
         return ""
 
     return s
+
+
+def _short_hash(s: str) -> str:
+    return hashlib.sha1((s or "").encode("utf-8")).hexdigest()[:10]
 
 
 def _slugify_en(en: str) -> str:
@@ -432,14 +437,23 @@ def enrich_statement_df(
             else:
                 en = _auto_en_from_cn(cn_base)
 
+            h = _short_hash(cn_base)
+
             if not en:
-                raise RuntimeError(f"未映射科目缺少英文名称，请补齐 subject_glossary 映射：{cn_base}")
+                # We still need a stable ASCII key. Use a short hash suffix as a last-resort fallback.
+                en = f"UNMAPPED_{h}"
 
             slug = _slugify_en(en)
             if not slug:
-                raise RuntimeError(f"未能从英文名称生成 key：{cn_base} -> {en}")
+                slug = f"unmapped_{h}"
+            else:
+                # Avoid collisions between different unmapped CN names that may share the same auto EN.
+                slug = f"{slug}_{h}"
 
             k = f"{prefix}.{slug}" if prefix else slug
+
+            # Make unmapped subjects obvious in Excel for iterative enrichment.
+            note = f"未映射科目：{cn_base}（请在 subject_glossary.py 补齐映射）"
 
             # If the auto-generated key matches a curated spec, upgrade to canonical CN/EN.
             spec2 = lookup_subject_by_key(k)
