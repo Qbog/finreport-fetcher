@@ -29,6 +29,7 @@ def test_enrich_statement_df_dedup_lengths_and_keys():
     assert len(out) > 0
     assert "key" in out.columns
     assert "备注" in out.columns
+    assert "英文" in out.columns
     assert "科目" in out.columns
 
     keys = out["key"].astype(str).tolist()
@@ -108,13 +109,13 @@ def test_export_excel_schema_and_autofit(tmp_path: Path):
     ws = wb["资产负债表"]
 
     headers = [ws.cell(3, c).value for c in range(1, ws.max_column + 1)]
-    assert headers[:5] == ["科目", "数值", " ", "key", "备注"]
-    assert headers[-1] == "备注"
+    assert headers[:6] == ["科目", "数值", " ", "key", "备注", "英文"]
+    assert headers[-1] == "英文"
 
     # 科目列宽不应被 A1/A2 长标题撑爆
     subj_width = ws.column_dimensions["A"].width
     assert subj_width is not None
-    # 不应被标题撑爆；但也需要足够宽避免遮挡
-    assert 16.0 <= float(subj_width) <= 60.0
+    # 不应被标题撑爆；同时需要足够宽避免遮挡
+    assert 40.0 <= float(subj_width) <= 90.0
 
     wb.close()

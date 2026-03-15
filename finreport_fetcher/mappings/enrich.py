@@ -342,13 +342,15 @@ def _patch_balance_sheet_structure(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def enrich_statement_df(df: pd.DataFrame, *, sheet_name_cn: str) -> pd.DataFrame:
-    """Add stable template key + English remark for a statement df.
+    """Add stable template key + notes + English for a statement df.
 
     Input df should contain at least: 科目, 数值 (and may contain __level/__is_header).
 
     Output:
     - Adds `key` column: stable, unique, **ASCII-only**.
-    - Adds `备注` column: English name (from curated glossary; if missing, leave blank).
+    - Adds `备注` column: CN note / explanation (from curated glossary; may be blank).
+    - Adds `英文` column: English translation (from curated glossary).
+    - Adds `__uncommon` flag: mark non-common subjects (for Excel highlighting).
     - Canonicalizes `科目` to the glossary CN name when available (cross-provider consistency).
 
     约束：
@@ -375,8 +377,10 @@ def enrich_statement_df(df: pd.DataFrame, *, sheet_name_cn: str) -> pd.DataFrame
 
     # 2) Key + English remark mapping
     keys: list[str] = []
+    notes: list[str] = []
     ens: list[str] = []
     cn_canon: list[str] = []
+    uncommon_flags: list[bool] = []
     # seen: used keys inside this sheet (for uniqueness)
     seen: dict[str, int] = {}
 
@@ -400,10 +404,16 @@ def enrich_statement_df(df: pd.DataFrame, *, sheet_name_cn: str) -> pd.DataFrame
             k = spec.key
             en = spec.en
             cn_base = spec.cn  # canonical CN for cross-provider consistency
+            note = (spec.note or "").strip()
+            uncommon = not bool(getattr(spec, "common", True))
+            if uncommon and not note:
+                note = "非通用科目：仅少数公司/行业披露，口径以财报附注为准。"
         else:
             # 未映射科目：生成可读英文 key（不允许 hash）。
             # 质量更高/更稳定的做法：把该科目补进 subject_glossary.py。
             cn_base = cn_norm
+            note = ""
+            uncommon = True
 
             # 1) If looks like an English identifier (e.g. tushare fields), derive from it.
             if re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", cn_base):
@@ -425,6 +435,10 @@ def enrich_statement_df(df: pd.DataFrame, *, sheet_name_cn: str) -> pd.DataFrame
             if spec2:
                 cn_base = spec2.cn
                 en = spec2.en
+                note = (spec2.note or "").strip()
+                uncommon = not bool(getattr(spec2, "common", True))
+                if uncommon and not note:
+                    note = "非通用科目：仅少数公司/行业披露，口径以财报附注为准。"
 
         cn_disp = f"{tag_prefix}{cn_base}" if tag_prefix else cn_base
 
@@ -475,21 +489,35 @@ def enrich_statement_df(df: pd.DataFrame, *, sheet_name_cn: str) -> pd.DataFrame
 
         keep_rows.append(i)
         keys.append(k)
+        notes.append(note)
         ens.append(en)
         cn_canon.append(cn_disp)
+        uncommon_flags.append(bool(uncommon))
 
     # Drop rows we decided to skip (duplicate placeholders/totals)
     out = out.iloc[keep_rows].copy().reset_index(drop=True)
 
-    # Insert key as the first column for readability
+    # key（稳定 ASCII-only）
     if "key" not in out.columns:
         out.insert(0, "key", keys)
 
-    # Add English remark column (always present for stable format)
+    # 备注（中文说明）
     if "备注" not in out.columns:
-        out.insert(2, "备注", ens)
+        out.insert(2, "备注", notes)
     else:
-        out["备注"] = ens
+        out["备注"] = notes
+
+    # 英文（翻译）
+    if "英文" not in out.columns:
+        out.insert(3, "英文", ens)
+    else:
+        out["英文"] = ens
+
+    # 是否非通用科目（用于 Excel 上色）
+    if "__uncommon" not in out.columns:
+        out["__uncommon"] = uncommon_flags
+    else:
+        out["__uncommon"] = uncommon_flags
 
     # Canonical CN subject
     out["科目"] = cn_canon

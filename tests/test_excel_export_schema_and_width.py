@@ -49,11 +49,12 @@ def test_excel_schema_is_fixed_and_subject_column_not_excessive(tmp_path: Path):
 
     # header row is row 3
     headers = [ws.cell(3, c).value for c in range(1, ws.max_column + 1)]
-    assert headers == ["科目", "数值", " ", "key", "备注"]
+    assert headers == ["科目", "数值", " ", "key", "备注", "英文"]
 
     # subject column should not be blown up by title/note rows
     width_a = ws.column_dimensions["A"].width
     assert width_a is not None
-    assert float(width_a) <= 40
+    # 资产负债表：有最小宽度兜底，但不应被标题撑爆到极端
+    assert 40.0 <= float(width_a) <= 90.0
 
     wb.close()

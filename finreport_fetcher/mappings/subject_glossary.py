@@ -11,12 +11,18 @@ class SubjectSpec:
     cn:  CN name as appears in exported statements
     en:  English translation (short, for readability)
     aliases: additional CN names that should map to the same key/en
+    common: whether it is a common, cross-industry subject
+    note: optional CN note to show in exported Excel
     """
 
     key: str
     cn: str
     en: str
     aliases: tuple[str, ...] = ()
+    # 是否“通用科目”：False 表示仅少数公司/行业/会计准则下出现的科目（Excel 会用不同颜色标记）
+    common: bool = True
+    # 备注说明（中文），用于解释口径/出现条件等（写入导出 Excel 的“备注”列）
+    note: str = ""
 
 
 # NOTE:
@@ -117,18 +123,24 @@ SUBJECT_SPECS: list[SubjectSpec] = [
         "衍生金融资产",
         "Derivative financial assets",
         aliases=("衍生金融工具资产",),
+        common=False,
+        note="非通用科目：衍生工具相关资产，通常仅部分公司披露。",
     ),
     SubjectSpec(
         "bs.derivative_fin_liabilities",
         "衍生金融负债",
         "Derivative financial liabilities",
         aliases=("衍生金融工具负债",),
+        common=False,
+        note="非通用科目：衍生工具相关负债，通常仅部分公司披露。",
     ),
     SubjectSpec(
         "bs.afs_fin_assets",
         "可供出售金融资产",
         "Available-for-sale financial assets",
         aliases=("可供出售金融资产合计",),
+        common=False,
+        note="非通用科目：多与旧准则/特定披露口径相关，部分公司可能不再单列。",
     ),
     SubjectSpec("bs.notes_receivable", "应收票据", "Notes receivable"),
     SubjectSpec("bs.accounts_receivable", "应收账款", "Accounts receivable"),
@@ -182,6 +194,8 @@ SUBJECT_SPECS: list[SubjectSpec] = [
             "公允价值计量且其变动计入当期损益的金融负债",
             "以公允价值计量且其变动计入当期损益的金融负债合计",
         ),
+        common=False,
+        note="非通用科目：主要见于金融工具披露较完整的公司/行业；口径以财报附注为准。",
     ),
     SubjectSpec("bs.notes_payable", "应付票据", "Notes payable", aliases=("其中：应付票据",)),
     SubjectSpec("bs.accounts_payable", "应付账款", "Accounts payable"),
@@ -455,6 +469,8 @@ SUBJECT_SPECS: list[SubjectSpec] = [
         "发行债券收到的现金",
         "Cash received from bond issuance",
         aliases=("发行债券收到现金",),
+        common=False,
+        note="非通用科目：仅在公司存在发债融资时出现。",
     ),
     SubjectSpec(
         "cf.cash_received_from_investments",

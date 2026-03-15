@@ -91,9 +91,10 @@ def export_bundle_to_excel(
     cf_df = enrich_statement_df(cashflow_statement, sheet_name_cn="现金流量表")
 
     def view_df(df: pd.DataFrame) -> pd.DataFrame:
-        # 固定导出列顺序（跨数据源保持一致）：科目 | 数值 | (spacer) | key | 备注
-        # 备注放在最后一列，便于后续人工校对英文名称。
-        preferred = ["科目", "数值", "key", "备注"]
+        # 固定导出列顺序（跨数据源保持一致）：科目 | 数值 | (spacer) | key | 备注 | 英文
+        # - 备注：中文说明（口径/出现条件等）
+        # - 英文：英文翻译（用于对照/模板编写）
+        preferred = ["科目", "数值", "key", "备注", "英文"]
         cols = [c for c in preferred if c in df.columns]
         if not cols:
             cols = [c for c in ["科目", "数值"] if c in df.columns]
@@ -133,6 +134,9 @@ def export_bundle_to_excel(
     zebra_fill = PatternFill("solid", fgColor="F7F7F7")
     section_fill = PatternFill("solid", fgColor="E8F1FB")
     section_font = Font(bold=True, color="0B2F4F")
+
+    # 非通用科目高亮（淡黄）
+    uncommon_fill = PatternFill("solid", fgColor="FFF2CC")
 
     info = title_info or {}
     period_end = info.get("period_end")
@@ -249,6 +253,18 @@ def export_bundle_to_excel(
             if (i % 2) == 1:
                 for c in range(1, end_col + 1):
                     ws.cell(excel_row, c).fill = zebra_fill
+
+        # 非通用科目高亮（覆盖 zebra）：整行淡黄
+        uncommon = df.get("__uncommon")
+        if uncommon is not None:
+            for i in range(len(df)):
+                excel_row = data_start + i
+                hdr = bool(is_header.iloc[i]) if is_header is not None else False
+                if hdr:
+                    continue
+                if bool(uncommon.iloc[i]):
+                    for c in range(1, end_col + 1):
+                        ws.cell(excel_row, c).fill = uncommon_fill
 
         # 数字列格式：对“数值”列做千分位
         for r in range(data_start, ws.max_row + 1):
