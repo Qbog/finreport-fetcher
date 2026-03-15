@@ -109,6 +109,80 @@ class CommonOpts:
     tushare_token: str | None
 
 
+_ID_DATE_SUFFIX = re.compile(r"^(?P<id>.+?)\.(?P<y>\d{4})\.(?P<m>\d{2})\.(?P<d>\d{2})$")
+
+
+def _latest_quarter_end_on_or_before(d: date) -> date:
+    start0 = date(d.year - 2, 1, 1)
+    qs = quarter_ends_between(start0, d)
+    if not qs:
+        raise RuntimeError(f"无法从日期推断季末: {d}")
+    return qs[-1]
+
+
+def _prev_quarter_end(pe: date) -> date:
+    pe0 = _latest_quarter_end_on_or_before(pe)
+    mmdd = pe0.strftime('%m%d')
+    if mmdd == '0331':
+        return date(pe0.year - 1, 12, 31)
+    if mmdd == '0630':
+        return date(pe0.year, 3, 31)
+    if mmdd == '0930':
+        return date(pe0.year, 6, 30)
+    if mmdd == '1231':
+        return date(pe0.year, 9, 30)
+    return date(pe0.year - 1, 12, 31)
+
+
+def _prev_in_year_quarter_end(pe: date) -> date | None:
+    pe0 = _latest_quarter_end_on_or_before(pe)
+    mmdd = pe0.strftime('%m%d')
+    if mmdd == '0331':
+        return None
+    if mmdd == '0630':
+        return date(pe0.year, 3, 31)
+    if mmdd == '0930':
+        return date(pe0.year, 6, 30)
+    if mmdd == '1231':
+        return date(pe0.year, 9, 30)
+    return None
+
+
+def _split_id_date(s: str) -> tuple[str, date | None]:
+    m = _ID_DATE_SUFFIX.match(s)
+    if not m:
+        return s, None
+    base = m.group('id')
+    y, mm, dd = int(m.group('y')), int(m.group('m')), int(m.group('d'))
+    return base, date(y, mm, dd)
+
+
+def _statement_from_key(key0: str, default_statement: str) -> str:
+    k2 = (key0 or '').strip().lower()
+    if k2.startswith('is.'):
+        return '利润表'
+    if k2.startswith('bs.'):
+        return '资产负债表'
+    if k2.startswith('cf.'):
+        return '现金流量表'
+    return default_statement
+
+
+def _value_map_for_statement(xlsx: Path, statement: str) -> dict[str, float]:
+    df = read_statement_df(xlsx, sheet_name=statement)
+    m: dict[str, float] = {}
+    if 'key' not in df.columns:
+        return m
+    for k2, v2 in zip(df['key'].astype(str), df['数值']):
+        if pd.isna(v2) or v2 is None:
+            continue
+        try:
+            m[str(k2)] = float(v2)
+        except Exception:
+            continue
+    return m
+
+
 def _resolve_symbol(code: str | None, name: str | None) -> ResolvedSymbol:
     if code and name:
         raise typer.BadParameter("--code 与 --name 只能二选一")
@@ -255,6 +329,121 @@ def _maybe_fetch_missing(c: CommonOpts, fetch_start: date | None = None) -> list
         log_warn(f"提示：补齐后仍缺失 {len(still)} 期财报，将跳过缺失期继续绘图：{still}")
 
     return still
+
+
+class ExpressionEvaluator:
+    def __init__(self, opts: CommonOpts):
+        self.opts = opts
+        self._map_cache: dict[tuple[Path, str], dict[str, float]] = {}
+        self._fetch_tried: set[date] = set()
+
+    def _xlsx_for_period(self, pe: date) -> Path:
+        xlsx = expected_xlsx_path(
+            self.opts.data_dir,
+            self.opts.rs.code6,
+            self.opts.statement_type,
+            pe,
+            name=self.opts.rs.name,
+        )
+        if xlsx.exists():
+            return xlsx
+        if pe in self._fetch_tried:
+            return xlsx
+        self._fetch_tried.add(pe)
+        ensure_finreports(
+            code_or_name_args=["--code", self.opts.rs.code6],
+            code6=self.opts.rs.code6,
+            start=pe,
+            end=pe,
+            data_dir=self.opts.data_dir,
+            provider=self.opts.provider,
+            statement_type=self.opts.statement_type,
+            pdf=self.opts.pdf,
+            company_name=self.opts.rs.name,
+            tushare_token=self.opts.tushare_token,
+        )
+        return xlsx
+
+    def _values_map_for(self, pe: date, statement: str) -> dict[str, float]:
+        xlsx = self._xlsx_for_period(pe)
+        if not xlsx.exists():
+            return {}
+        key = (xlsx, statement)
+        if key not in self._map_cache:
+            self._map_cache[key] = _value_map_for_statement(xlsx, statement)
+        return self._map_cache[key]
+
+    def _resolve_ident_value(self, ident: str, *, current_pe: date, default_statement: str) -> float | None:
+        ident_s = (ident or '').strip()
+        if not ident_s:
+            return None
+
+        prev_in_year = False
+        if ident_s.endswith('.prev_in_year'):
+            prev_in_year = True
+            ident_s = ident_s[: -len('.prev_in_year')]
+
+        prev_n = 0
+        while ident_s.endswith('.prev'):
+            prev_n += 1
+            ident_s = ident_s[: -len('.prev')]
+
+        base, specified_date = _split_id_date(ident_s)
+        statement = _statement_from_key(base, default_statement)
+
+        target_pe = current_pe
+        if specified_date:
+            target_pe = _latest_quarter_end_on_or_before(specified_date)
+
+        if prev_in_year:
+            prev_pe = _prev_in_year_quarter_end(target_pe)
+            if prev_pe is None:
+                return 0.0
+            target_pe = prev_pe
+
+        for _ in range(prev_n):
+            target_pe = _prev_quarter_end(target_pe)
+
+        values_map = self._values_map_for(target_pe, statement)
+        v0 = values_map.get(base)
+        if v0 is not None:
+            return float(v0)
+
+        # fallback: allow key-like string not in vm, or CN subject
+        xlsx = self._xlsx_for_period(target_pe)
+        if not xlsx.exists():
+            return None
+        v1 = get_item_value(xlsx, statement, base)
+        return float(v1) if v1 is not None else None
+
+    def eval(self, expr: str, *, current_pe: date, default_statement: str) -> float | None:
+        expr_s = (expr or '').strip()
+        if not expr_s:
+            return None
+
+        if re.search(r"[\+\-\*/\(\)]", expr_s):
+            try:
+                toks = tokenize(expr_s)
+                ids = [t for t in toks if t not in {"+", "-", "*", "/", "(", ")"} and not re.fullmatch(r"\d+(?:\.\d+)?", t)]
+                vals: dict[str, float] = {}
+                for ident in ids:
+                    v = self._resolve_ident_value(
+                        ident, current_pe=current_pe, default_statement=default_statement
+                    )
+                    if v is None:
+                        raise ExprError(f"缺少变量: {ident}")
+                    vals[ident] = float(v)
+                return float(eval_expr(expr_s, vals))
+            except ExprError as ex:
+                log_warn(f"表达式计算失败: {expr_s} ({ex})")
+                return None
+
+        if '.' in expr_s:
+            return self._resolve_ident_value(expr_s, current_pe=current_pe, default_statement=default_statement)
+
+        xlsx = self._xlsx_for_period(current_pe)
+        v = get_item_value(xlsx, default_statement, expr_s)
+        return float(v) if v is not None else None
 
 
 @app.callback()
@@ -742,9 +931,9 @@ def run(
     templates: Path = typer.Option(Path("templates"), "--templates", help="模板目录（单模板单文件 *.toml）"),
     code: str | None = typer.Option(None, "--code"),
     name: str | None = typer.Option(None, "--name"),
-    start: str = typer.Option(..., "--start", help="趋势分析必须提供时间范围；比较分析也可复用该范围"),
+    start: str = typer.Option(..., "--start", help="趋势分析必须提供时间范围；结构分析也可复用该范围"),
     end: str = typer.Option(..., "--end"),
-    as_of: str | None = typer.Option(None, "--as-of", help="比较分析使用的报告期末日（YYYY-MM-DD）。不传则取 end 对应的最近一个季末"),
+    as_of: str | None = typer.Option(None, "--as-of", help="结构分析使用的报告期末日（YYYY-MM-DD）。不传则取 end 对应的最近一个季末"),
     period: str | None = typer.Option(
         None,
         "--period",
@@ -765,7 +954,7 @@ def run(
 
     模板要求（你的约束）：
     - 必须有：type(类型)、title(标题)、x_label/y_label（坐标轴显示名，bar/combo 使用）
-    - bar 需要 mode：trend（趋势分析）/ compare（比较分析）
+    - bar 需要 mode：trend（趋势分析）/ structure（结构分析，旧 compare）/ peer（同业分析）
     - bar 的每根柱都通过 [[bars]] 配置块描述，支持 expr 表达式（key + +-*/()）
 
     运行规则：
@@ -891,193 +1080,7 @@ def run(
         return
 
     # helpers
-    def _latest_quarter_end_on_or_before(d: date) -> date:
-        # search back up to 2 years
-        start0 = date(d.year - 2, 1, 1)
-        qs = quarter_ends_between(start0, d)
-        if not qs:
-            raise RuntimeError(f"无法从日期推断季末: {d}")
-        return qs[-1]
-
-    def _value_map_for_statement(xlsx: Path, statement: str) -> dict[str, float]:
-        df = read_statement_df(xlsx, sheet_name=statement)
-        m: dict[str, float] = {}
-        if "key" not in df.columns:
-            return m
-        for k2, v2 in zip(df["key"].astype(str), df["数值"]):
-            if pd.isna(v2) or v2 is None:
-                continue
-            try:
-                m[str(k2)] = float(v2)
-            except Exception:
-                continue
-        return m
-
-    _ID_DATE_SUFFIX = re.compile(r"^(?P<id>.+?)\.(?P<y>\d{4})\.(?P<m>\d{2})\.(?P<d>\d{2})$")
-
-    def _split_id_date(s: str) -> tuple[str, date | None]:
-        m = _ID_DATE_SUFFIX.match(s)
-        if not m:
-            return s, None
-        base = m.group("id")
-        y, mm, dd = int(m.group("y")), int(m.group("m")), int(m.group("d"))
-        return base, date(y, mm, dd)
-
-    def _statement_from_key(key0: str, default_statement: str) -> str:
-        k2 = (key0 or "").strip().lower()
-        if k2.startswith("is."):
-            return "利润表"
-        if k2.startswith("bs."):
-            return "资产负债表"
-        if k2.startswith("cf."):
-            return "现金流量表"
-        return default_statement
-
-    # cache: (xlsx_path, statement) -> {key: value}
-    _map_cache: dict[tuple[Path, str], dict[str, float]] = {}
-    # cache: periods we already attempted to fetch in this run
-    _fetch_tried: set[date] = set()
-
-    def _xlsx_for_period(pe: date) -> Path:
-        xlsx = expected_xlsx_path(c.data_dir, c.rs.code6, c.statement_type, pe, name=c.rs.name)
-        if xlsx.exists():
-            return xlsx
-
-        if pe in _fetch_tried:
-            return xlsx
-        _fetch_tried.add(pe)
-
-        # on-demand fetch (允许缺失时自动补齐)
-        ensure_finreports(
-            code_or_name_args=["--code", c.rs.code6],
-            code6=c.rs.code6,
-            start=pe,
-            end=pe,
-            data_dir=c.data_dir,
-            provider=c.provider,
-            statement_type=c.statement_type,
-            pdf=c.pdf,
-            company_name=c.rs.name,
-            tushare_token=c.tushare_token,
-        )
-        return xlsx
-
-    def _values_map_for(pe: date, statement: str) -> dict[str, float]:
-        xlsx = _xlsx_for_period(pe)
-        if not xlsx.exists():
-            return {}
-        key = (xlsx, statement)
-        if key not in _map_cache:
-            _map_cache[key] = _value_map_for_statement(xlsx, statement)
-        return _map_cache[key]
-    def _prev_quarter_end(pe: date) -> date:
-        """Previous quarter-end date (跨年)。"""
-        pe0 = _latest_quarter_end_on_or_before(pe)
-        mmdd = pe0.strftime('%m%d')
-        if mmdd == '0331':
-            return date(pe0.year - 1, 12, 31)
-        if mmdd == '0630':
-            return date(pe0.year, 3, 31)
-        if mmdd == '0930':
-            return date(pe0.year, 6, 30)
-        if mmdd == '1231':
-            return date(pe0.year, 9, 30)
-        # fallback: treat as the latest quarter-end and shift once
-        return date(pe0.year - 1, 12, 31)
-
-    def _prev_in_year_quarter_end(pe: date) -> date | None:
-        """Previous quarter-end date within the same year; Q1 -> None."""
-        pe0 = _latest_quarter_end_on_or_before(pe)
-        mmdd = pe0.strftime('%m%d')
-        if mmdd == '0331':
-            return None
-        if mmdd == '0630':
-            return date(pe0.year, 3, 31)
-        if mmdd == '0930':
-            return date(pe0.year, 6, 30)
-        if mmdd == '1231':
-            return date(pe0.year, 9, 30)
-        return None
-
-    def _resolve_ident_value(ident: str, *, current_pe: date, default_statement: str) -> float | None:
-        ident_s = (ident or '').strip()
-        if not ident_s:
-            return None
-
-        # Suffix modifiers (表达式内取值增强)：
-        #   .YYYY.MM.DD          -> 指定报告期
-        #   .prev                -> 上一季度（可链式：.prev.prev）
-        #   .prev_in_year         -> 同年上一季度（Q1 视为 0.0）
-        s0 = ident_s
-        prev_in_year = False
-        if s0.endswith('.prev_in_year'):
-            prev_in_year = True
-            s0 = s0[: -len('.prev_in_year')]
-
-        prev_n = 0
-        while s0.endswith('.prev'):
-            prev_n += 1
-            s0 = s0[: -len('.prev')]
-
-        base, pe2 = _split_id_date(s0)
-        pe_use = pe2 or current_pe
-
-        if prev_in_year:
-            pe_prev = _prev_in_year_quarter_end(pe_use)
-            if pe_prev is None:
-                return 0.0
-            pe_use = pe_prev
-
-        for _ in range(prev_n):
-            pe_use = _prev_quarter_end(pe_use)
-
-        statement = _statement_from_key(base, default_statement)
-        xlsx = _xlsx_for_period(pe_use)
-        if not xlsx.exists():
-            return None
-
-        # key path
-        if '.' in base:
-            vm = _values_map_for(pe_use, statement)
-            if base in vm:
-                return float(vm[base])
-            # fallback: allow key-like string not in vm
-            v = get_item_value(xlsx, statement, base)
-            return float(v) if v is not None else None
-
-        # CN subject fallback
-        v = get_item_value(xlsx, statement, base)
-        return float(v) if v is not None else None
-
-    def _eval_expr_or_item(expr: str, *, current_pe: date, default_statement: str) -> float | None:
-        expr_s = (expr or "").strip()
-        if not expr_s:
-            return None
-
-        # expression: only ASCII identifiers are supported inside expr
-        if re.search(r"[\+\-\*/\(\)]", expr_s):
-            try:
-                toks = tokenize(expr_s)
-                ids = [t for t in toks if t not in {"+", "-", "*", "/", "(", ")"} and not re.fullmatch(r"\d+(?:\.\d+)?", t)]
-                vals: dict[str, float] = {}
-                for ident in ids:
-                    v = _resolve_ident_value(ident, current_pe=current_pe, default_statement=default_statement)
-                    if v is None:
-                        raise ExprError(f"缺少变量: {ident}")
-                    vals[ident] = float(v)
-                return float(eval_expr(expr_s, vals))
-            except ExprError as ex:
-                log_warn(f"表达式计算失败: {expr_s} ({ex})")
-                return None
-
-        # single identifier / item
-        if "." in expr_s:
-            return _resolve_ident_value(expr_s, current_pe=current_pe, default_statement=default_statement)
-
-        # CN subject
-        xlsx = _xlsx_for_period(current_pe)
-        v = get_item_value(xlsx, default_statement, expr_s)
-        return float(v) if v is not None else None
+    main_eval = ExpressionEvaluator(c)
 
     # 2) run templates
     for k, tpl in selected.items():
@@ -1099,7 +1102,7 @@ def run(
 
         # ---- bar / line ----
         if t_type in {"bar", "line"}:
-            mode = (getattr(tpl, "mode", None) or "trend").strip().lower()
+            mode = (getattr(tpl, "mode", None) or "trend").strip().lower().replace("compare", "structure")
             bars = getattr(tpl, "bars", None)
             statement_default = getattr(tpl, "statement", None) or "利润表"
 
@@ -1142,8 +1145,8 @@ def run(
             render_png = render_bars_png if t_type == "bar" else render_lines_png
             write_xlsx = write_bars_excel if t_type == "bar" else write_lines_excel
 
-            if mode not in {"trend", "compare"}:
-                raise RuntimeError(f"{chart_kind} 模板 mode 仅支持 trend/compare: {k}")
+            if mode not in {"trend", "structure", "peer"}:
+                raise RuntimeError(f"{chart_kind} 模板 mode 仅支持 trend/structure/peer: {k}")
 
             if not bars and mode == "trend":
                 raise RuntimeError(f"趋势 {chart_kind} 模板必须提供 [[bars]]: {k}")
@@ -1184,7 +1187,7 @@ def run(
                         b_name = str(b["name"])
                         b_expr = str(b["expr"])
                         b_stmt = str(b.get("statement") or statement_default)
-                        v = _eval_expr_or_item(b_expr, current_pe=pe, default_statement=b_stmt)
+                        v = main_eval.eval(b_expr, current_pe=pe, default_statement=b_stmt)
                         row[b_name] = v
                         if v is not None:
                             any_val = True
@@ -1253,21 +1256,148 @@ def run(
                 log_info(f"已生成: {out_xlsx}")
                 continue
 
-            # ---- compare ----
-            # 约定：当用户提供 --start/--end 时，比较分析会对时间范围内每个报告期各生成一张图。
+            if mode == "peer":
+                peer_defs = getattr(tpl, "peers", None) or []
+                if not peer_defs:
+                    raise RuntimeError(f"peer 模式必须在模板中配置 peers 列表: {k}")
+
+                if not bars:
+                    raise RuntimeError(f"peer 模式必须在模板中显式配置 [[bars]]: {k}")
+
+                bars_flat = _flatten_bar_blocks(bars)
+                if not bars_flat:
+                    raise RuntimeError(f"peer 模式缺少可用 bars（叶子节点需提供 expr）: {k}")
+
+                company_evals: list[tuple[str, str, ExpressionEvaluator]] = []
+                company_evals.append((c.rs.name or c.rs.code6, c.rs.code6, main_eval))
+                seen_codes = {c.rs.code6}
+
+                for peer_conf in peer_defs:
+                    peer_val = str(peer_conf or "").strip()
+                    if not peer_val:
+                        continue
+                    try:
+                        if peer_val.isdigit() and len(peer_val) == 6:
+                            peer_rs = _resolve_symbol(code=peer_val, name=None)
+                        else:
+                            peer_rs = _resolve_symbol(code=None, name=peer_val)
+                    except Exception as exc:
+                        raise RuntimeError(f"peer 模式解析公司 {peer_val} 失败: {exc}")
+                    if peer_rs.code6 in seen_codes:
+                        continue
+                    seen_codes.add(peer_rs.code6)
+                    opts_peer = CommonOpts(
+                        rs=peer_rs,
+                        start=c.start,
+                        end=c.end,
+                        data_dir=c.data_dir,
+                        out_dir=c.out_dir,
+                        provider=c.provider,
+                        statement_type=c.statement_type,
+                        pdf=c.pdf,
+                        tushare_token=c.tushare_token,
+                    )
+                    company_evals.append((peer_rs.name or peer_rs.code6, peer_rs.code6, ExpressionEvaluator(opts_peer)))
+
+                if len(company_evals) < 2:
+                    raise RuntimeError(f"peer 模式需要至少两个不同公司: {k}")
+
+                if getattr(tpl, "period_end", None):
+                    target_date = parse_date(str(getattr(tpl, "period_end")))
+                elif as_of:
+                    target_date = parse_date(as_of)
+                else:
+                    target_date = c.end
+                pe_target = _latest_quarter_end_on_or_before(target_date)
+
+                rows = []
+                skipped = []
+                for label, _, eval_ctx in company_evals:
+                    row = {"company": label}
+                    any_val = False
+                    for b in bars_flat:
+                        b_name = b["name"]
+                        b_expr = b["expr"]
+                        b_stmt = b["statement"]
+                        v = eval_ctx.eval(str(b_expr), current_pe=pe_target, default_statement=b_stmt)
+                        row[b_name] = v
+                        if v is not None:
+                            any_val = True
+                    if not any_val:
+                        skipped.append(label)
+                        continue
+                    rows.append(row)
+
+                if not rows:
+                    log_warn(f"提示：{k} peer 模式在 {pe_target.strftime('%Y-%m-%d')} 没有可用数据。")
+                    continue
+
+                df_peer = pd.DataFrame(rows)
+                series_cols = []
+                series_colors = []
+                for b in bars_flat:
+                    col = b["name"]
+                    if col not in df_peer.columns:
+                        continue
+                    if df_peer[col].dropna().empty:
+                        continue
+                    series_cols.append((col, col))
+                    series_colors.append(b.get("color"))
+
+                if not series_cols:
+                    log_warn(f"提示：{k} peer 模式所有科目在 {pe_target.strftime('%Y-%m-%d')} 均为空。")
+                    continue
+
+                extra = {}
+                if t_type == "bar":
+                    extra["series_colors"] = series_colors
+
+                title = f"{c.rs.name or c.rs.code6} | {title0} | 同业对比 {pe_target.strftime('%Y-%m-%d')}"
+                out_png = c.out_dir / f"{fname_base}_{c.rs.code6}_peer_{pe_target.strftime('%Y%m%d')}.png"
+                out_xlsx = c.out_dir / f"{fname_base}_{c.rs.code6}_peer_{pe_target.strftime('%Y%m%d')}.xlsx"
+
+                render_png(
+                    df_peer,
+                    title=title,
+                    x_col="company",
+                    series=series_cols,
+                    out_png=out_png,
+                    x_label=x_label,
+                    y_label=y_label,
+                    **extra,
+                )
+                write_xlsx(
+                    df_peer,
+                    title=title,
+                    x_col="company",
+                    series=series_cols,
+                    out_xlsx=out_xlsx,
+                    x_label=x_label,
+                    y_label=y_label,
+                    **extra,
+                )
+
+                log_info(f"已生成: {out_png}")
+                log_info(f"已生成: {out_xlsx}")
+                if skipped:
+                    log_warn(f"提示：{k} peer 模式以下公司在 {pe_target.strftime('%Y-%m-%d')} 缺失数据，将跳过: {', '.join(skipped)}")
+                continue
+
+            # ---- structure ----
+            # 约定：当用户提供 --start/--end 时，结构分析会对时间范围内每个报告期各生成一张图。
             # 若显式指定了 --as-of 或模板 period_end，则按“单期末”输出。
 
             statement = statement_default
 
-            # 比较分析：完全由模板 bars 控制（不自动枚举“全部科目”）
+            # 结构分析：完全由模板 bars 控制（不自动枚举“全部科目”）
             if not bars:
-                raise RuntimeError(f"compare 模式必须在模板中显式配置 [[bars]]: {k}")
+                raise RuntimeError(f"structure 模式必须在模板中显式配置 [[bars]]: {k}")
 
             bars_flat = _flatten_bar_blocks(bars)
             if not bars_flat:
-                raise RuntimeError(f"compare 模式缺少可用 bars（叶子节点需提供 expr）: {k}")
+                raise RuntimeError(f"structure 模式缺少可用 bars（叶子节点需提供 expr）: {k}")
 
-            # ---- single-period compare ----
+            # ---- single-period structure ----
             if getattr(tpl, "period_end", None) or as_of:
                 if getattr(tpl, "period_end", None):
                     pe0 = parse_date(str(getattr(tpl, "period_end")))
@@ -1289,7 +1419,7 @@ def run(
                     tushare_token=c.tushare_token,
                 )
                 if still:
-                    log_warn(f"提示：比较分析期末财报不可用: {still}")
+                    log_warn(f"提示：结构分析期末财报不可用: {still}")
                     if strict:
                         raise RuntimeError(f"缺失财报 {len(still)} 期（strict 模式退出）：{still}")
 
@@ -1313,7 +1443,7 @@ def run(
                             break
 
                 if not xlsx.exists():
-                    log_warn(f"提示：比较分析缺少财报，跳过模板 {k}。")
+                    log_warn(f"提示：结构分析缺少财报，跳过模板 {k}。")
                     continue
 
                 rows = []
@@ -1322,7 +1452,7 @@ def run(
                     b_name = str(b["name"]).strip() or "value"
                     b_expr = str(b["expr"]).strip()
                     b_stmt = str(b.get("statement") or statement)
-                    v = _eval_expr_or_item(b_expr, current_pe=pe, default_statement=b_stmt)
+                    v = main_eval.eval(b_expr, current_pe=pe, default_statement=b_stmt)
                     if v is None:
                         continue
                     rows.append({"name": b_name, "value": v})
@@ -1366,7 +1496,7 @@ def run(
                 log_info(f"已生成: {out_xlsx}")
                 continue
 
-            # ---- per-period compare (range) ----
+            # ---- per-period structure (range) ----
             periods_cmp = _filter_periods(quarter_ends_between(c.start, min(c.end, date.today())))
 
             still = _maybe_fetch_missing(c)
@@ -1385,7 +1515,7 @@ def run(
                     b_name = str(b["name"]).strip() or "value"
                     b_expr = str(b["expr"]).strip()
                     b_stmt = str(b.get("statement") or statement)
-                    v = _eval_expr_or_item(b_expr, current_pe=pe, default_statement=b_stmt)
+                    v = main_eval.eval(b_expr, current_pe=pe, default_statement=b_stmt)
                     if v is None:
                         continue
                     rows.append({"name": b_name, "value": v})
@@ -1499,7 +1629,7 @@ def run(
 
             rows = []
             for pe in periods:
-                amount = _eval_expr_or_item(str(bar_item), current_pe=pe, default_statement=statement)
+                amount = main_eval.eval(str(bar_item), current_pe=pe, default_statement=statement)
                 px = price_on_or_before(df_price, pe)
                 rows.append({"period_end": pe.strftime("%Y-%m-%d"), "amount": amount, "close": px})
 

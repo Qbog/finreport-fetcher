@@ -1,12 +1,12 @@
-# 资产负债表分析（柱状比较图）
-# - compare 模式：当传入 --start/--end 时，会对区间内每个报告期分别生成 1 张图
+# 资产负债表分析（柱状结构图）
+# - structure 模式：当传入 --start/--end 时，会对区间内每个报告期分别生成 1 张图
 # - 支持嵌套分组与颜色（子项可覆盖，未覆盖则继承分组颜色）
 
 name = "balance_sheet_analysis"
 alias = "资产负债表分析"
 
 type = "bar"
-mode = "compare"
+mode = "structure"  # Previously "compare", reflects structural analysis
 
 title = "资产负债表分析（资产 vs 负债）"
 

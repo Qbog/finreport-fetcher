@@ -48,15 +48,18 @@ expr = "is.net_profit_parent - is.net_profit_parent.prev_in_year"
 
 ---
 
-## 5.3 bar/line 的 trend / compare
+## 5.3 bar/line 的 trend / structure / peer
 
-- `mode=trend`：区间内输出 **1 张**趋势图
-- `mode=compare`：区间内输出 **每个报告期 1 张**对比图
-  - 如果你要只输出“单期末 compare”，用：
+- `mode=trend`（趋势分析）：区间内输出 **1 张**趋势图（横轴=时间）
+- `mode=structure`（结构分析，旧 compare）：区间内输出 **每个报告期 1 张**结构图（横轴=科目）
+  - 如果你要只输出“单期末 structure”，用：
     - CLI：`--as-of 2024-12-31`
     - 或模板：`period_end = "2024-12-31"`
+- `mode=peer`（同业分析）：输出 **1 张**同业对比图（横轴=公司）
+  - 需要模板里配置 `peers = ["600519", "601318", ...]`
+  - 期末选择同上（`--as-of` / `period_end`；不传则取 end 对应最近季末）
 
-> compare 模式必须显式配置 `[[bars]]`（不会自动枚举所有科目）。
+> `structure` / `peer` 模式必须显式配置 `[[bars]]`（不会自动枚举所有科目）。
 
 ---
 
@@ -100,8 +103,9 @@ color = "#7bdff2"
 
 - `templates/net_profit_q.toml`：归母净利润趋势（bar trend）
 - `templates/revenue_total_trend.toml`：营业总收入趋势（bar trend）
-- `templates/bs_key_items_compare.toml`：资产负债表关键科目对比（bar compare）
-- `templates/balance_sheet_analysis.toml`：资产负债表分析（bar compare，按期输出）
+- `templates/bs_key_items_structure.toml`：资产负债表关键科目结构分析（bar structure）
+- `templates/balance_sheet_analysis.toml`：资产负债表分析（bar structure，按期输出）
+- `templates/net_profit_peer.toml`：净利润同业分析示例（bar peer）
 
 运行示例：
 

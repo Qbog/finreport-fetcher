@@ -42,9 +42,10 @@ class Template:
     y_label: str | None = None
 
     # Bar-specific
-    mode: str | None = None  # trend|compare
+    mode: str | None = None  # trend|structure|peer (legacy: compare)
     statement: str | None = None
-    period_end: str | None = None  # for compare
+    period_end: str | None = None  # for structure/peer
+    peers: list[str] | None = None  # for peer mode
     bars: list[BarBlock] | None = None
 
     # Pie-specific
@@ -159,6 +160,7 @@ def load_templates(path: Path) -> dict[str, Template]:
             mode=_as_str(v.get("mode")),
             statement=_as_str(v.get("statement")),
             period_end=_as_str(v.get("period_end")),
+            peers=v.get("peers") if isinstance(v.get("peers"), list) else None,
             bars=_parse_bar_blocks(v),
             section=_as_str(v.get("section")),
             items=v.get("items") if isinstance(v.get("items"), list) else None,
@@ -207,6 +209,7 @@ def load_template_file(path: Path) -> Template:
         mode=_as_str(data.get("mode")),
         statement=_as_str(data.get("statement")),
         period_end=_as_str(data.get("period_end")),
+        peers=data.get("peers") if isinstance(data.get("peers"), list) else None,
         bars=_parse_bar_blocks(data),
         section=_as_str(data.get("section")),
         items=data.get("items") if isinstance(data.get("items"), list) else None,

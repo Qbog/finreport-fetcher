@@ -9,7 +9,8 @@
   - `title`：标题（图表上方显示）
   - `x_label`、`y_label`：坐标轴名称（bar/line/combo 使用）
 - `type = "bar"` / `type = "line"` 时还必须有：
-  - `mode`：`trend`（趋势分析）或 `compare`（比较分析）
+  - `mode`：`trend`（趋势分析）、`structure`（结构分析，旧 compare）、或 `peer`（同业分析）
+  - 当 `mode = "peer"`：还需要 `peers = ["600519", "601318", ...]` 指定同业公司列表
 - 每根柱都用一个配置块表示：`[[bars]]`
   - `name`：显示名称
   - `expr`：取数/计算表达式（推荐用 key，如 `is.admin_expense + is.sell_expense`）
@@ -28,8 +29,9 @@
 
 - `net_profit_q.toml`：归母净利润趋势（bar trend）
 - `revenue_total_trend.toml`：营业总收入趋势（bar trend）
-- `bs_key_items_compare.toml`：资产负债表关键科目对比（bar compare）
-- `balance_sheet_analysis.toml`：资产负债表分析（bar compare，含嵌套分组 + 颜色示例）
+- `bs_key_items_structure.toml`：资产负债表关键科目结构分析（bar structure）
+- `balance_sheet_analysis.toml`：资产负债表分析（bar structure，含嵌套分组 + 颜色示例）
+- `net_profit_peer.toml`：净利润同业分析示例（bar peer）
 
 ## 4) 最小示例（bar trend：单季 = 当期累计 - 同年上期累计）
 
@@ -38,7 +40,7 @@ name = "net_profit_q"
 alias = "net_profit_q"
 
 type = "bar"
-mode = "trend"
+mode = "trend" # Modes include "structure" (旧 compare) and "peer" (同业分析)
 
 title = "归母净利润（单季）趋势"
 x_label = "报告期"

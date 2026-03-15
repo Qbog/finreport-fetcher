@@ -87,10 +87,11 @@ python3 -m finreport_charts -l info run \
 
 ---
 
-## 3.4 trend / compare 语义
+## 3.4 trend / structure / peer 语义
 
-- `mode=trend`：给定 `--start/--end` 输出 **1 张**跨期趋势图
-- `mode=compare`：给定 `--start/--end` 输出 **每个报告期 1 张**对比图
-  - 若要“单期末 compare”，需要：`--as-of` 或模板内 `period_end`
+- `mode=trend`：给定 `--start/--end` 输出 **1 张**跨期趋势图（横轴=时间）
+- `mode=structure`（旧 compare）：给定 `--start/--end` 输出 **每个报告期 1 张**结构分析图（横轴=科目）
+  - 若要“单期末 structure”，需要：`--as-of` 或模板内 `period_end`
+- `mode=peer`：输出 **1 张**同业分析图（横轴=公司），需要模板内 `peers = [...]`。
 
 详细模板写法见：[TEMPLATE_GUIDE.md](TEMPLATE_GUIDE.md)
