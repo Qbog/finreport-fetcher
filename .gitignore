@@ -2,6 +2,10 @@
 # Keep output/finreport_fetcher.py tracked as a shim; ignore everything else under output/
 output/*
 !output/finreport_fetcher.py
+
+# extra local output dirs
+output2/
+
 charts_output/
 
 # chart demo artifacts (repo examples generate these)

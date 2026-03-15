@@ -346,6 +346,145 @@ def _patch_balance_sheet_structure(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def _patch_balance_sheet_structure_bank(df: pd.DataFrame) -> pd.DataFrame:
+    """Bank-friendly balance sheet grouping/indent.
+
+    Similar to THS/东方财富 style:
+    - 报表核心指标（已由通用 patch 处理）
+    - 资产 / 负债 / 股东权益 三大区块标题
+    - 区块内科目缩进一层
+
+    We do NOT reorder rows; only insert missing headers and adjust __level.
+    """
+
+    out = _patch_balance_sheet_structure(df)
+
+    if "科目" not in out.columns:
+        return out
+
+    if "__level" not in out.columns:
+        out["__level"] = 0
+    if "__is_header" not in out.columns:
+        out["__is_header"] = False
+
+    subj = out["科目"].astype(str).tolist()
+    norm = [_normalize_subject(s) for s in subj]
+
+    # locate core header
+    core_hdr_idx = None
+    for i, n in enumerate(norm):
+        if n == "报表核心指标" and bool(out.iloc[i].get("__is_header")):
+            core_hdr_idx = i
+            break
+    core_end = (core_hdr_idx + 4) if core_hdr_idx is not None else -1
+
+    # Find first detail line after core metrics (skip headers)
+    detail_start = None
+    for i in range(core_end + 1, len(out)):
+        if bool(out.iloc[i].get("__is_header")):
+            continue
+        # Skip duplicated totals re-inserted by core patch
+        if norm[i] in {
+            "资产合计",
+            "资产总计",
+            "负债合计",
+            "所有者权益合计",
+            "所有者权益总计",
+            "归属于母公司所有者权益合计",
+            "归属于母公司所有者权益总计",
+        }:
+            continue
+        detail_start = i
+        break
+
+    if detail_start is None:
+        return out
+
+    def _insert_header(at_idx: int, title: str) -> int:
+        nonlocal out, subj, norm
+        header = {c: None for c in out.columns}
+        header.update({"科目": title, "数值": None, "__level": 0, "__is_header": True})
+        top = out.iloc[:at_idx].copy()
+        bot = out.iloc[at_idx:].copy()
+        out = pd.concat([top, pd.DataFrame([header]), bot], ignore_index=True)
+        subj = out["科目"].astype(str).tolist()
+        norm = [_normalize_subject(s) for s in subj]
+        return at_idx
+
+    # Assets header
+    if not any((n == "资产" and bool(out.iloc[i].get("__is_header"))) for i, n in enumerate(norm)):
+        _insert_header(detail_start, "资产")
+        detail_start += 1
+
+    # Liabilities header (bank-specific markers)
+    liab_markers = {
+        "向中央银行借款",
+        "同业及其他金融机构存放款项",
+        "同业存放款项",
+        "拆入资金",
+        "卖出回购金融资产款",
+        "吸收存款",
+        "应付债券",
+        "交易性金融负债",
+        "衍生金融负债",
+        "其他负债",
+        "负债合计",
+        "流动负债",
+        "非流动负债",
+    }
+
+    liab_start = None
+    equity_hdr = None
+    for i in range(detail_start, len(out)):
+        if norm[i] in {"股东权益", "所有者权益"} and bool(out.iloc[i].get("__is_header")):
+            equity_hdr = i
+            break
+
+    scan_end = equity_hdr if equity_hdr is not None else len(out)
+    for i in range(detail_start, scan_end):
+        if bool(out.iloc[i].get("__is_header")):
+            continue
+        if norm[i] in liab_markers:
+            liab_start = i
+            break
+
+    if liab_start is not None:
+        # Insert "负债" header if not already present just before liabilities
+        if not (norm[liab_start - 1] == "负债" and bool(out.iloc[liab_start - 1].get("__is_header"))):
+            _insert_header(liab_start, "负债")
+            if equity_hdr is not None:
+                equity_hdr += 1
+            liab_start += 1
+
+    # Indentation: asset details until liabilities, liabilities until equity
+    # assets
+    assets_end = (liab_start - 1) if liab_start is not None else scan_end
+    for i in range(detail_start, assets_end):
+        if bool(out.iloc[i].get("__is_header")):
+            continue
+        try:
+            lvl = int(out.at[i, "__level"])
+        except Exception:
+            lvl = 0
+        if lvl < 1:
+            out.at[i, "__level"] = 1
+
+    # liabilities
+    if liab_start is not None:
+        liab_end = scan_end
+        for i in range(liab_start, liab_end):
+            if bool(out.iloc[i].get("__is_header")):
+                continue
+            try:
+                lvl = int(out.at[i, "__level"])
+            except Exception:
+                lvl = 0
+            if lvl < 1:
+                out.at[i, "__level"] = 1
+
+    return out
+
+
 def enrich_statement_df(
     df: pd.DataFrame,
     *,
@@ -381,7 +520,10 @@ def enrich_statement_df(
     # 结构修补：不同数据源的资产负债表经常缺少“报表核心指标/股东权益”等分组标题。
     # 在 enrich 层统一补齐，确保跨 provider 输出结构一致。
     if sheet_name_cn == "资产负债表":
-        out = _patch_balance_sheet_structure(out)
+        if company_category == "bank":
+            out = _patch_balance_sheet_structure_bank(out)
+        else:
+            out = _patch_balance_sheet_structure(out)
 
     cn_series_raw = out["科目"].astype(str)
 
@@ -403,6 +545,15 @@ def enrich_statement_df(
     for i, cn_raw in enumerate(cn_series_raw.tolist()):
         tag_prefix = _leading_tag_prefix(cn_raw)
         cn_norm = _normalize_subject(cn_raw)
+
+        # 缩进：对“其中/加/减”等子行加深一层（更接近同花顺/东方财富展示）
+        if tag_prefix and "__level" in out.columns and not bool(out.iloc[i].get("__is_header")):
+            try:
+                lvl0 = int(out.at[i, "__level"])
+            except Exception:
+                lvl0 = 0
+            if lvl0 < 2:
+                out.at[i, "__level"] = 2
 
         if prefix in {"is", "bs", "cf"}:
             # try raw first, then normalized

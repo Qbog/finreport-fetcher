@@ -86,7 +86,7 @@ def export_bundle_to_excel(
 
     from ..mappings.enrich import enrich_statement_df
 
-    company_category = str((title_info or {}).get("company_category") or "non_financial")
+    company_category = str((title_info or {}).get("company_category") or (meta or {}).get("company_category") or "non_financial")
 
     bs_df = enrich_statement_df(balance_sheet, sheet_name_cn="资产负债表", company_category=company_category)
     is_df = enrich_statement_df(income_statement, sheet_name_cn="利润表", company_category=company_category)
