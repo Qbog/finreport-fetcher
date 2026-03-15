@@ -19,8 +19,15 @@ class SubjectSpec:
     cn: str
     en: str
     aliases: tuple[str, ...] = ()
-    # 是否“通用科目”：False 表示仅少数公司/行业/会计准则下出现的科目（Excel 会用不同颜色标记）
+    # 是否“通用科目”：
+    # - 若 common_in 为空：common=False 表示仅少数公司/行业/会计准则下出现（全局非通用）。
+    # - 若 common_in 非空：则按公司类别判断是否通用（类别内通用/类别外非通用）。
     common: bool = True
+
+    # 通用类别列表：例如银行特有科目可设置 common_in=("bank",)
+    # 为空表示“对所有类别都通用”（或由 common=False 作为全局非通用）。
+    common_in: tuple[str, ...] = ()
+
     # 备注说明（中文），用于解释口径/出现条件等（写入导出 Excel 的“备注”列）
     note: str = ""
 

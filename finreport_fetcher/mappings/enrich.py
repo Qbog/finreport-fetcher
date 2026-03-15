@@ -341,7 +341,12 @@ def _patch_balance_sheet_structure(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def enrich_statement_df(df: pd.DataFrame, *, sheet_name_cn: str) -> pd.DataFrame:
+def enrich_statement_df(
+    df: pd.DataFrame,
+    *,
+    sheet_name_cn: str,
+    company_category: str = "non_financial",
+) -> pd.DataFrame:
     """Add stable template key + notes + English for a statement df.
 
     Input df should contain at least: 科目, 数值 (and may contain __level/__is_header).
@@ -350,7 +355,7 @@ def enrich_statement_df(df: pd.DataFrame, *, sheet_name_cn: str) -> pd.DataFrame
     - Adds `key` column: stable, unique, **ASCII-only**.
     - Adds `备注` column: CN note / explanation (from curated glossary; may be blank).
     - Adds `英文` column: English translation (from curated glossary).
-    - Adds `__uncommon` flag: mark non-common subjects (for Excel highlighting).
+    - Adds `__uncommon` flag: mark non-common subjects (for Excel highlighting, category-aware).
     - Canonicalizes `科目` to the glossary CN name when available (cross-provider consistency).
 
     约束：
@@ -405,7 +410,13 @@ def enrich_statement_df(df: pd.DataFrame, *, sheet_name_cn: str) -> pd.DataFrame
             en = spec.en
             cn_base = spec.cn  # canonical CN for cross-provider consistency
             note = (spec.note or "").strip()
-            uncommon = not bool(getattr(spec, "common", True))
+
+            common_in = tuple(getattr(spec, "common_in", ()) or ())
+            if common_in:
+                uncommon = company_category not in common_in
+            else:
+                uncommon = not bool(getattr(spec, "common", True))
+
             if uncommon and not note:
                 note = "非通用科目：仅少数公司/行业披露，口径以财报附注为准。"
         else:
@@ -436,7 +447,13 @@ def enrich_statement_df(df: pd.DataFrame, *, sheet_name_cn: str) -> pd.DataFrame
                 cn_base = spec2.cn
                 en = spec2.en
                 note = (spec2.note or "").strip()
-                uncommon = not bool(getattr(spec2, "common", True))
+
+                common_in2 = tuple(getattr(spec2, "common_in", ()) or ())
+                if common_in2:
+                    uncommon = company_category not in common_in2
+                else:
+                    uncommon = not bool(getattr(spec2, "common", True))
+
                 if uncommon and not note:
                     note = "非通用科目：仅少数公司/行业披露，口径以财报附注为准。"
 

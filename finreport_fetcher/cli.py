@@ -17,6 +17,7 @@ from .pdf.cninfo import find_and_download_period_pdf
 from .providers.registry import ProviderConfig, build_providers
 from .utils.dates import candidate_quarter_ends_before, parse_date, quarter_ends_between
 from .utils.paths import safe_dir_component
+from .utils.company_category import detect_company_category
 from .utils.symbols import ResolvedSymbol, fuzzy_match_name, load_a_share_name_map, parse_code
 
 app = typer.Typer(add_completion=False)
@@ -152,11 +153,13 @@ def _resolve_symbol(code: str | None, name: str | None) -> ResolvedSymbol:
 def _fetch_one_period(
     ts_code: str,
     code6: str,
+    company_name: str | None,
     period_end: date,
     statement_type: str,
     providers,
     want_pdf: bool,
     out_dir: Path,
+    tushare_token: str | None,
 ):
     last_err = None
     bundle = None
@@ -218,6 +221,17 @@ def _fetch_one_period(
         if detected:
             meta["statement_type_note"] = f"Sina 类型字段: {detected}"
 
+    # 公司类别（用于“非通用科目”高亮与注释口径）
+    cat = detect_company_category(
+        ts_code=ts_code,
+        name=company_name,
+        tushare_token=tushare_token,
+    )
+    meta["company_category"] = cat.category
+    if cat.industry:
+        meta["company_industry"] = cat.industry
+    meta["company_category_source"] = cat.source
+
     export_bundle_to_excel(
         out_path,
         balance_sheet=bs,
@@ -232,6 +246,7 @@ def _fetch_one_period(
             "provider": bundle.provider,
             "pdf_url": pdf_url,
             "pdf_path": pdf_path,
+            "company_category": cat.category,
         },
     )
 
@@ -314,11 +329,13 @@ def fetch(
                 p = _fetch_one_period(
                     ts_code=rs.ts_code,
                     code6=rs.code6,
+                    company_name=rs.name,
                     period_end=pe,
                     statement_type=statement_type,
                     providers=providers,
                     want_pdf=pdf,
                     out_dir=out_dir,
+                    tushare_token=tushare_token,
                 )
                 exported.append(p)
                 log_info(f"已导出: {p}")
@@ -341,11 +358,13 @@ def fetch(
                 p = _fetch_one_period(
                     ts_code=rs.ts_code,
                     code6=rs.code6,
+                    company_name=rs.name,
                     period_end=pe,
                     statement_type=statement_type,
                     providers=providers,
                     want_pdf=pdf,
                     out_dir=out_dir,
+                    tushare_token=tushare_token,
                 )
                 exported.append(p)
                 log_info(f"已导出: {p}")

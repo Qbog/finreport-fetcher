@@ -86,9 +86,11 @@ def export_bundle_to_excel(
 
     from ..mappings.enrich import enrich_statement_df
 
-    bs_df = enrich_statement_df(balance_sheet, sheet_name_cn="资产负债表")
-    is_df = enrich_statement_df(income_statement, sheet_name_cn="利润表")
-    cf_df = enrich_statement_df(cashflow_statement, sheet_name_cn="现金流量表")
+    company_category = str((title_info or {}).get("company_category") or "non_financial")
+
+    bs_df = enrich_statement_df(balance_sheet, sheet_name_cn="资产负债表", company_category=company_category)
+    is_df = enrich_statement_df(income_statement, sheet_name_cn="利润表", company_category=company_category)
+    cf_df = enrich_statement_df(cashflow_statement, sheet_name_cn="现金流量表", company_category=company_category)
 
     def view_df(df: pd.DataFrame) -> pd.DataFrame:
         # 固定导出列顺序（跨数据源保持一致）：科目 | 数值 | (spacer) | key | 备注 | 英文
