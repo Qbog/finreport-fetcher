@@ -85,86 +85,12 @@ def export_bundle_to_excel(
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     from ..mappings.enrich import enrich_statement_df
-    from ..mappings.subject_glossary import lookup_subject_by_key
-    from ..mappings.category_report_templates import load_category_report_template
 
     company_category = str((title_info or {}).get("company_category") or "non_financial")
 
     bs_df = enrich_statement_df(balance_sheet, sheet_name_cn="资产负债表", company_category=company_category)
     is_df = enrich_statement_df(income_statement, sheet_name_cn="利润表", company_category=company_category)
     cf_df = enrich_statement_df(cashflow_statement, sheet_name_cn="现金流量表", company_category=company_category)
-
-    def apply_fixed_template(df: pd.DataFrame, keys: list[str]) -> pd.DataFrame:
-        """Reorder/align a statement df to a fixed template.
-
-        - Keep template order first (insert missing rows with empty values)
-        - Append any extra rows (unmapped/unexpected subjects) at the end
-        """
-
-        if df is None or df.empty or not keys:
-            return df
-        if "key" not in df.columns or "科目" not in df.columns:
-            return df
-
-        # Build key -> list[index] map (keep stable order for duplicates)
-        key_to_indices: dict[str, list[int]] = {}
-        for i, k in enumerate(df["key"].astype(str).tolist()):
-            key_to_indices.setdefault(k, []).append(i)
-
-        used: set[int] = set()
-        rows: list[dict] = []
-
-        cols = list(df.columns)
-
-        def _blank_row() -> dict:
-            return {c: pd.NA for c in cols}
-
-        for k in keys:
-            if k in key_to_indices and key_to_indices[k]:
-                idx = key_to_indices[k].pop(0)
-                used.add(idx)
-                rows.append(df.iloc[idx].to_dict())
-                continue
-
-            # missing: insert empty row based on curated glossary
-            r = _blank_row()
-            spec = lookup_subject_by_key(str(k))
-            r["key"] = str(k)
-            if spec is not None:
-                r["科目"] = spec.cn
-                if "英文" in r:
-                    r["英文"] = spec.en
-                if "备注" in r:
-                    r["备注"] = ""
-
-                is_section = ".section." in str(k)
-                if "__is_header" in r:
-                    r["__is_header"] = bool(is_section)
-                if "__level" in r:
-                    r["__level"] = 0 if is_section else 1
-                if "__uncommon" in r:
-                    r["__uncommon"] = False
-            else:
-                # Shouldn't happen (templates are generated from SUBJECT_SPECS), but keep safe.
-                r["科目"] = str(k)
-                if "__uncommon" in r:
-                    r["__uncommon"] = False
-            rows.append(r)
-
-        # Append extra rows not present in template (keep original order)
-        for i in range(len(df)):
-            if i in used:
-                continue
-            rows.append(df.iloc[i].to_dict())
-
-        out = pd.DataFrame(rows, columns=cols)
-        return out
-
-    tpl = load_category_report_template(company_category)
-    if tpl is not None:
-        bs_df = apply_fixed_template(bs_df, tpl.balance_sheet_keys)
-        is_df = apply_fixed_template(is_df, tpl.income_statement_keys)
-        cf_df = apply_fixed_template(cf_df, tpl.cashflow_statement_keys)
 
     def view_df(df: pd.DataFrame) -> pd.DataFrame:
         # 固定导出列顺序（跨数据源保持一致）：科目 | 数值 | (spacer) | key | 备注 | 英文
