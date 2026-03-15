@@ -1,13 +1,13 @@
-# 单模板单文件示例：比较分析（资产负债表 - 关键科目）
-# compare 模式只取“一个期末”（默认取 --end 对应的最近可用季度；也可用 --as-of 指定）。
+# 单模板单文件示例：结构分析（资产负债表 - 关键科目）
+# structure 模式只取“一个期末”（默认取 --end 对应的最近可用季度；也可用 --as-of 指定）。
 
-name = "bs_key_items_compare"
-alias = "资产负债表关键科目对比"
+name = "bs_key_items_structure"
+alias = "资产负债表关键科目结构分析"
 
 type = "bar"
-mode = "compare"
+mode = "structure"  # Previously "compare", reflects structural analysis
 
-title = "资产负债表关键科目对比"
+title = "资产负债表关键科目结构分析"
 
 x_label = "科目"
 y_label = "金额"
