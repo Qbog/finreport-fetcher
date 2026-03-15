@@ -10,7 +10,9 @@
   - `x_label`、`y_label`：坐标轴名称（bar/line/combo 使用）
 - `type = "bar"` / `type = "line"` 时还必须有：
   - `mode`：`trend`（趋势分析）、`structure`（结构分析，旧 compare）、或 `peer`（同业分析）
-  - 当 `mode = "peer"`：还需要 `peers = ["600519", "601318", ...]` 指定同业公司列表
+  - 当 `mode = "peer"`：需要指定同业公司列表：
+    - 模板内：`peers = ["600519", "601318", ...]`
+    - 或命令行：`--peer 600519 --peer 601318 ...`（可重复；支持代码或简称）
 - 每根柱都用一个配置块表示：`[[bars]]`
   - `name`：显示名称
   - `expr`：取数/计算表达式（推荐用 key，如 `is.admin_expense + is.sell_expense`）

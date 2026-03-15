@@ -56,7 +56,9 @@ expr = "is.net_profit_parent - is.net_profit_parent.prev_in_year"
     - CLI：`--as-of 2024-12-31`
     - 或模板：`period_end = "2024-12-31"`
 - `mode=peer`（同业分析）：输出 **1 张**同业对比图（横轴=公司）
-  - 需要模板里配置 `peers = ["600519", "601318", ...]`
+  - 同业公司列表：
+    - 模板里配置 `peers = ["600519", "601318", ...]`
+    - 或命令行传入 `--peer 600519 --peer 601318 ...`（可重复；支持代码或简称）
   - 期末选择同上（`--as-of` / `period_end`；不传则取 end 对应最近季末）
 
 > `structure` / `peer` 模式必须显式配置 `[[bars]]`（不会自动枚举所有科目）。

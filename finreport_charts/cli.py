@@ -931,6 +931,12 @@ def run(
     templates: Path = typer.Option(Path("templates"), "--templates", help="模板目录（单模板单文件 *.toml）"),
     code: str | None = typer.Option(None, "--code"),
     name: str | None = typer.Option(None, "--name"),
+    peer: list[str] = typer.Option(
+        [],
+        "--peer",
+        help="同业分析：同业公司（可重复；支持 6 位代码或公司简称）。例如：--peer 深信服 --peer 奇安信",
+        show_default=False,
+    ),
     start: str = typer.Option(..., "--start", help="趋势分析必须提供时间范围；结构分析也可复用该范围"),
     end: str = typer.Option(..., "--end"),
     as_of: str | None = typer.Option(None, "--as-of", help="结构分析使用的报告期末日（YYYY-MM-DD）。不传则取 end 对应的最近一个季末"),
@@ -1257,9 +1263,13 @@ def run(
                 continue
 
             if mode == "peer":
-                peer_defs = getattr(tpl, "peers", None) or []
+                # Peer list: merge template peers + CLI peers
+                peer_defs: list[str] = []
+                peer_defs.extend([str(x) for x in (getattr(tpl, "peers", None) or [])])
+                peer_defs.extend([str(x) for x in (peer or [])])
+
                 if not peer_defs:
-                    raise RuntimeError(f"peer 模式必须在模板中配置 peers 列表: {k}")
+                    raise RuntimeError(f"peer 模式需要 peers：可在模板中配置 peers=[]，或命令行传入 --peer（可重复）: {k}")
 
                 if not bars:
                     raise RuntimeError(f"peer 模式必须在模板中显式配置 [[bars]]: {k}")

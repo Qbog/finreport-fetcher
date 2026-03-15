@@ -17,6 +17,11 @@ class AkshareSinaProvider:
 
     name = "akshare"
 
+    def __init__(self) -> None:
+        # cache: (code6, table_cn) -> raw df (包含多期数据)
+        # 同一轮 fetch 多个报告期时，避免重复拉取宽表。
+        self._df_cache: dict[tuple[str, str], pd.DataFrame] = {}
+
     def supports(self) -> bool:
         try:
             import akshare  # noqa: F401
@@ -52,12 +57,19 @@ class AkshareSinaProvider:
         return typ.str.contains("合并", na=False)
 
     def _fetch_one(self, code6: str, table_cn: str) -> pd.DataFrame:
+        k = (code6, table_cn)
+        cached = self._df_cache.get(k)
+        if cached is not None:
+            return cached
+
         import akshare as ak
 
         # symbol 参数叫 stock；table 叫 symbol（中文）
         df = ak.stock_financial_report_sina(stock=code6, symbol=table_cn)
         if not isinstance(df, pd.DataFrame) or df.empty:
-            return pd.DataFrame()
+            df = pd.DataFrame()
+
+        self._df_cache[k] = df
         return df
 
     def _extract_period(
