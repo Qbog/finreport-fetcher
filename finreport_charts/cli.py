@@ -1209,6 +1209,7 @@ def run(
         stats_map: dict[str, AxisStatsCollector] | None,
     ) -> None:
         main_eval = ExpressionEvaluator(c)
+        pad_x = len(targets) > 1
 
         # 2) run templates
         for k, tpl in selected.items():
@@ -1316,9 +1317,14 @@ def run(
                     rows: list[dict[str, object]] = []
                     used_periods: list[date] = []
                     for pe in periods_out:
-                        # 如果该期财报最终仍不存在（例如最新一期尚未披露），直接跳过
                         xlsx0 = expected_xlsx_path(c.data_dir, c.rs.code6, c.statement_type, pe, name=c.rs.name)
                         if not xlsx0.exists():
+                            if pad_x:
+                                row0: dict[str, object] = {"period_end": pe.strftime("%Y-%m-%d")}
+                                for b in bars_flat:
+                                    row0[str(b["name"])] = float("nan")
+                                rows.append(row0)
+                                used_periods.append(pe)
                             continue
 
                         row: dict[str, object] = {"period_end": pe.strftime("%Y-%m-%d")}
@@ -1328,11 +1334,14 @@ def run(
                             b_expr = str(b["expr"])
                             b_stmt = str(b.get("statement") or statement_default)
                             v = main_eval.eval(b_expr, current_pe=pe, default_statement=b_stmt)
-                            row[b_name] = v
+                            if v is None and pad_x:
+                                row[b_name] = float("nan")
+                            else:
+                                row[b_name] = v
                             if v is not None:
                                 any_val = True
 
-                        if not any_val:
+                        if not any_val and not pad_x:
                             continue
 
                         rows.append(row)
@@ -1343,11 +1352,17 @@ def run(
                         continue
 
                     df_out = pd.DataFrame(rows)
+                    value_cols = [str(b["name"]) for b in bars_flat]
+                    if (not df_out.empty) and (not pd.to_numeric(df_out[value_cols].stack(), errors="coerce").notna().any()):
+                        if not collect_only:
+                            log_warn(f"提示：{k} 在该区间内没有可用数据（可能都缺失/未披露）。")
+                        continue
+
                     title = f"{c.rs.name or c.rs.code6} | {title0}"
 
                     actual_s = used_periods[0]
                     actual_e = used_periods[-1]
-                    if actual_e < c.end:
+                    if (not pad_x) and actual_e < c.end:
                         log_warn(f"提示：end={c.end} 对应最新报告期数据不可用，实际截至 {actual_e}。")
 
                     out_png = c.out_dir / f"{fname_base}_{c.rs.code6}_{actual_s.strftime('%Y%m%d')}_{actual_e.strftime('%Y%m%d')}.png"
@@ -1616,6 +1631,9 @@ def run(
                         b_stmt = str(b.get("statement") or statement)
                         v = main_eval.eval(b_expr, current_pe=pe, default_statement=b_stmt)
                         if v is None:
+                            if pad_x:
+                                rows.append({"name": b_name, "value": float("nan")})
+                                x_colors.append(b.get("color"))
                             continue
                         rows.append({"name": b_name, "value": v})
                         x_colors.append(b.get("color"))
@@ -1687,6 +1705,9 @@ def run(
                         b_stmt = str(b.get("statement") or statement)
                         v = main_eval.eval(b_expr, current_pe=pe, default_statement=b_stmt)
                         if v is None:
+                            if pad_x:
+                                rows.append({"name": b_name, "value": float("nan")})
+                                x_colors.append(b.get("color"))
                             continue
                         rows.append({"name": b_name, "value": v})
                         x_colors.append(b.get("color"))
@@ -1813,16 +1834,23 @@ def run(
                     px = price_on_or_before(df_price, pe)
                     rows.append({"period_end": pe.strftime("%Y-%m-%d"), "amount": amount, "close": px})
 
-                df = pd.DataFrame(rows).dropna(subset=["amount", "close"]).sort_values("period_end")
-                if df.empty:
-                    log_warn(f"提示：{k} 在该区间内没有可用数据（可能缺少财报或股价数据）。")
+                df = pd.DataFrame(rows).sort_values("period_end")
+                if pad_x:
+                    df["amount"] = pd.to_numeric(df["amount"], errors="coerce")
+                    df["close"] = pd.to_numeric(df["close"], errors="coerce")
+                else:
+                    df = df.dropna(subset=["amount", "close"])
+
+                if df.empty or (not pd.to_numeric(df["amount"], errors="coerce").notna().any()):
+                    if not collect_only:
+                        log_warn(f"提示：{k} 在该区间内没有可用数据（可能缺少财报或股价数据）。")
                     continue
 
                 # 以实际有数据的报告期作为输出文件名范围（避免 end 对应期末未披露导致误导）
                 used_periods = [parse_date(str(x)) for x in df["period_end"].tolist()]
                 actual_s = used_periods[0]
                 actual_e = used_periods[-1]
-                if actual_e < c.end:
+                if (not pad_x) and actual_e < c.end:
                     log_warn(f"提示：end={c.end} 对应最新报告期数据不可用，实际截至 {actual_e}。")
 
                 if collect_only and stats_map is not None:

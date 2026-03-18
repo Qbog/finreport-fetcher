@@ -112,7 +112,7 @@ def render_bars_png(
 
     containers = []
     for j, (col, label) in enumerate(series):
-        y = df[col].tolist()
+        y = pd.to_numeric(df[col], errors="coerce").tolist()
         offset = (j - (k - 1) / 2) * width
 
         # color policy:

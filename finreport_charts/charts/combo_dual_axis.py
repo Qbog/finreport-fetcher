@@ -29,8 +29,8 @@ def render_combo_png(
     apply_pretty_style()
 
     x = df[x_col].astype(str).tolist()
-    y1 = df[bar_col].tolist()
-    y2 = df[line_col].tolist()
+    y1 = pd.to_numeric(df[bar_col], errors="coerce").tolist()
+    y2 = pd.to_numeric(df[line_col], errors="coerce").tolist()
 
     # unit for bar axis
     max_abs = 0.0
@@ -65,6 +65,8 @@ def render_combo_png(
 
     for p in cont.patches:
         h = p.get_height()
+        if h is None or (isinstance(h, float) and not math.isfinite(h)):
+            continue
         x0 = p.get_x() + p.get_width() / 2
         txt = fmt_scaled(float(h), us)
         if h >= 0:

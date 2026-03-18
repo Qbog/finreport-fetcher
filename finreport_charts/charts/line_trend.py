@@ -64,7 +64,7 @@ def render_lines_png(
     ]
 
     for j, (col, label) in enumerate(series):
-        y = df[col].tolist()
+        y = pd.to_numeric(df[col], errors="coerce").tolist()
         ax.plot(
             x,
             y,
