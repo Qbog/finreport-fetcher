@@ -3,16 +3,45 @@
 # - alias: 显示名（可选）
 # - items: 公司列表（name 可选；code 支持 6 位代码或带市场后缀）
 
+# 网络安全软件开发
 [categories.net_security]
 alias = "网络安全软件开发"
 items = [
-  { name = "天融信", code = "600533" },
+  { name = "盛邦安全", code = "688651" },
+  { name = "奇安信", code = "688561" },
+  { name = "永信至诚", code = "688244" },
+  { name = "亚信安全", code = "688225" },
+  { name = "信安世纪", code = "688201" },
+  { name = "纬德信息", code = "688171" },
+  { name = "安博通", code = "688168" },
+  { name = "山石网科", code = "688030" },
+  { name = "安恒信息", code = "688023" },
+  { name = "格尔软件", code = "603232" },
+  { name = "三六零", code = "601360" },
+  { name = "迪普科技", code = "300768" },
+  { name = "数字认证", code = "300579" },
   { name = "深信服", code = "300454" },
+  { name = "绿盟科技", code = "300369" },
+  { name = "北信源", code = "300352" },
+  { name = "任子行", code = "300311" },
+  { name = "拓尔思", code = "300229" },
+  { name = "国投智能", code = "300188" },
+  { name = "吉大正元", code = "003029" },
+  { name = "启明星辰", code = "002439" },
+  { name = "天融信", code = "002212" },
 ]
 
-# 你可以按同样结构继续添加分类：
-# [categories.security_hardware]
-# alias = "网络安全设备"
-# items = [
-#   { name = "公司A", code = "000001" },
-# ]
+# 网络安全设备
+[categories.net_security_device]
+alias = "网络安全设备"
+items = [
+  { name = "飞利信", code = "300287" },
+  { name = "锐捷网络", code = "301165" },
+  { name = "三未信安", code = "688489" },
+  { name = "恒为信息", code = "603496" },
+  { name = "中孚信息", code = "300659" },
+  { name = "飞天诚信", code = "300386" },
+  { name = "旋极信息", code = "300324" },
+  { name = "中新赛克", code = "002912" },
+  { name = "电科网安", code = "002268" },
+]

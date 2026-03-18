@@ -18,6 +18,7 @@ _charts_tpl/
 # smoke test artifacts
 _smoke_output/
 _smoke_output2/
+_smoke_output3/
 _smoke_charts/
 
 # ad-hoc debug artifacts
