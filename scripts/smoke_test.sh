@@ -57,14 +57,14 @@ cn_col = headers.index('科目_CN') + 1 if '科目_CN' in headers else headers.i
 subj_col = headers.index('科目') + 1
 
 # find a known header row by 科目_CN, but validate indent on 科目列（真实展示列）
-target = '一、经营活动产生的现金流量'
+targets = {'一、经营活动产生的现金流量', '经营活动产生的现金流量'}
 row_idx = None
 for r in range(4, ws.max_row+1):
     v = ws.cell(r, cn_col).value
-    if isinstance(v, str) and v.strip() == target:
+    if isinstance(v, str) and v.strip() in targets:
         row_idx = r
         break
-assert row_idx is not None, 'cashflow header row not found'
+assert row_idx is not None, f'cashflow header row not found, tried: {sorted(targets)}'
 
 indent_header = ws.cell(row_idx, subj_col).alignment.indent or 0
 indent_next = ws.cell(row_idx+1, subj_col).alignment.indent or 0
