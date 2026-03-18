@@ -78,8 +78,9 @@ PY
 python3 -m finreport_charts run --code 600519 --start 2024-01-01 --end 2024-12-31 \
   --data-dir "$OUT_DIR" --templates templates --template net_profit_q
 
-RUN_PNG="$(ls -1 "$OUT_DIR"/*_600519/charts/net_profit_q_600519_20240101_20241231.png 2>/dev/null | head -n 1 || true)"
-RUN_XLSX="$(ls -1 "$OUT_DIR"/*_600519/charts/net_profit_q_600519_20240101_20241231.xlsx 2>/dev/null | head -n 1 || true)"
+# output filenames depend on template alias + actual available periods, so just check charts dir has at least one png+xlsx
+RUN_PNG="$(ls -1 "$OUT_DIR"/*_600519/charts/*.png 2>/dev/null | head -n 1 || true)"
+RUN_XLSX="$(ls -1 "$OUT_DIR"/*_600519/charts/*.xlsx 2>/dev/null | head -n 1 || true)"
 if [ -z "$RUN_PNG" ] || [ ! -f "$RUN_PNG" ] || [ -z "$RUN_XLSX" ] || [ ! -f "$RUN_XLSX" ]; then
   echo "[smoke] run outputs not found under: $OUT_DIR/*_600519/charts/" >&2
   find "$OUT_DIR" -maxdepth 4 -type f -print >&2 || true
