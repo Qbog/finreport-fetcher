@@ -18,12 +18,12 @@ python3 -m finreport_fetcher fetch --code 600519 --date 2025-02-01 --out "$OUT_D
 mkdir -p output
 ( cd output && python3 -m finreport_fetcher version >/dev/null )
 
-# locate xlsx (new layout: _smoke_output/{公司名}_600519/*.xlsx)
-XLSX="$(ls -1 "$OUT_DIR"/*_600519/600519_merged_*.xlsx 2>/dev/null | sort | tail -n 1 || true)"
+# locate xlsx (new layout: _smoke_output/{公司名}_600519/reports/*.xlsx)
+XLSX="$(ls -1 "$OUT_DIR"/*_600519/reports/600519_merged_*.xlsx 2>/dev/null | sort | tail -n 1 || true)"
 if [ -z "$XLSX" ] || [ ! -f "$XLSX" ]; then
-  echo "[smoke] expected xlsx not found under company dir: $OUT_DIR/*_600519/600519_merged_*.xlsx" >&2
+  echo "[smoke] expected xlsx not found under: $OUT_DIR/*_600519/reports/600519_merged_*.xlsx" >&2
   echo "[smoke] tree:" >&2
-  find "$OUT_DIR" -maxdepth 3 -type f -print >&2 || true
+  find "$OUT_DIR" -maxdepth 4 -type f -print >&2 || true
   exit 1
 fi
 
