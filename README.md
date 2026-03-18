@@ -100,6 +100,45 @@ python3 -m finreport_charts run \
 # 说明：finreport_charts 的 bar/pie/combo/template 子命令已弃用，会提示并以退出码 2 退出
 ```
 
+### 公司分类配置（category）
+
+项目根目录提供 `config/company_categories.toml` 作为全局分类配置：
+
+```toml
+[categories.net_security]
+alias = "网络安全软件开发"
+items = [
+  { name = "天融信", code = "600533" },
+  { name = "深信服", code = "300454" },
+]
+```
+
+- `name` 是分类名（命令行 `--category` 使用）
+- `alias` 为显示名（可选）
+- `items` 为公司列表：`name` + `code`（6 位股票代码，可写字符串或数字）
+
+命令示例：
+
+```bash
+# 批量抓取某一分类
+python3 -m finreport_fetcher fetch \
+  --category net_security \
+  --start 2020-01-01 --end 2025-12-31 \
+  --out output --no-clean
+
+# 批量生成某一分类图表
+python3 -m finreport_charts run \
+  --category net_security \
+  --start 2020-01-01 --end 2025-12-31 \
+  --data-dir output \
+  --templates templates \
+  --template "*"
+```
+
+可用 `--category-config` 指定自定义配置文件路径。
+
+> 说明：分类模式会根据分类内所有公司统一图表的纵轴范围与图幅尺寸，便于横向对比。
+
 ### 输出目录结构
 
 默认输出到 `./output`，并按公司归档到 `{公司名}_{code6}` 目录：
@@ -120,6 +159,14 @@ output/
 
 
 > 目录名中的 `{公司名}` 会尽量按 A 股正式简称解析；解析失败则退化为 code6。
+
+### 占位符说明
+
+文档中的 `{code6}` / `{公司名}` 均为**占位符**，用于说明文件路径/命名规则：
+- `{code6}` = 6 位股票代码（文件名与路径里的实际值）
+- `{公司名}` = 公司名称或简称（用于目录名）
+
+它们只是文档里的“替换提示”，不是给人阅读时展示的字段名。
 
 ---
 

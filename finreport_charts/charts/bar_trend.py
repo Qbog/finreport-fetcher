@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+import math
 
 import pandas as pd
 
 from ..utils.mpl_style import apply_pretty_style
-from ..utils.numfmt import choose_unit_scale, fmt_scaled, fmt_tick
+from ..utils.numfmt import UnitScale, choose_unit_scale, fmt_scaled, fmt_tick
 
 
 def render_bar_png(
@@ -17,6 +18,9 @@ def render_bar_png(
     out_png: Path,
     y_label: str = "",
     x_label: str = "",
+    y_range: tuple[float, float] | None = None,
+    unit_scale: UnitScale | None = None,
+    figsize: tuple[float, float] | None = None,
 ):
     """Single-series bar chart (backward compatible)."""
 
@@ -28,6 +32,9 @@ def render_bar_png(
         out_png=out_png,
         x_label=x_label,
         y_label=y_label or y_col,
+        y_range=y_range,
+        unit_scale=unit_scale,
+        figsize=figsize,
     )
 
 
@@ -42,6 +49,9 @@ def render_bars_png(
     y_label: str = "",
     series_colors: list[str | None] | None = None,
     x_colors: list[str | None] | None = None,
+    y_range: tuple[float, float] | None = None,
+    unit_scale: UnitScale | None = None,
+    figsize: tuple[float, float] | None = None,
 ):
     """Multi-series (grouped) bar chart.
 
@@ -65,12 +75,15 @@ def render_bars_png(
     max_abs = 0.0
     for col, _label in series:
         try:
-            max_abs = max(max_abs, float(df[col].abs().max()))
+            v = float(pd.to_numeric(df[col], errors="coerce").abs().max())
+            if math.isfinite(v):
+                max_abs = max(max_abs, v)
         except Exception:
             pass
-    us = choose_unit_scale(max_abs)
+    us = unit_scale or choose_unit_scale(max_abs)
 
-    fig, ax = plt.subplots(figsize=(max(7, min(22, 0.75 * n + 4)), 5.5))
+    fig_size = figsize or (max(7, min(22, 0.75 * n + 4)), 5.5)
+    fig, ax = plt.subplots(figsize=fig_size)
 
     palette = [
         "#4E79A7",
@@ -139,24 +152,29 @@ def render_bars_png(
     ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _pos: fmt_tick(v, us)))
 
     # add value labels above bars
-    ymax = 0.0
-    ymin = 0.0
+    ymax = None
+    ymin = None
     for cont in containers:
         for p in cont.patches:
             h = p.get_height()
-            if h is None:
+            if h is None or (isinstance(h, float) and not math.isfinite(h)):
                 continue
-            ymax = max(ymax, float(h))
-            ymin = min(ymin, float(h))
+            ymax = float(h) if ymax is None else max(ymax, float(h))
+            ymin = float(h) if ymin is None else min(ymin, float(h))
 
-    # headroom
-    span = max(1.0, ymax - ymin)
-    ax.set_ylim(ymin - 0.08 * span, ymax + 0.18 * span)
+    # headroom (override when y_range is provided)
+    if y_range and len(y_range) == 2:
+        ax.set_ylim(y_range[0], y_range[1])
+    else:
+        ymax0 = ymax if ymax is not None else 0.0
+        ymin0 = ymin if ymin is not None else 0.0
+        span = max(1.0, ymax0 - ymin0)
+        ax.set_ylim(ymin0 - 0.08 * span, ymax0 + 0.18 * span)
 
     for cont in containers:
         for p in cont.patches:
             h = p.get_height()
-            if h is None:
+            if h is None or (isinstance(h, float) and not math.isfinite(h)):
                 continue
             x0 = p.get_x() + p.get_width() / 2
             txt = fmt_scaled(float(h), us)
@@ -183,6 +201,7 @@ def write_bar_excel(
     out_xlsx: Path,
     y_label: str = "",
     x_label: str = "",
+    y_range: tuple[float, float] | None = None,
 ):
     """Single-series Excel output (backward compatible)."""
 
@@ -194,6 +213,7 @@ def write_bar_excel(
         out_xlsx=out_xlsx,
         x_label=x_label,
         y_label=y_label or y_col,
+        y_range=y_range,
     )
 
 
@@ -208,6 +228,7 @@ def write_bars_excel(
     y_label: str = "",
     series_colors: list[str | None] | None = None,
     x_colors: list[str | None] | None = None,
+    y_range: tuple[float, float] | None = None,
 ):
     """Multi-series bar chart exported to Excel.
 
@@ -273,6 +294,10 @@ def write_bars_excel(
     chart.set_categories(cats)
     chart.width = 22
     chart.height = 12
+
+    if y_range and len(y_range) == 2:
+        chart.y_axis.scaling.min = y_range[0]
+        chart.y_axis.scaling.max = y_range[1]
 
     def _hex6(c: str | None) -> str | None:
         if not c:

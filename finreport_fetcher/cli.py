@@ -18,6 +18,7 @@ from .providers.registry import ProviderConfig, build_providers
 from .utils.dates import candidate_quarter_ends_before, parse_date, quarter_ends_between
 from .utils.paths import safe_dir_component
 from .utils.company_category import detect_company_category
+from .utils.company_categories import resolve_company_category, default_company_categories_path
 from .utils.symbols import ResolvedSymbol, fuzzy_match_name, load_a_share_name_map, parse_code
 
 app = typer.Typer(add_completion=False)
@@ -257,6 +258,8 @@ def _fetch_one_period(
 def fetch(
     code: str | None = typer.Option(None, "--code", help="股票代码：600519 / 600519.SH / sh600519 等"),
     name: str | None = typer.Option(None, "--name", help="股票名称（模糊匹配，重名会提示选择）"),
+    category: str | None = typer.Option(None, "--category", help="公司分类名（见 config/company_categories.toml）"),
+    category_config: Path | None = typer.Option(None, "--category-config", help="分类配置文件路径（默认：config/company_categories.toml）"),
     date_: str | None = typer.Option(None, "--date", help="单个日期：取该日期之前最近一期已披露的报告期"),
     start: str | None = typer.Option(None, "--start", help="日期范围开始"),
     end: str | None = typer.Option(None, "--end", help="日期范围结束"),
@@ -269,7 +272,11 @@ def fetch(
 ):
     """抓取 A 股三大报表并导出 Excel。"""
 
-    rs = _resolve_symbol(code=code, name=name)
+    if category and (code or name):
+        raise typer.BadParameter("--category 与 --code/--name 互斥")
+    if not category and not (code or name):
+        raise typer.BadParameter("必须提供 --code/--name 或 --category")
+
     if statement_type not in {"merged", "parent"}:
         raise typer.BadParameter("--statement-type 仅支持 merged 或 parent")
 
@@ -287,104 +294,179 @@ def fetch(
     )
     providers = build_providers(cfg)
 
-    # 每次提取前删除之前的数据：仅删除本次公司(code6)相关文件，不影响其他公司
     out_root = out_dir.resolve()
     out_root.mkdir(parents=True, exist_ok=True)
 
-    company_name = rs.name or rs.code6
-    company_dirname = safe_dir_component(f"{company_name}_{rs.code6}")
-    out_dir = out_root / company_dirname / "reports"
-    out_dir.mkdir(parents=True, exist_ok=True)
+    def _resolve_category_targets() -> list[ResolvedSymbol]:
+        cfg_path = category_config or default_company_categories_path()
+        cat = resolve_company_category(category, cfg_path)
 
-    if not no_clean:
-        # 只清理本公司目录内的本公司文件
-        for p in out_dir.glob(f"{rs.code6}_*.xlsx"):
-            try:
-                p.unlink()
-            except Exception:
-                pass
-        for p in out_dir.glob(f"~${rs.code6}_*.xlsx"):
-            try:
-                p.unlink()
-            except Exception:
-                pass
+        df_map = None
+        try:
+            df_map = load_a_share_name_map()
+        except Exception:
+            df_map = None
 
-        pdf_dir = out_dir.parent / "pdf"
-        if pdf_dir.exists():
-            for p in pdf_dir.glob(f"{rs.code6}_*.pdf"):
+        seen: set[str] = set()
+        targets: list[ResolvedSymbol] = []
+        for it in cat.items:
+            code6 = str(it.code6).zfill(6)
+            if code6 in seen:
+                continue
+            seen.add(code6)
+
+            rs0 = parse_code(code6)
+            if not rs0:
+                raise typer.BadParameter(f"无法解析公司代码: {code6}")
+
+            name0 = None
+            if df_map is not None:
+                try:
+                    m = df_map["code"].astype(str).str.zfill(6) == rs0.code6
+                    if m.any():
+                        name0 = str(df_map[m].iloc[0]["name"])
+                except Exception:
+                    pass
+            if not name0:
+                name0 = it.name
+
+            targets.append(
+                ResolvedSymbol(
+                    code6=rs0.code6,
+                    ts_code=rs0.ts_code,
+                    market=rs0.market,
+                    name=name0,
+                )
+            )
+
+        if not targets:
+            raise typer.BadParameter(f"分类 {category} 未配置任何公司")
+
+        if cat.alias:
+            log_info(f"使用分类: {cat.name}（{cat.alias}），公司数: {len(targets)}")
+        else:
+            log_info(f"使用分类: {cat.name}，公司数: {len(targets)}")
+
+        return targets
+
+    targets: list[ResolvedSymbol]
+    if category:
+        targets = _resolve_category_targets()
+    else:
+        targets = [_resolve_symbol(code=code, name=name)]
+
+    def _fetch_for_symbol(rs: ResolvedSymbol) -> list[Path]:
+        company_name = rs.name or rs.code6
+        company_dirname = safe_dir_component(f"{company_name}_{rs.code6}")
+        out_reports_dir = out_root / company_dirname / "reports"
+        out_reports_dir.mkdir(parents=True, exist_ok=True)
+
+        if not no_clean:
+            for p in out_reports_dir.glob(f"{rs.code6}_*.xlsx"):
+                try:
+                    p.unlink()
+                except Exception:
+                    pass
+            for p in out_reports_dir.glob(f"~${rs.code6}_*.xlsx"):
                 try:
                     p.unlink()
                 except Exception:
                     pass
 
-    exported: list[Path] = []
+            pdf_dir = out_reports_dir.parent / "pdf"
+            if pdf_dir.exists():
+                for p in pdf_dir.glob(f"{rs.code6}_*.pdf"):
+                    try:
+                        p.unlink()
+                    except Exception:
+                        pass
 
-    if date_:
-        dt = parse_date(date_)
-        # 候选报告期末：倒序尝试，哪个先拿到数据就算“最近一期已披露”
-        candidates = candidate_quarter_ends_before(dt, years_back=10)
-        last_err = None
-        for pe in candidates:
-            try:
-                p = _fetch_one_period(
-                    ts_code=rs.ts_code,
-                    code6=rs.code6,
-                    company_name=rs.name,
-                    period_end=pe,
-                    statement_type=statement_type,
-                    providers=providers,
-                    want_pdf=pdf,
-                    out_dir=out_dir,
-                    tushare_token=tushare_token,
-                )
-                exported.append(p)
-                log_info(f"已导出: {p}")
-                break
-            except Exception as e:
-                last_err = e
-                continue
-        if not exported:
-            raise RuntimeError(f"在 {dt} 之前未找到可用财报数据：{last_err}")
+        exported: list[Path] = []
 
-    else:
-        s = parse_date(start)
-        e = parse_date(end)
-        periods = quarter_ends_between(s, e)
-        if not periods:
-            raise RuntimeError("日期范围内没有任何标准报告期末日（03-31/06-30/09-30/12-31）")
-        failed: list[tuple[date, str]] = []
-        for pe in periods:
-            try:
-                p = _fetch_one_period(
-                    ts_code=rs.ts_code,
-                    code6=rs.code6,
-                    company_name=rs.name,
-                    period_end=pe,
-                    statement_type=statement_type,
-                    providers=providers,
-                    want_pdf=pdf,
-                    out_dir=out_dir,
-                    tushare_token=tushare_token,
-                )
-                exported.append(p)
-                log_info(f"已导出: {p}")
-            except Exception as e:
-                failed.append((pe, str(e)))
-                log_warn(f"跳过 {pe.strftime('%Y-%m-%d')}：{e}")
-                continue
+        if date_:
+            dt = parse_date(date_)
+            candidates = candidate_quarter_ends_before(dt, years_back=10)
+            last_err = None
+            for pe in candidates:
+                try:
+                    p = _fetch_one_period(
+                        ts_code=rs.ts_code,
+                        code6=rs.code6,
+                        company_name=rs.name,
+                        period_end=pe,
+                        statement_type=statement_type,
+                        providers=providers,
+                        want_pdf=pdf,
+                        out_dir=out_reports_dir,
+                        tushare_token=tushare_token,
+                    )
+                    exported.append(p)
+                    log_info(f"已导出: {p}")
+                    break
+                except Exception as e:
+                    last_err = e
+                    continue
+            if not exported:
+                raise RuntimeError(f"在 {dt} 之前未找到可用财报数据：{last_err}")
+        else:
+            s = parse_date(start)
+            e = parse_date(end)
+            periods = quarter_ends_between(s, e)
+            if not periods:
+                raise RuntimeError("日期范围内没有任何标准报告期末日（03-31/06-30/09-30/12-31）")
+            failed: list[tuple[date, str]] = []
+            for pe in periods:
+                try:
+                    p = _fetch_one_period(
+                        ts_code=rs.ts_code,
+                        code6=rs.code6,
+                        company_name=rs.name,
+                        period_end=pe,
+                        statement_type=statement_type,
+                        providers=providers,
+                        want_pdf=pdf,
+                        out_dir=out_reports_dir,
+                        tushare_token=tushare_token,
+                    )
+                    exported.append(p)
+                    log_info(f"已导出: {p}")
+                except Exception as e:
+                    failed.append((pe, str(e)))
+                    log_warn(f"跳过 {pe.strftime('%Y-%m-%d')}：{e}")
+                    continue
 
-        if not exported:
-            raise RuntimeError(f"范围内所有报告期均失败，共 {len(failed)} 期。示例错误: {failed[0] if failed else 'N/A'}")
+            if not exported:
+                raise RuntimeError(f"范围内所有报告期均失败，共 {len(failed)} 期。示例错误: {failed[0] if failed else 'N/A'}")
 
-        if failed:
-            log_warn(f"提示：范围内有 {len(failed)} 期未能抓取（已跳过）。")
-            for pe, msg in failed[:10]:
-                log_warn(f"  - {pe.strftime('%Y-%m-%d')}: {msg}")
-            if len(failed) > 10:
-                log_warn("  ... 仅展示前 10 条")
+            if failed:
+                log_warn(f"提示：范围内有 {len(failed)} 期未能抓取（已跳过）。")
+                for pe, msg in failed[:10]:
+                    log_warn(f"  - {pe.strftime('%Y-%m-%d')}: {msg}")
+                if len(failed) > 10:
+                    log_warn("  ... 仅展示前 10 条")
 
-    log_info(f"完成，共导出 {len(exported)} 个文件。输出目录: {out_dir}")
-    log_info(f"提示：公司根目录为 {out_dir.parent}")
+        log_info(f"完成，共导出 {len(exported)} 个文件。输出目录: {out_reports_dir}")
+        log_info(f"提示：公司根目录为 {out_reports_dir.parent}")
+        return exported
+
+    total_exported = 0
+    failed_companies: list[tuple[ResolvedSymbol, Exception]] = []
+
+    for rs in targets:
+        if len(targets) > 1:
+            log_info(f"\n[bold]公司[/bold]: {rs.name or rs.code6} ({rs.code6})")
+        try:
+            exported = _fetch_for_symbol(rs)
+            total_exported += len(exported)
+        except Exception as exc:
+            failed_companies.append((rs, exc))
+            log_warn(f"公司 {rs.name or rs.code6}({rs.code6}) 抓取失败：{exc}")
+
+    if total_exported == 0:
+        raise RuntimeError("全部公司抓取失败，请检查配置或数据源")
+
+    if failed_companies:
+        log_warn(f"提示：{len(failed_companies)} 家公司抓取失败（其余已完成）。")
 
 
 def main():

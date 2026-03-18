@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+import math
 
 import pandas as pd
 
 from ..utils.mpl_style import apply_pretty_style
-from ..utils.numfmt import choose_unit_scale, fmt_scaled, fmt_tick
+from ..utils.numfmt import UnitScale, choose_unit_scale, fmt_scaled, fmt_tick
 
 
 def render_combo_png(
@@ -19,6 +20,9 @@ def render_combo_png(
     bar_label: str = "",
     line_label: str = "",
     x_label: str = "",
+    y_range: tuple[float, float] | None = None,
+    unit_scale: UnitScale | None = None,
+    figsize: tuple[float, float] | None = None,
 ):
     import matplotlib.pyplot as plt
 
@@ -31,12 +35,15 @@ def render_combo_png(
     # unit for bar axis
     max_abs = 0.0
     try:
-        max_abs = float(pd.Series(y1).abs().max())
+        v = float(pd.to_numeric(pd.Series(y1), errors="coerce").abs().max())
+        if math.isfinite(v):
+            max_abs = v
     except Exception:
         max_abs = 0.0
-    us = choose_unit_scale(max_abs)
+    us = unit_scale or choose_unit_scale(max_abs)
 
-    fig, ax1 = plt.subplots(figsize=(max(7, min(22, 0.75 * len(x) + 4)), 5.5))
+    fig_size = figsize or (max(7, min(22, 0.75 * len(x) + 4)), 5.5)
+    fig, ax1 = plt.subplots(figsize=fig_size)
     cont = ax1.bar(x, y1, color="#4E79A7", alpha=0.9, label=bar_label or bar_col)
     ax1.set_xlabel(x_label or "时间")
     ax1.set_ylabel(bar_label or bar_col)
@@ -47,10 +54,14 @@ def render_combo_png(
     ax1.yaxis.set_major_formatter(FuncFormatter(lambda v, _pos: fmt_tick(v, us)))
 
     # value labels on bars
-    ymax = max([float(v) for v in y1 if v is not None] + [0.0])
-    ymin = min([float(v) for v in y1 if v is not None] + [0.0])
-    span = max(1.0, ymax - ymin)
-    ax1.set_ylim(ymin - 0.08 * span, ymax + 0.18 * span)
+    if y_range and len(y_range) == 2:
+        ax1.set_ylim(y_range[0], y_range[1])
+    else:
+        vals = [float(v) for v in y1 if v is not None and not (isinstance(v, float) and not math.isfinite(v))]
+        ymax = max(vals + [0.0])
+        ymin = min(vals + [0.0])
+        span = max(1.0, ymax - ymin)
+        ax1.set_ylim(ymin - 0.08 * span, ymax + 0.18 * span)
 
     for p in cont.patches:
         h = p.get_height()
@@ -89,6 +100,7 @@ def write_combo_excel(
     bar_label: str = "",
     line_label: str = "",
     x_label: str = "",
+    y_range: tuple[float, float] | None = None,
 ):
     from openpyxl import Workbook
     from openpyxl.chart import BarChart, LineChart, Reference
@@ -149,6 +161,10 @@ def write_combo_excel(
     bar += line
     bar.width = 24
     bar.height = 12
+
+    if y_range and len(y_range) == 2:
+        bar.y_axis.scaling.min = y_range[0]
+        bar.y_axis.scaling.max = y_range[1]
 
     ws_chart.add_chart(bar, "A3")
 

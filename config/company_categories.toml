@@ -1,0 +1,18 @@
+# 公司分类配置（用于批量抓取/出图）
+# 说明：categories.<分类名> 为一个分类块
+# - alias: 显示名（可选）
+# - items: 公司列表（name 可选；code 支持 6 位代码或带市场后缀）
+
+[categories.net_security]
+alias = "网络安全软件开发"
+items = [
+  { name = "天融信", code = "600533" },
+  { name = "深信服", code = "300454" },
+]
+
+# 你可以按同样结构继续添加分类：
+# [categories.security_hardware]
+# alias = "网络安全设备"
+# items = [
+#   { name = "公司A", code = "000001" },
+# ]

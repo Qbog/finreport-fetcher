@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+import math
 
 import pandas as pd
 
 from ..utils.mpl_style import apply_pretty_style
-from ..utils.numfmt import choose_unit_scale, fmt_tick
+from ..utils.numfmt import UnitScale, choose_unit_scale, fmt_tick
 
 
 def render_lines_png(
@@ -17,6 +18,9 @@ def render_lines_png(
     out_png: Path,
     x_label: str = "时间",
     y_label: str = "",
+    y_range: tuple[float, float] | None = None,
+    unit_scale: UnitScale | None = None,
+    figsize: tuple[float, float] | None = None,
 ):
     """Multi-series line chart.
 
@@ -36,12 +40,15 @@ def render_lines_png(
     max_abs = 0.0
     for col, _label in series:
         try:
-            max_abs = max(max_abs, float(pd.Series(df[col]).abs().max()))
+            v = float(pd.to_numeric(df[col], errors="coerce").abs().max())
+            if math.isfinite(v):
+                max_abs = max(max_abs, v)
         except Exception:
             pass
-    us = choose_unit_scale(max_abs)
+    us = unit_scale or choose_unit_scale(max_abs)
 
-    fig, ax = plt.subplots(figsize=(max(7, min(22, 0.75 * n + 4)), 5.5))
+    fig_size = figsize or (max(7, min(22, 0.75 * n + 4)), 5.5)
+    fig, ax = plt.subplots(figsize=fig_size)
 
     palette = [
         "#4E79A7",
@@ -72,6 +79,8 @@ def render_lines_png(
     ax.set_ylabel(y_label)
     ax.tick_params(axis="x", rotation=45)
     ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _pos: fmt_tick(v, us)))
+    if y_range and len(y_range) == 2:
+        ax.set_ylim(y_range[0], y_range[1])
 
     if k > 1:
         ax.legend(loc="best")
@@ -91,6 +100,7 @@ def write_lines_excel(
     out_xlsx: Path,
     x_label: str = "时间",
     y_label: str = "",
+    y_range: tuple[float, float] | None = None,
 ):
     """Multi-series line chart exported to Excel.
 
@@ -154,6 +164,10 @@ def write_lines_excel(
     chart.set_categories(cats)
     chart.width = 22
     chart.height = 12
+
+    if y_range and len(y_range) == 2:
+        chart.y_axis.scaling.min = y_range[0]
+        chart.y_axis.scaling.max = y_range[1]
 
     ws_chart.add_chart(chart, "A3")
 

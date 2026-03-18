@@ -32,6 +32,18 @@ python3 -m finreport_fetcher -l warning fetch \
   --no-clean
 ```
 
+按分类批量抓取：
+
+```bash
+python3 -m finreport_fetcher -l warning fetch \
+  --category net_security \
+  --start 2020-01-01 --end 2025-12-31 \
+  --out output \
+  --no-clean
+```
+
+> 分类配置见 `config/company_categories.toml`，可用 `--category-config` 指定自定义路径。
+
 > `--no-clean` 建议默认开启：避免重复抓取时清空历史数据。
 
 ---
@@ -77,6 +89,19 @@ python3 -m finreport_charts -l info run \
   --templates templates \
   --template "*"
 ```
+
+按分类批量生成图表：
+
+```bash
+python3 -m finreport_charts -l info run \
+  --category net_security \
+  --start 2020-01-01 --end 2025-12-31 \
+  --data-dir output \
+  --templates templates \
+  --template "*"
+```
+
+> 分类模式会根据分类内所有公司统一图表的纵轴范围与图幅尺寸，便于横向对比。
 
 ### 缺失报告期的自动补数
 
