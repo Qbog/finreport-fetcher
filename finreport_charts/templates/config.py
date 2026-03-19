@@ -27,7 +27,6 @@ class Template:
 
     推荐：一个模板一个 TOML 文件（templates/*.toml），由 `finreport_charts run` 执行。
 
-    兼容：旧的 charts.toml（[templates.xxx]）仍可被 load_templates() 读取。
     """
 
     name: str
@@ -133,43 +132,6 @@ def _parse_bar_blocks(data: dict[str, Any]) -> list[BarBlock] | None:
         return [BarBlock(name=item, expr=item, statement=_as_str(data.get("statement")), transform=_as_str(data.get("transform")))]
 
     return None
-
-
-def load_templates(path: Path) -> dict[str, Template]:
-    """Legacy loader for charts.toml (single file with [templates.*])."""
-
-    loads = _toml_loads()
-    cfg = loads(path.read_text(encoding="utf-8"))
-    troot = cfg.get("templates") or {}
-    out: dict[str, Template] = {}
-    for name, v in troot.items():
-        if not isinstance(v, dict):
-            continue
-        # legacy chart -> type
-        type_ = _as_str(v.get("type") or v.get("chart"))
-        if not type_:
-            continue
-
-        out[name] = Template(
-            name=name,
-            alias=_as_str(v.get("alias")),
-            type=type_,
-            title=_as_str(v.get("title")),
-            x_label=_as_str(v.get("x_label")),
-            y_label=_as_str(v.get("y_label")),
-            mode=_as_str(v.get("mode")),
-            statement=_as_str(v.get("statement")),
-            period_end=_as_str(v.get("period_end")),
-            peers=v.get("peers") if isinstance(v.get("peers"), list) else None,
-            bars=_parse_bar_blocks(v),
-            section=_as_str(v.get("section")),
-            items=v.get("items") if isinstance(v.get("items"), list) else None,
-            top_n=v.get("top_n"),
-            bar_item=_as_str(v.get("bar_item")),
-            transform=_as_str(v.get("transform")),
-            line=_as_str(v.get("line")),
-        )
-    return out
 
 
 def load_template_file(path: Path) -> Template:

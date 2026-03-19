@@ -40,6 +40,16 @@ items = [
   { name = "天融信", code = "002212" },
 ]
 
+# 测试-金融（银行/券商/保险）
+[categories.test_financial]
+alias = "测试-金融"
+items = [
+  { name = "平安银行", code = "000001" },
+  { name = "招商银行", code = "600036" },
+  { name = "中信证券", code = "600030" },
+  { name = "中国平安", code = "601318" },
+]
+
 # 网络安全设备
 [categories.net_security_device]
 alias = "网络安全设备"

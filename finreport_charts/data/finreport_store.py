@@ -87,6 +87,7 @@ def ensure_finreports(
     pdf: bool,
     company_name: str | None = None,
     tushare_token: str | None = None,
+    only_periods: list[date] | None = None,
 ) -> list[date]:
     """确保 data_dir 里存在 start~end 的所有报告期末日财报 xlsx。
 
@@ -104,6 +105,11 @@ def ensure_finreports(
         for pe in periods
         if not expected_xlsx_path(data_dir, code6, statement_type, pe, name=company_name).exists()
     ]
+
+    # 如果上层已明确指定仅尝试的报告期（用于“每期只尝试一次”缓存），则按指定列表过滤。
+    if only_periods is not None:
+        allow = set(only_periods)
+        missing = [pe for pe in missing if pe in allow]
 
     if not missing:
         return []
@@ -143,9 +149,35 @@ def ensure_finreports(
             text=True,
         )
         if res.returncode != 0:
-            # 只打印最后一行错误，既能定位问题，又不会刷屏。
-            err = (res.stderr or "").strip().splitlines()
-            tail = err[-1] if err else "(no stderr)"
+            # stderr 可能包含 rich traceback，多行很长；这里提取异常信息并尽量合并被自动换行的后续行。
+            lines = [ln.strip() for ln in (res.stderr or "").splitlines() if ln.strip()]
+            tail = "(no stderr)"
+            if lines:
+                import re as _re
+
+                pat = _re.compile(r"^(?:[A-Za-z_]*Error|Exception|RuntimeError):")
+                stop_prefix = ("Traceback", "File ", "╭", "╰", "│")
+
+                hit_i: int | None = None
+                for i in range(len(lines) - 1, -1, -1):
+                    if pat.match(lines[i]):
+                        hit_i = i
+                        break
+
+                if hit_i is not None:
+                    parts: list[str] = [lines[hit_i]]
+                    # rich/终端可能会把异常 message 自动折行成多行纯文本；把紧随其后的 1~N 行拼起来。
+                    for j in range(hit_i + 1, len(lines)):
+                        ln = lines[j]
+                        if pat.match(ln) or ln.startswith(stop_prefix):
+                            break
+                        parts.append(ln)
+                        if sum(len(x) for x in parts) > 280:
+                            break
+                    tail = " ".join(parts)
+                else:
+                    tail = lines[-1]
+
             print(
                 f"提示：补数失败 {code6} {pe.strftime('%Y-%m-%d')} (rc={res.returncode}): {tail}",
                 file=sys.stderr,

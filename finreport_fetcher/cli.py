@@ -451,7 +451,13 @@ def fetch(
                     continue
 
             if not exported:
-                raise RuntimeError(f"范围内所有报告期均失败，共 {len(failed)} 期。示例错误: {failed[0] if failed else 'N/A'}")
+                # 单行、可读：避免 rich traceback 自动换行导致补数日志只截到半句。
+                if failed:
+                    pe0, msg0 = failed[0]
+                    raise RuntimeError(
+                        f"范围内所有报告期均失败，共 {len(failed)} 期。示例：{pe0.strftime('%Y-%m-%d')} => {msg0}"
+                    )
+                raise RuntimeError(f"范围内所有报告期均失败，共 {len(failed)} 期。")
 
             if failed:
                 # 这里属于“部分缺失但整体成功”的提示信息，不要用告警色刷屏
@@ -478,7 +484,14 @@ def fetch(
             failed_companies.append((rs, exc))
             log_warn(f"公司 {rs.name or rs.code6}({rs.code6}) 抓取失败：{exc}")
 
+    # 只要有 1 个文件成功导出就算整体成功（其余公司失败会在下方提示）。
+    # 如果全部失败：
+    # - 单公司：抛出更具体的失败原因（便于 finreport_charts 的补数日志直接定位）
+    # - 多公司：保留汇总错误
     if total_exported == 0:
+        if len(failed_companies) == 1:
+            rs0, exc0 = failed_companies[0]
+            raise RuntimeError(f"公司 {rs0.name or rs0.code6}({rs0.code6}) 抓取失败：{exc0}")
         raise RuntimeError("全部公司抓取失败，请检查配置或数据源")
 
     if failed_companies:
