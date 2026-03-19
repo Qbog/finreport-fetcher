@@ -151,6 +151,10 @@ def _resolve_symbol(code: str | None, name: str | None) -> ResolvedSymbol:
 
 
 
+def _exc_short(e: Exception) -> str:
+    return f"{type(e).__name__}: {e}"
+
+
 def _fetch_one_period(
     ts_code: str,
     code6: str,
@@ -161,21 +165,32 @@ def _fetch_one_period(
     want_pdf: bool,
     out_dir: Path,
     tushare_token: str | None,
-):
-    last_err = None
+) -> tuple[Path, str]:
+    last_err: Exception | None = None
     bundle = None
-    used_provider = None
+    used_provider_name: str | None = None
+    provider_errors: list[tuple[str, Exception]] = []
+
     for p in providers:
+        pname = getattr(p, "name", p.__class__.__name__)
         try:
             bundle = p.get_bundle(ts_code=ts_code, period_end=period_end, statement_type=statement_type)
-            used_provider = p
+            used_provider_name = str(getattr(bundle, "provider", None) or pname)
             break
         except Exception as e:
             last_err = e
+            provider_errors.append((str(pname), e))
+            log_debug(f"provider 失败，继续尝试下一个：{pname} => {_exc_short(e)}")
             continue
 
     if bundle is None:
-        raise RuntimeError(f"所有数据源均失败：{last_err}")
+        tried = ", ".join([n for n, _ in provider_errors]) or "<none>"
+        # 错误信息尽量可读；详细堆栈请用 -l debug 重跑。
+        brief = "; ".join([f"{n}=>{_exc_short(e)}" for n, e in provider_errors[:3]])
+        more = "（更多错误请用 -l debug 查看）" if len(provider_errors) > 3 else ""
+        raise RuntimeError(f"所有数据源均失败（已尝试：{tried}）。{brief}{more}" if brief else f"所有数据源均失败：{last_err}")
+
+    used_provider_name = used_provider_name or str(getattr(bundle, "provider", None) or "unknown")
 
     # PDF（不用日期文件夹，用文件名区分）
     pdf_url = None
@@ -216,7 +231,7 @@ def _fetch_one_period(
         "pdf_local_path": pdf_path,
         "pdf_note": pdf_note,
     })
-    if used_provider and getattr(used_provider, "name", None) in {"akshare", "akshare_ths"}:
+    if used_provider_name in {"akshare", "akshare_ths"}:
         # 若用户请求合并但实际拿到母公司（或相反），在 meta 里说明（Sina only）
         detected = bundle.meta.get("detected_type")
         if detected:
@@ -251,7 +266,7 @@ def _fetch_one_period(
         },
     )
 
-    return out_path
+    return out_path, used_provider_name
 
 
 @app.command("fetch")
@@ -389,7 +404,7 @@ def fetch(
             last_err = None
             for pe in candidates:
                 try:
-                    p = _fetch_one_period(
+                    out_path, used_provider = _fetch_one_period(
                         ts_code=rs.ts_code,
                         code6=rs.code6,
                         company_name=rs.name,
@@ -400,8 +415,8 @@ def fetch(
                         out_dir=out_reports_dir,
                         tushare_token=tushare_token,
                     )
-                    exported.append(p)
-                    log_info(f"已导出: {p}")
+                    exported.append(out_path)
+                    log_info(f"已导出: {out_path}（provider={used_provider}）")
                     break
                 except Exception as e:
                     last_err = e
@@ -417,7 +432,7 @@ def fetch(
             failed: list[tuple[date, str]] = []
             for pe in periods:
                 try:
-                    p = _fetch_one_period(
+                    out_path, used_provider = _fetch_one_period(
                         ts_code=rs.ts_code,
                         code6=rs.code6,
                         company_name=rs.name,
@@ -428,8 +443,8 @@ def fetch(
                         out_dir=out_reports_dir,
                         tushare_token=tushare_token,
                     )
-                    exported.append(p)
-                    log_info(f"已导出: {p}")
+                    exported.append(out_path)
+                    log_info(f"已导出: {out_path}（provider={used_provider}）")
                 except Exception as e:
                     failed.append((pe, str(e)))
                     log_warn(f"跳过 {pe.strftime('%Y-%m-%d')}：{e}")
@@ -439,11 +454,12 @@ def fetch(
                 raise RuntimeError(f"范围内所有报告期均失败，共 {len(failed)} 期。示例错误: {failed[0] if failed else 'N/A'}")
 
             if failed:
-                log_warn(f"提示：范围内有 {len(failed)} 期未能抓取（已跳过）。")
+                # 这里属于“部分缺失但整体成功”的提示信息，不要用告警色刷屏
+                log_info(f"提示：范围内有 {len(failed)} 期未能抓取（已跳过）。")
                 for pe, msg in failed[:10]:
-                    log_warn(f"  - {pe.strftime('%Y-%m-%d')}: {msg}")
+                    log_info(f"  - {pe.strftime('%Y-%m-%d')}: {msg}")
                 if len(failed) > 10:
-                    log_warn("  ... 仅展示前 10 条")
+                    log_info("  ... 仅展示前 10 条")
 
         log_info(f"完成，共导出 {len(exported)} 个文件。输出目录: {out_reports_dir}")
         log_info(f"提示：公司根目录为 {out_reports_dir.parent}")

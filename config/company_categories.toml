@@ -31,6 +31,15 @@ items = [
   { name = "天融信", code = "002212" },
 ]
 
+# 测试（小样本，便于快速跑通流程）
+[categories.test]
+alias = "测试"
+items = [
+  { name = "三六零", code = "601360" },
+  { name = "深信服", code = "300454" },
+  { name = "天融信", code = "002212" },
+]
+
 # 网络安全设备
 [categories.net_security_device]
 alias = "网络安全设备"

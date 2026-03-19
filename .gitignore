@@ -32,3 +32,6 @@ __pycache__/
 
 # OS
 .DS_Store
+
+# smoke test artifacts (wildcard)
+_smoke_output*/

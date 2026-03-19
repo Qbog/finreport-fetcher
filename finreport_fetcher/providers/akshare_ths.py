@@ -206,8 +206,11 @@ class AkshareThsProvider:
         out = df.copy().reset_index(drop=True)
 
         def _hdr_row(name: str) -> pd.DataFrame:
+            # 用 np.nan 明确数值列 dtype 为 float，避免 pandas concat 的 FutureWarning（all-NA dtype 推断变化）
+            import numpy as np
+
             return pd.DataFrame(
-                [{"科目": name, "数值": None, "__level": 0, "__is_header": True}],
+                [{"科目": name, "数值": np.nan, "__level": 0, "__is_header": True}],
                 columns=["科目", "数值", "__level", "__is_header"],
             )
 
