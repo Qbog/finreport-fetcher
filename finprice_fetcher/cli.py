@@ -525,10 +525,24 @@ def fetch(
 
         out_xlsx = out_dir2 / f"{c.rs.code6}.xlsx"
         # 价格表 Excel：方便人工查看/二次处理
-        with pd.ExcelWriter(out_xlsx, engine="openpyxl") as w:
-            df.to_excel(w, sheet_name="price", index=False)
-
-        log_info(f"已输出: {out_path} / {out_xlsx} (provider={src}, frequency={c.frequency}, rows={len(df)})")
+        try:
+            with pd.ExcelWriter(out_xlsx, engine="openpyxl") as w:
+                df.to_excel(w, sheet_name="price", index=False)
+            log_info(f"已输出: {out_path} / {out_xlsx} (provider={src}, frequency={c.frequency}, rows={len(df)})")
+        except PermissionError as e:
+            # HGFS/共享盘上，xlsx 可能被宿主机 Excel 打开而无法覆盖；此时保留 CSV 产物即可（charts 补数只依赖 CSV）。
+            if out_xlsx.exists():
+                log_warn(f"提示：无法写入 Excel（可能文件被占用），将保留现有文件：{out_xlsx} ({e})")
+                log_info(f"已输出: {out_path} (xlsx 保留现有) (provider={src}, frequency={c.frequency}, rows={len(df)})")
+            else:
+                alt = out_xlsx.with_name(out_xlsx.stem + "_new.xlsx")
+                try:
+                    with pd.ExcelWriter(alt, engine="openpyxl") as w:
+                        df.to_excel(w, sheet_name="price", index=False)
+                    log_warn(f"提示：无法写入 Excel（可能文件被占用）：{out_xlsx}；已改写到：{alt}")
+                    log_info(f"已输出: {out_path} / {alt} (provider={src}, frequency={c.frequency}, rows={len(df)})")
+                except Exception:
+                    raise
 
     if failed:
         # 提示：即使有失败公司，成功的公司文件仍然已经写入。

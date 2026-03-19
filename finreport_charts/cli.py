@@ -1078,6 +1078,7 @@ def run(
                     series = [(n, n) for n in value_cols]
 
                     if collect_only and stats_map is not None:
+                        stats_map.setdefault(k, AxisStatsCollector())
                         _collect_axis_stats(stats_map[k], df_out, value_cols=value_cols, point_col="date")
                         continue
 
