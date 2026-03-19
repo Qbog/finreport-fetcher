@@ -502,8 +502,10 @@ def fetch(
                 vol = pd.to_numeric(df["volume"], errors="coerce")
                 amt = pd.to_numeric(df["amount"], errors="coerce")
                 df["avg_amount_over_volume"] = (amt / vol).where(vol != 0)
+            else:
+                df["avg_amount_over_volume"] = pd.NA
         except Exception:
-            pass
+            df["avg_amount_over_volume"] = pd.NA
 
         try:
             cols = [c for c in ["open", "high", "low", "close"] if c in df.columns]
@@ -514,8 +516,10 @@ def fetch(
                     + pd.to_numeric(df["low"], errors="coerce")
                     + pd.to_numeric(df["close"], errors="coerce")
                 ) / 4.0
+            else:
+                df["avg_ohlc4"] = pd.NA
         except Exception:
-            pass
+            df["avg_ohlc4"] = pd.NA
 
         df.to_csv(out_path, index=False)
 
