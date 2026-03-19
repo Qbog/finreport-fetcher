@@ -108,7 +108,9 @@ def _parse_items(items_raw: Any) -> list[CompanyCategoryItem]:
 
 
 def resolve_company_category(name: str, path: Path | None = None) -> CompanyCategory:
-    cats = load_company_categories(path)
+    cfg_path = path or default_company_categories_path()
+    cats = load_company_categories(cfg_path)
+
     key = (name or "").strip()
     if not key:
         raise ValueError("分类名不能为空")
@@ -121,4 +123,6 @@ def resolve_company_category(name: str, path: Path | None = None) -> CompanyCate
             return v
 
     avail = ", ".join(sorted(cats.keys()))
-    raise KeyError(f"未找到分类: {name}. 可用分类: {avail}")
+    raise KeyError(
+        f"未找到分类: {name}. 可用分类: {avail}. 配置文件: {cfg_path}（可用 --category-config 指定）"
+    )
