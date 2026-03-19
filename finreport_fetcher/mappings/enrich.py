@@ -3,7 +3,9 @@ from __future__ import annotations
 import hashlib
 import re
 
+import numpy as np
 import pandas as pd
+from pandas.api import types as pd_types
 
 from .subject_glossary import lookup_subject, lookup_subject_by_key
 
@@ -25,6 +27,37 @@ _CN_EN_OVERRIDES: dict[str, str] = {
     "资产合计": "Total assets",
     "资产总计": "Total assets",
 }
+
+
+def _default_for_dtype(dtype: np.dtype) -> object:
+    if pd_types.is_bool_dtype(dtype):
+        return False
+    if pd_types.is_integer_dtype(dtype):
+        return 0
+    if pd_types.is_float_dtype(dtype):
+        return np.nan
+    return None
+
+
+def _row_from_values(df: pd.DataFrame, values: dict[str, object]) -> pd.DataFrame:
+    """Create a single-row DataFrame that follows df's dtypes while inserting given data."""
+
+    if df.empty:
+        return pd.DataFrame([values])
+
+    data: dict[str, pd.Series] = {}
+    for col in df.columns:
+        dtype = df[col].dtype
+        default = _default_for_dtype(dtype)
+        try:
+            data[col] = pd.Series([default], dtype=dtype)
+        except TypeError:
+            data[col] = pd.Series([default])
+    row = pd.DataFrame(data)
+    for col, val in values.items():
+        if col in row.columns:
+            row.at[0, col] = val
+    return row
 
 
 def _auto_en_from_cn(cn: str) -> str:
@@ -208,9 +241,16 @@ def _patch_balance_sheet_structure(df: pd.DataFrame) -> pd.DataFrame:
 
     if len(norm0) >= 4 and all((n in core_set) for n in norm0[:4]):
         if norm0[0] != "报表核心指标":
-            header = {c: None for c in out.columns}
-            header.update({"科目": "报表核心指标", "数值": None, "__level": 0, "__is_header": True})
-            out = pd.concat([pd.DataFrame([header]), out], ignore_index=True)
+            header = _row_from_values(
+                out,
+                {
+                    "科目": "报表核心指标",
+                    "数值": np.nan,
+                    "__level": 0,
+                    "__is_header": True,
+                },
+            )
+            out = pd.concat([header, out], ignore_index=True)
             # indent the 4 core lines under the header
             for r in range(1, 5):
                 out.at[r, "__level"] = 1
@@ -241,14 +281,16 @@ def _patch_balance_sheet_structure(df: pd.DataFrame) -> pd.DataFrame:
 
             def _insert_dup(at_idx: int, row_dict: dict) -> None:
                 nonlocal out, subj2, norm2
-                row2 = {c: None for c in out.columns}
-                row2.update(row_dict)
-                row2["__level"] = 0
-                row2["__is_header"] = False
-                row2["__dup_keep"] = True
-                top = out.iloc[:at_idx].copy()
-                bot = out.iloc[at_idx:].copy()
-                out = pd.concat([top, pd.DataFrame([row2]), bot], ignore_index=True)
+                row2 = _row_from_values(out, row_dict)
+                idx = row2.index[0]
+                row2.at[idx, "__level"] = 0
+                row2.at[idx, "__is_header"] = False
+                row2.at[idx, "__dup_keep"] = True
+                row2.at[idx, "__is_uncommon"] = bool(row_dict.get("__is_uncommon"))
+                row2 = row2.drop(columns=[col for col in row2.columns if col == "__dup_key"], errors="ignore")
+                part1 = out.iloc[:at_idx].copy()
+                part2 = out.iloc[at_idx:].copy()
+                out = pd.concat([part1, row2, part2], ignore_index=True)
                 subj2 = out["科目"].astype(str).tolist()
                 norm2 = [_normalize_subject(s) for s in subj2]
 
@@ -327,11 +369,18 @@ def _patch_balance_sheet_structure(df: pd.DataFrame) -> pd.DataFrame:
                 break
 
         if eq_idx is not None:
-            header = {c: None for c in out.columns}
-            header.update({"科目": "股东权益", "数值": None, "__level": 0, "__is_header": True})
+            header = _row_from_values(
+                out,
+                {
+                    "科目": "股东权益",
+                    "数值": np.nan,
+                    "__level": 0,
+                    "__is_header": True,
+                },
+            )
             top = out.iloc[:eq_idx].copy()
             bot = out.iloc[eq_idx:].copy()
-            out = pd.concat([top, pd.DataFrame([header]), bot], ignore_index=True)
+            out = pd.concat([top, header, bot], ignore_index=True)
 
             # ensure equity detail items are indented
             # (some sources already give __level=1; keep the max)

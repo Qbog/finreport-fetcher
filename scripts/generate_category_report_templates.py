@@ -30,6 +30,35 @@ from finreport_fetcher.mappings.subject_glossary import SUBJECT_SPECS
 from finreport_fetcher.utils.company_category import ALL_CATEGORIES
 
 
+def _comment_for_key(key: str) -> str | None:
+    """Return bilingual comment for a subject key.
+
+    Format: "中文 | English" (append note when present).
+
+    NOTE: Comments are written into TOML for human readability only.
+    """
+
+    for spec in SUBJECT_SPECS:
+        if str(spec.key) != key:
+            continue
+        cn = str(getattr(spec, "cn", "") or "").strip()
+        en = str(getattr(spec, "en", "") or "").strip()
+        note = str(getattr(spec, "note", "") or "").strip()
+        parts = []
+        if cn:
+            parts.append(cn)
+        if en:
+            parts.append(en)
+        if note:
+            parts.append(f"NOTE: {note}")
+        if not parts:
+            return None
+        # avoid breaking TOML comment
+        s = " | ".join(parts).replace("\n", " ").replace("\r", " ")
+        return s
+    return None
+
+
 def _is_common_in_category(spec, category: str) -> bool:
     common_in = tuple(getattr(spec, "common_in", ()) or ())
     if common_in:
@@ -49,11 +78,23 @@ def _iter_keys(prefix: str, category: str) -> list[str]:
 
 
 def _to_toml_list(keys: list[str], *, indent: str = "") -> str:
+    """Render keys list with bilingual per-line comments.
+
+    Example:
+      "is.revenue_total", # 营业总收入 | Total operating revenue
+
+    TOML allows comments after array items.
+    """
+
     if not keys:
         return indent + "keys = []\n"
     lines = [indent + "keys = [\n"]
     for k in keys:
-        lines.append(f"{indent}  \"{k}\",\n")
+        cmt = _comment_for_key(k)
+        if cmt:
+            lines.append(f"{indent}  \"{k}\", # {cmt}\n")
+        else:
+            lines.append(f"{indent}  \"{k}\",\n")
     lines.append(indent + "]\n")
     return "".join(lines)
 

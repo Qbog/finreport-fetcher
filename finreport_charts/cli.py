@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import re
+import sys
+import subprocess
 import warnings
 from dataclasses import dataclass
 from datetime import date
@@ -419,6 +421,79 @@ def _maybe_fetch_missing(c: CommonOpts, fetch_start: date | None = None) -> list
         log_warn(f"提示：补齐后仍缺失 {len(still)} 期财报，将跳过缺失期继续绘图：{still}")
 
     return still
+
+
+# 缺失股价补数缓存：同一公司/同一 data_dir/同一频率 在一次 run 中只尝试一次。
+_PRICE_FETCH_CACHE: set[tuple[str, str, str]] = set()
+
+
+def _maybe_fetch_price_missing(c: CommonOpts, *, start: date | None = None, end: date | None = None) -> Path:
+    """Ensure price CSV exists and covers the requested range.
+
+    - 若 CSV 不存在：调用 finprice_fetcher 抓取。
+    - 若 CSV 存在但覆盖范围不足：调用 finprice_fetcher 重新抓取覆盖区间。
+
+    返回：价格 CSV 的路径（优先公司归档目录）。
+
+    说明：这里不做“增量合并”，直接覆盖写；因为价格抓取相对轻量，且覆盖写更稳定。
+    """
+
+    s = start or c.start
+    e = min(end or c.end, date.today())
+    price_csv = _default_price_csv_path(c)
+
+    cache_key = (str(c.data_dir), c.rs.code6, "daily")
+
+    need_fetch = False
+    if not price_csv.exists():
+        need_fetch = True
+    else:
+        try:
+            df0 = load_price_csv(price_csv)
+            if df0.empty:
+                need_fetch = True
+            else:
+                min_d = df0["date"].min()
+                max_d = df0["date"].max()
+                if (min_d is None) or (max_d is None) or min_d > s or max_d < e:
+                    need_fetch = True
+        except Exception:
+            need_fetch = True
+
+    if (not need_fetch) or (cache_key in _PRICE_FETCH_CACHE):
+        return price_csv
+
+    _PRICE_FETCH_CACHE.add(cache_key)
+
+    log_info(f"发现缺失股价数据，调用 finprice_fetcher 补齐到: {c.data_dir}")
+    args = [
+        sys.executable,
+        "-m",
+        "finprice_fetcher",
+        "fetch",
+        "--code",
+        c.rs.code6,
+        "--start",
+        s.strftime("%Y-%m-%d"),
+        "--end",
+        e.strftime("%Y-%m-%d"),
+        "--out",
+        str(c.data_dir),
+        "--provider",
+        c.provider,
+        "--frequency",
+        "daily",
+    ]
+    if c.tushare_token:
+        args += ["--tushare-token", c.tushare_token]
+
+    res = subprocess.run(args, check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if res.returncode != 0:
+        lines = [ln.strip() for ln in (res.stderr or "").splitlines() if ln.strip()]
+        tail = lines[-1] if lines else "(no stderr)"
+        log_warn(f"股价补数失败 {c.rs.code6} (rc={res.returncode}): {tail}")
+
+    return _default_price_csv_path(c)
 
 
 
@@ -861,11 +936,175 @@ def run(
                 render_png = render_bars_png if t_type == "bar" else render_lines_png
                 write_xlsx = write_bars_excel if t_type == "bar" else write_lines_excel
 
-                if mode not in {"trend", "structure", "peer"}:
-                    raise RuntimeError(f"{chart_kind} 模板 mode 仅支持 trend/structure/peer: {k}")
+                allowed_modes = {"trend", "structure", "peer"}
+                if t_type == "line":
+                    # 价格折线（按日）
+                    allowed_modes.add("price")
 
-                if not bars and mode == "trend":
-                    raise RuntimeError(f"趋势 {chart_kind} 模板必须提供 [[bars]]: {k}")
+                if mode not in allowed_modes:
+                    raise RuntimeError(f"{chart_kind} 模板 mode 仅支持 {sorted(allowed_modes)}: {k}")
+
+                if not bars and mode in {"trend", "price"}:
+                    raise RuntimeError(f"{mode} {chart_kind} 模板必须提供 [[bars]]: {k}")
+
+                # ---- price (daily) ----
+                if mode == "price":
+                    if t_type != "line":
+                        raise RuntimeError(f"mode=price 仅支持 line 模板: {k}")
+
+                    bars_flat = _flatten_bar_blocks(bars)
+                    if not bars_flat:
+                        raise RuntimeError(f"价格 line 模板缺少可用 bars（叶子节点需提供 expr）: {k}")
+
+                    # 1) ensure price data
+                    check_end = min(c.end, date.today())
+                    price_csv = _maybe_fetch_price_missing(c, start=c.start, end=check_end)
+                    if not price_csv.exists():
+                        log_warn(f"提示：未找到股价 CSV（补数后仍不存在）：{price_csv}")
+                        continue
+
+                    df_price0 = load_price_csv(price_csv)
+                    if df_price0.empty:
+                        log_warn(f"提示：股价数据为空：{price_csv}")
+                        continue
+
+                    # restrict to requested range
+                    df_price = df_price0[(df_price0["date"] >= c.start) & (df_price0["date"] <= check_end)].copy()
+                    if df_price.empty:
+                        log_warn(f"提示：股价数据在该区间内为空：{c.start} ~ {check_end}")
+                        continue
+
+                    # 2) detect financial identifiers in expressions (is./bs./cf.)
+                    fin_ids: set[str] = set()
+                    for b in bars_flat:
+                        expr0 = str(b["expr"])
+                        for t in tokenize(expr0):
+                            if t in {"+", "-", "*", "/", "(", ")"}:
+                                continue
+                            if re.fullmatch(r"\d+(?:\.\d+)?", t):
+                                continue
+                            if t.startswith("is.") or t.startswith("bs.") or t.startswith("cf."):
+                                fin_ids.add(t)
+
+                    fin_cache: dict[str, dict[date, float]] = {}
+                    if fin_ids:
+                        # 为了把季度财务值“映射”到日频：用 date 对应的最新季末值（step function）。
+                        # 需要至少覆盖 start 所在季末（以及可能的上一季末）。
+                        q0 = _latest_quarter_end_on_or_before(c.start)
+                        q_start = _prev_quarter_end(q0)
+                        q_end = _latest_quarter_end_on_or_before(check_end)
+
+                        still = _maybe_fetch_missing(c, fetch_start=q_start)
+                        if strict and still:
+                            raise RuntimeError(f"缺失财报 {len(still)} 期（strict 模式退出）：{still}")
+
+                        q_periods = quarter_ends_between(q_start, q_end)
+                        for fid in sorted(fin_ids):
+                            mp: dict[date, float] = {}
+                            for pe in q_periods:
+                                v = main_eval.eval(fid, current_pe=pe, default_statement=statement_default)
+                                if v is None:
+                                    continue
+                                try:
+                                    mp[pe] = float(v)
+                                except Exception:
+                                    continue
+                            fin_cache[fid] = mp
+
+                    # 3) build output df (one row per trading day)
+                    series_defs = [(str(b["name"]), str(b["expr"])) for b in bars_flat]
+                    value_cols = [n for n, _expr in series_defs]
+
+                    rows: list[dict[str, object]] = []
+                    for _, r in df_price.iterrows():
+                        dt0 = r.get("date")
+                        if not isinstance(dt0, date):
+                            continue
+                        row: dict[str, object] = {"date": dt0.strftime("%Y-%m-%d")}
+
+                        # base values: price columns
+                        values: dict[str, float] = {}
+                        for col in df_price.columns:
+                            if col == "date":
+                                continue
+                            v0 = r.get(col)
+                            if v0 is None or (isinstance(v0, float) and not math.isfinite(v0)) or pd.isna(v0):
+                                continue
+                            try:
+                                fv = float(v0)
+                            except Exception:
+                                continue
+                            values[col] = fv
+                            values[f"px.{col}"] = fv
+                            values[f"price.{col}"] = fv
+
+                        # financial values at quarter end on/before dt
+                        if fin_ids:
+                            pe = _latest_quarter_end_on_or_before(dt0)
+                            for fid in fin_ids:
+                                vv = fin_cache.get(fid, {}).get(pe)
+                                if vv is not None:
+                                    values[fid] = float(vv)
+
+                        any_val = False
+                        for name1, expr1 in series_defs:
+                            try:
+                                y = eval_expr(expr1, values)
+                                row[name1] = y
+                                any_val = True
+                            except ExprError:
+                                row[name1] = float("nan")
+
+                        if not any_val and not pad_x:
+                            continue
+                        rows.append(row)
+
+                    if not rows:
+                        log_warn(f"提示：{k} 在该区间内没有可用股价数据。")
+                        continue
+
+                    df_out = pd.DataFrame(rows)
+                    if (not df_out.empty) and (not pd.to_numeric(df_out[value_cols].stack(), errors="coerce").notna().any()):
+                        log_warn(f"提示：{k} 在该区间内没有可用数据（可能字段缺失/表达式错误）。")
+                        continue
+
+                    title = f"{c.rs.name or c.rs.code6} | {title0}"
+                    actual_s = df_out["date"].iloc[0]
+                    actual_e = df_out["date"].iloc[-1]
+
+                    out_png = c.out_dir / f"{fname_base}_{c.rs.code6}_{actual_s.replace('-', '')}_{actual_e.replace('-', '')}.png"
+                    out_xlsx = c.out_dir / f"{fname_base}_{c.rs.code6}_{actual_s.replace('-', '')}_{actual_e.replace('-', '')}.xlsx"
+
+                    series = [(n, n) for n in value_cols]
+
+                    if collect_only and stats_map is not None:
+                        _collect_axis_stats(stats_map[k], df_out, value_cols=value_cols, point_col="date")
+                        continue
+
+                    render_png(
+                        df_out,
+                        title=title,
+                        x_col="date",
+                        series=series,
+                        out_png=out_png,
+                        x_label=x_label,
+                        y_label=y_label,
+                        **axis_png_extra,
+                    )
+                    write_xlsx(
+                        df_out,
+                        title=title,
+                        x_col="date",
+                        series=series,
+                        out_xlsx=out_xlsx,
+                        x_label=x_label,
+                        y_label=y_label,
+                        **axis_xlsx_extra,
+                    )
+
+                    console.print(f"已生成: {out_png}")
+                    console.print(f"已生成: {out_xlsx}")
+                    continue
 
                 # ---- trend ----
                 if mode == "trend":

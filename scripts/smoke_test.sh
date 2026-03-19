@@ -87,4 +87,37 @@ if [ -z "$RUN_PNG" ] || [ ! -f "$RUN_PNG" ] || [ -z "$RUN_XLSX" ] || [ ! -f "$RU
   exit 1
 fi
 
+# 4) price fetcher (category)
+python3 -m finprice_fetcher fetch --category test_financial --start 2025-01-01 --end 2025-01-15 \
+  --out "$OUT_DIR" --provider akshare --frequency daily
+
+# verify avg columns exist
+python3 - "$OUT_DIR" <<'PY'
+import sys
+from pathlib import Path
+import pandas as pd
+
+out_dir = Path(sys.argv[1])
+# pick one company under test_financial
+p = out_dir / '招商银行_600036' / 'price' / '600036.csv'
+assert p.exists(), f'price csv not found: {p}'
+df = pd.read_csv(p)
+need = {'date','close','open','high','low','avg_amount_over_volume','avg_ohlc4'}
+missing = [c for c in need if c not in df.columns]
+assert not missing, f'missing columns in price csv: {missing}'
+print('[smoke] finprice_fetcher category OK + avg cols OK')
+PY
+
+# 5) charts run (price line template)
+python3 -m finreport_charts run --code 600036 --start 2025-01-01 --end 2025-01-15 \
+  --data-dir "$OUT_DIR" --templates templates --template price_close_trend --provider akshare
+
+RUN_PNG2="$(ls -1 "$OUT_DIR"/*_600036/charts/*股价-收盘*.png 2>/dev/null | head -n 1 || true)"
+RUN_XLSX2="$(ls -1 "$OUT_DIR"/*_600036/charts/*股价-收盘*.xlsx 2>/dev/null | head -n 1 || true)"
+if [ -z "$RUN_PNG2" ] || [ ! -f "$RUN_PNG2" ] || [ -z "$RUN_XLSX2" ] || [ ! -f "$RUN_XLSX2" ]; then
+  echo "[smoke] price line outputs not found under: $OUT_DIR/*_600036/charts/" >&2
+  find "$OUT_DIR" -maxdepth 4 -type f -print >&2 || true
+  exit 1
+fi
+
 echo "[smoke] OK"
