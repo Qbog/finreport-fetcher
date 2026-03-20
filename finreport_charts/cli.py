@@ -1922,18 +1922,31 @@ def merge(
 
     for rs in targets:
         c = _build_common(rs)
+        main_eval = ExpressionEvaluator(c)
 
         # ---- ensure finreports for bar expr ----
-        still = _maybe_fetch_missing(c)
+        # bar(trend) uses quarter ends; merge 的 start/end 往往是“日频”区间，
+        # 若直接 quarter_ends_between(start,end) 可能为空（例如 2025-01-02~2025-01-15）。
+        # 这里做一个更符合直觉的范围：从 start 所在日期的“上一季末”开始，到 end 所在日期的“最近季末”为止。
+        bar_start = _prev_quarter_end(_latest_quarter_end_on_or_before(c.start))
+        bar_end = _latest_quarter_end_on_or_before(min(c.end, date.today()))
+
+        still = _maybe_fetch_missing(c, fetch_start=bar_start)
         if strict and still:
             raise RuntimeError(f"缺失财报 {len(still)} 期（strict 模式退出）：{still}")
 
-        periods = quarter_ends_between(c.start, min(c.end, date.today()))
+        periods = quarter_ends_between(bar_start, bar_end)
+
         bar_rows: list[dict[str, object]] = []
         for pe in periods:
             v = main_eval.eval(bar_expr, current_pe=pe, default_statement=(bar_stmt or bar_stmt_default))
             bar_rows.append({"date": pe.strftime("%Y-%m-%d"), "bar": v})
         df_bar = pd.DataFrame(bar_rows)
+        if not df_bar.empty:
+            df_bar["bar"] = pd.to_numeric(df_bar["bar"], errors="coerce")
+            df_bar = df_bar.dropna(subset=["bar"])  # no data -> no bars
+        if df_bar.empty:
+            raise RuntimeError(f"合并图表缺少可用的柱状数据（bar）：{c.rs.name or c.rs.code6} {bar_start}~{bar_end}")
 
         # ---- ensure price for line expr ----
         check_end = min(c.end, date.today())

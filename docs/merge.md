@@ -8,12 +8,17 @@
 ## 命令
 
 ```bash
-python3 -m finreport_charts merge \
+# 推荐独立程序（finmerge）
+finmerge merge \
   --bar-template net_profit_q \
   --line-template price_close_trend \
   --code 600036 \
   --start 2025-01-02 --end 2025-01-15 \
   --data-dir output
+
+# 也兼容原入口（finchart / python -m finreport_charts）
+finchart merge ...
+python3 -m finreport_charts merge ...
 ```
 
 ### 输出
