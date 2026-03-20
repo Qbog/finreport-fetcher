@@ -31,6 +31,7 @@ from finreport_fetcher.utils.symbols import (
 from .charts.bar_trend import render_bar_png, render_bars_png, write_bar_excel, write_bars_excel
 from .charts.combo_dual_axis import render_combo_png, write_combo_excel
 from .charts.line_trend import render_lines_png, write_lines_excel
+from .charts.merge_dual_axis import render_merge_png
 from .charts.pie_share import render_pie_png, topn_with_other, write_pie_excel
 from .data.finreport_store import (
     ensure_finreports,
@@ -1806,6 +1807,282 @@ def run(
     for rs in targets:
         c = _build_common(rs)
         _run_templates_for_company(c, collect_only=False, axis_plan_map=axis_plan_map, stats_map=None)
+
+
+@app.command("merge")
+def merge(
+    bar_template: str = typer.Option(..., "--bar-template", help="柱状图模板（bar + mode=trend）模板名或文件路径"),
+    line_template: str = typer.Option(..., "--line-template", help="折线图模板（line + mode=price）模板名或文件路径"),
+    templates: Path = typer.Option(Path("templates"), "--templates", help="模板目录（单模板单文件 *.toml）"),
+    code: str | None = typer.Option(None, "--code"),
+    name: str | None = typer.Option(None, "--name"),
+    category: str | None = typer.Option(None, "--category", help="公司分类名（见 config/company_categories.toml）"),
+    category_config: Path | None = typer.Option(None, "--category-config", help="分类配置文件路径（默认：config/company_categories.toml）"),
+    start: str = typer.Option(..., "--start"),
+    end: str = typer.Option(..., "--end"),
+    data_dir: Path | None = typer.Option(None, "--data-dir", help="财报数据目录（默认：若 ./output 存在则用 output，否则用当前目录）"),
+    out_dir: Path | None = typer.Option(None, "--out", help="输出目录（默认：{data_dir}/{公司名}_{code6}/charts/）"),
+    provider: str = typer.Option("auto", "--provider"),
+    statement_type: str = typer.Option("merged", "--statement-type"),
+    tushare_token: str | None = typer.Option(None, "--tushare-token"),
+    strict: bool = typer.Option(False, "--strict", help="缺失财报时是否直接报错退出（默认：跳过缺失期继续）"),
+):
+    """将两个模板合并为一个双轴 PNG 图（v1：bar(trend) + line(price)）。
+
+    - 输入：时间范围 + 两个模板
+    - 自动补数：缺财报/缺股价会调用对应 fetcher 补齐
+    - 输出：PNG（双 y 轴），默认输出到公司 charts 目录
+
+    约束（v1）：
+    - bar 模板必须是 type=bar 且 mode=trend，并且仅允许 1 个叶子 bar（否则请拆模板/后续再扩展）
+    - line 模板必须是 type=line 且 mode=price，并且仅允许 1 条 series（否则请拆模板/后续再扩展）
+    """
+
+    targets = _resolve_chart_targets(code=code, name=name, category=category, category_config=category_config)
+    s = parse_date(start)
+    e = parse_date(end)
+    if s > e:
+        raise typer.BadParameter(f"--start 不能晚于 --end：{start} > {end}")
+
+    if statement_type not in {"merged", "parent"}:
+        raise typer.BadParameter("--statement-type 仅支持 merged 或 parent")
+
+    if data_dir is None:
+        data_dir = Path("output") if Path("output").exists() else Path(".")
+    data_dir = data_dir.resolve()
+    out_dir_base = out_dir.resolve() if out_dir is not None else None
+
+    # load templates
+    tpl_dir = templates
+    selected_dir = load_template_dir(tpl_dir)
+
+    def _load_one(spec: str):
+        p = Path(spec)
+        if p.exists() and p.is_file():
+            return load_template_file(p)
+        if spec in selected_dir:
+            return selected_dir[spec]
+        p2 = tpl_dir / f"{spec}.toml"
+        if p2.exists():
+            return load_template_file(p2)
+        raise RuntimeError(f"未找到模板: {spec}（在目录 {tpl_dir} 中）")
+
+    tpl_bar = _load_one(bar_template)
+    tpl_line = _load_one(line_template)
+
+    # validate
+    mode_bar = (getattr(tpl_bar, "mode", None) or "trend").strip().lower().replace("compare", "structure")
+    if (tpl_bar.type or "").strip().lower() != "bar" or mode_bar != "trend":
+        raise RuntimeError(f"bar-template 必须为 type=bar 且 mode=trend: {tpl_bar.name}")
+
+    mode_line = (getattr(tpl_line, "mode", None) or "trend").strip().lower()
+    if (tpl_line.type or "").strip().lower() != "line" or mode_line != "price":
+        raise RuntimeError(f"line-template 必须为 type=line 且 mode=price: {tpl_line.name}")
+
+    def _flatten_leaves(blocks, *, parent_statement: str | None = None):
+        out = []
+        for b in blocks or []:
+            expr = getattr(b, "expr", None)
+            stmt = getattr(b, "statement", None) or parent_statement
+            if expr:
+                out.append((str(getattr(b, "name", None) or expr), str(expr), stmt))
+            kids = getattr(b, "children", None)
+            if kids:
+                out.extend(_flatten_leaves(kids, parent_statement=stmt))
+        return out
+
+    bar_stmt_default = getattr(tpl_bar, "statement", None) or "利润表"
+    bar_leaves = _flatten_leaves(getattr(tpl_bar, "bars", None), parent_statement=bar_stmt_default)
+    if len(bar_leaves) != 1:
+        raise RuntimeError(f"v1 merge 仅支持 bar 模板含 1 个叶子 bar，当前={len(bar_leaves)}：{tpl_bar.name}")
+    bar_name, bar_expr, bar_stmt = bar_leaves[0]
+
+    line_leaves = _flatten_leaves(getattr(tpl_line, "bars", None), parent_statement=None)
+    if len(line_leaves) != 1:
+        raise RuntimeError(f"v1 merge 仅支持 line 模板含 1 条 series，当前={len(line_leaves)}：{tpl_line.name}")
+    line_name, line_expr, _line_stmt_unused = line_leaves[0]
+
+    def _build_common(rs: ResolvedSymbol) -> CommonOpts:
+        company_dir = data_dir / safe_dir_component(f"{(rs.name or rs.code6)}_{rs.code6}")
+        out_dir0 = out_dir_base or (company_dir / "charts")
+        out_dir0 = out_dir0.resolve()
+        out_dir0.mkdir(parents=True, exist_ok=True)
+
+        return CommonOpts(
+            rs=rs,
+            start=s,
+            end=e,
+            data_dir=data_dir,
+            out_dir=out_dir0,
+            provider=provider,
+            statement_type=statement_type,
+            pdf=False,
+            tushare_token=tushare_token,
+        )
+
+    for rs in targets:
+        c = _build_common(rs)
+
+        # ---- ensure finreports for bar expr ----
+        still = _maybe_fetch_missing(c)
+        if strict and still:
+            raise RuntimeError(f"缺失财报 {len(still)} 期（strict 模式退出）：{still}")
+
+        periods = quarter_ends_between(c.start, min(c.end, date.today()))
+        bar_rows: list[dict[str, object]] = []
+        for pe in periods:
+            v = main_eval.eval(bar_expr, current_pe=pe, default_statement=(bar_stmt or bar_stmt_default))
+            bar_rows.append({"date": pe.strftime("%Y-%m-%d"), "bar": v})
+        df_bar = pd.DataFrame(bar_rows)
+
+        # ---- ensure price for line expr ----
+        check_end = min(c.end, date.today())
+        base_freq = (getattr(tpl_line, "frequency", None) or "daily").strip().lower()
+        p_csv = _maybe_fetch_price_missing(c, start=c.start, end=check_end, frequency=base_freq)
+        if not p_csv.exists():
+            raise RuntimeError(f"未找到股价 CSV（补数后仍不存在）：{p_csv}")
+
+        df_base = load_price_csv(p_csv)
+        df_base = df_base[(df_base["date"] >= c.start) & (df_base["date"] <= check_end)].copy()
+        if df_base.empty:
+            raise RuntimeError(f"股价数据在该区间内为空：{c.start} ~ {check_end}")
+
+        # detect financial identifiers in line expr
+        fin_ids: set[str] = set()
+        for t in tokenize(line_expr):
+            if t.startswith("is.") or t.startswith("bs.") or t.startswith("cf."):
+                fin_ids.add(t)
+
+        fin_cache: dict[str, dict[date, float]] = {}
+        if fin_ids:
+            q0 = _latest_quarter_end_on_or_before(c.start)
+            q_start = _prev_quarter_end(q0)
+            q_end = _latest_quarter_end_on_or_before(check_end)
+            _ = _maybe_fetch_missing(c, fetch_start=q_start)
+            q_periods = quarter_ends_between(q_start, q_end)
+            for fid in sorted(fin_ids):
+                mp: dict[date, float] = {}
+                for pe in q_periods:
+                    v = main_eval.eval(fid, current_pe=pe, default_statement=bar_stmt_default)
+                    if v is None:
+                        continue
+                    try:
+                        mp[pe] = float(v)
+                    except Exception:
+                        continue
+                fin_cache[fid] = mp
+
+        # detect extra price frequencies referenced in line expr: px_5d.* / price_10d.*
+        extra_freqs: set[str] = set()
+        for t in tokenize(line_expr):
+            m = re.match(r"^(?:px|price)_(?P<f>[A-Za-z0-9_]+)\.", t)
+            if m:
+                f0 = m.group("f").strip().lower()
+                if f0 in {"1d", "d", "day", "daily"}:
+                    extra_freqs.add("daily")
+                else:
+                    extra_freqs.add(f0)
+
+        extra_price: dict[str, pd.DataFrame] = {}
+        for f0 in sorted(extra_freqs):
+            if f0 == base_freq:
+                continue
+            p2 = _maybe_fetch_price_missing(c, start=c.start, end=check_end, frequency=f0)
+            if not p2.exists():
+                continue
+            try:
+                df2 = load_price_csv(p2)
+                df2 = df2[(df2["date"] >= c.start) & (df2["date"] <= check_end)].copy()
+                if not df2.empty:
+                    extra_price[f0] = df2
+            except Exception:
+                continue
+
+        # build line series df
+        base_tag = "1d" if base_freq == "daily" else base_freq
+        line_rows: list[dict[str, object]] = []
+        for _, r in df_base.iterrows():
+            dt0 = r.get("date")
+            if not isinstance(dt0, date):
+                continue
+
+            values: dict[str, float] = {}
+            # base price values
+            for col in df_base.columns:
+                if col == "date":
+                    continue
+                v0 = r.get(col)
+                if v0 is None or pd.isna(v0):
+                    continue
+                try:
+                    fv = float(v0)
+                except Exception:
+                    continue
+                values[col] = fv
+                values[f"px.{col}"] = fv
+                values[f"price.{col}"] = fv
+                values[f"px_{base_tag}.{col}"] = fv
+                values[f"price_{base_tag}.{col}"] = fv
+
+            # extra freq values (step function)
+            for f0, df_ex in extra_price.items():
+                tag = "1d" if f0 == "daily" else f0
+                try:
+                    sub = df_ex[df_ex["date"] <= dt0]
+                    if sub.empty:
+                        continue
+                    rr = sub.iloc[-1]
+                except Exception:
+                    continue
+                for col in df_ex.columns:
+                    if col == "date":
+                        continue
+                    v0 = rr.get(col)
+                    if v0 is None or pd.isna(v0):
+                        continue
+                    try:
+                        fv = float(v0)
+                    except Exception:
+                        continue
+                    values[f"px_{tag}.{col}"] = fv
+                    values[f"price_{tag}.{col}"] = fv
+
+            # financial step values
+            if fin_ids:
+                pe = _latest_quarter_end_on_or_before(dt0)
+                for fid in fin_ids:
+                    vv = fin_cache.get(fid, {}).get(pe)
+                    if vv is not None:
+                        values[fid] = float(vv)
+
+            try:
+                y = eval_expr(line_expr, values)
+            except ExprError:
+                y = float("nan")
+
+            line_rows.append({"date": dt0, "line": y})
+
+        df_line = pd.DataFrame(line_rows).dropna(subset=["date"]).sort_values("date")
+
+        # render
+        title0 = f"{c.rs.name or c.rs.code6} | {tpl_bar.title or tpl_bar.name} + {tpl_line.title or tpl_line.name}"
+        out_png = c.out_dir / f"merge_{safe_slug(tpl_bar.name)}_{safe_slug(tpl_line.name)}_{c.rs.code6}_{c.start.strftime('%Y%m%d')}_{check_end.strftime('%Y%m%d')}.png"
+
+        render_merge_png(
+            df_line=df_line,
+            x_col="date",
+            line_col="line",
+            df_bar=df_bar,
+            bar_x_col="date",
+            bar_col="bar",
+            out_png=out_png,
+            title=title0,
+            x_label="月份",
+            bar_label=bar_name,
+            line_label=line_name,
+        )
+
+        log_info(f"已生成: {out_png}")
 
 
 
