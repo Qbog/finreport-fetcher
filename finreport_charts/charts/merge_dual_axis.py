@@ -29,6 +29,8 @@ def render_merge_png(
     bar_width_days: int = 8,
     unit_scale: UnitScale | None = None,
     figsize: tuple[float, float] | None = None,
+    xtick_dates: list[str] | None = None,
+    xtick_labels: list[str] | None = None,
 ):
     """Merge a line time-series with sparse bars on the same datetime x-axis.
 
@@ -81,10 +83,21 @@ def render_merge_png(
     ax2.plot(x_line, y_line, color=line_color, linewidth=2, label=line_label or line_col, zorder=3)
     ax2.set_ylabel(line_label or line_col)
 
-    # x axis ticks: show months
-    locator = mdates.MonthLocator(interval=max(int(month_interval), 1))
-    ax1.xaxis.set_major_locator(locator)
-    ax1.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
+    # x axis ticks
+    if xtick_dates:
+        ticks = pd.to_datetime(pd.Series(xtick_dates), errors="coerce").dropna().to_numpy()
+        if len(ticks) > 0:
+            ax1.set_xticks(ticks)
+            if xtick_labels and len(xtick_labels) == len(ticks):
+                ax1.set_xticklabels(list(xtick_labels), rotation=30)
+            else:
+                ax1.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
+    else:
+        # fallback: monthly ticks
+        locator = mdates.MonthLocator(interval=max(int(month_interval), 1))
+        ax1.xaxis.set_major_locator(locator)
+        ax1.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
+
     fig.autofmt_xdate(rotation=30)
 
     ax1.set_title(title)

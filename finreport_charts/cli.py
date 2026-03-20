@@ -468,8 +468,16 @@ def _maybe_fetch_price_missing(
             else:
                 min_d = df0["date"].min()
                 max_d = df0["date"].max()
-                if (min_d is None) or (max_d is None) or min_d > s or max_d < e:
+                if (min_d is None) or (max_d is None):
                     need_fetch = True
+                else:
+                    # 容忍非交易日导致的 1~数天缺口（例如 start/end 落在周末/节假日）。
+                    # 只要价格文件覆盖到“足够接近”的范围，就不必每次都触发补数。
+                    tol = 10  # days
+                    if min_d > s and (min_d - s).days > tol:
+                        need_fetch = True
+                    if max_d < e and (e - max_d).days > tol:
+                        need_fetch = True
         except Exception:
             need_fetch = True
 
@@ -2097,6 +2105,22 @@ def merge(
         title0 = f"{c.rs.name or c.rs.code6} | {tpl_bar.title or tpl_bar.name} + {tpl_line.title or tpl_line.name}"
         out_png = c.out_dir / f"merge_{safe_slug(tpl_bar.name)}_{safe_slug(tpl_line.name)}_{c.rs.code6}_{c.start.strftime('%Y%m%d')}_{check_end.strftime('%Y%m%d')}.png"
 
+        def _q_label(pe: date) -> str:
+            q = (pe.month - 1) // 3 + 1
+            return f"{pe.year}Q{q}"
+
+        xtick_dates = df_bar["date"].astype(str).tolist() if (df_bar is not None and not df_bar.empty) else None
+        if df_bar is not None and ("bar_pe" in df_bar.columns):
+            labs: list[str] = []
+            for s0 in [str(x) for x in df_bar["bar_pe"].tolist()]:
+                try:
+                    labs.append(_q_label(parse_date(s0)))
+                except Exception:
+                    labs.append(s0)
+            xtick_labels = labs
+        else:
+            xtick_labels = [_q_label(pe) for pe in periods]
+
         render_merge_png(
             df_line=df_line,
             x_col="date",
@@ -2106,11 +2130,14 @@ def merge(
             bar_col="bar",
             out_png=out_png,
             title=title0,
-            x_label="月份",
+            x_label="报告期",
             bar_label=bar_name,
             line_label=line_name,
             # 若 bar 被强制“放到 start”以便在日频短区间内可见，则缩小 bar 宽度，避免遮挡折线。
             bar_width_days=1 if place_on_start else 12,
+            # x 轴只保留报告期刻度（更清爽）
+            xtick_dates=xtick_dates,
+            xtick_labels=xtick_labels,
         )
 
         log_info(f"已生成: {out_png}")
