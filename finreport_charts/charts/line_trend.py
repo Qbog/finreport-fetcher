@@ -22,7 +22,7 @@ def render_lines_png(
     unit_scale: UnitScale | None = None,
     figsize: tuple[float, float] | None = None,
     mark_dates: list[str] | None = None,
-    max_xticks: int = 8,
+    max_xticks: int = 12,
 ):
     """Multi-series line chart.
 
@@ -76,7 +76,7 @@ def render_lines_png(
             x,
             y,
             color=palette[j % len(palette)],
-            marker="o",
+            marker=None,
             linewidth=2,
             label=label or col,
         )
@@ -86,8 +86,9 @@ def render_lines_png(
     ax.set_ylabel(y_label)
 
     if use_dt:
-        locator = mdates.AutoDateLocator(minticks=3, maxticks=max(3, int(max_xticks or 8)))
+        locator = mdates.AutoDateLocator(minticks=6, maxticks=max(6, int(max_xticks or 12)))
         ax.xaxis.set_major_locator(locator)
+        # show month explicitly; concise formatter will include month/day when appropriate
         ax.xaxis.set_major_formatter(mdates.ConciseDateFormatter(locator))
         fig.autofmt_xdate(rotation=30)
 
@@ -182,6 +183,7 @@ def write_lines_excel(
     chart.title = title
     chart.y_axis.title = y_label
     chart.x_axis.title = x_label or "时间"
+    chart.marker = None  # avoid markers (too crowded)
 
     data = Reference(ws, min_col=2, min_row=2, max_col=ncols, max_row=ws.max_row)
     cats = Reference(ws, min_col=1, min_row=3, max_row=ws.max_row)

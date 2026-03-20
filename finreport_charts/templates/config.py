@@ -117,8 +117,8 @@ def _parse_bar_blocks(data: dict[str, Any]) -> list[BarBlock] | None:
             transform=transform,
         )
 
-    # New style: [[bars]]
-    bars = data.get("bars")
+    # New style: [[series]] (preferred for line) or [[bars]] (legacy/common)
+    bars = data.get("series") if isinstance(data.get("series"), list) else data.get("bars")
     if isinstance(bars, list):
         out: list[BarBlock] = []
         for b in bars:

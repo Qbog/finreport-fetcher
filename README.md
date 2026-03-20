@@ -16,6 +16,7 @@
 文档：
 - 快速开始：[`docs/QUICKSTART.md`](docs/QUICKSTART.md)
 - 模板说明：[`docs/TEMPLATE_GUIDE.md`](docs/TEMPLATE_GUIDE.md)
+- Price 折线图（mode=price）：[`docs/price_line.md`](docs/price_line.md)
 - 回归测试：[`docs/TESTING.md`](docs/TESTING.md)
 - 股价抓取：见下文 `finprice`（输出 `output/{公司名}_{code6}/price/{code6}.csv` + 同名 `.xlsx` 供 combo 图使用/人工查看）
 
