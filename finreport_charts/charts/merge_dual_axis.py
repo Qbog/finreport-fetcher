@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import math
 
+import numpy as np
 import pandas as pd
 
 from ..utils.mpl_style import apply_pretty_style
@@ -25,7 +26,7 @@ def render_merge_png(
     bar_color: str = "#4E79A7",
     line_color: str = "#F28E2B",
     month_interval: int = 1,
-    bar_width_days: int = 12,
+    bar_width_days: int = 8,
     unit_scale: UnitScale | None = None,
     figsize: tuple[float, float] | None = None,
 ):
@@ -66,8 +67,9 @@ def render_merge_png(
     if df_bar is not None and (not df_bar.empty):
         bx = pd.to_datetime(df_bar[bar_x_col], errors="coerce").to_numpy()
         by = pd.to_numeric(df_bar[bar_col], errors="coerce").to_numpy()
-        # width in days
-        ax1.bar(bx, by, width=bar_width_days, color=bar_color, alpha=0.75, label=bar_label or bar_col)
+        # width in days (timedelta is more robust across datetime types)
+        w = np.timedelta64(int(bar_width_days or 12), "D")
+        ax1.bar(bx, by, width=w, color=bar_color, alpha=0.75, label=bar_label or bar_col, zorder=2)
 
     ax1.set_xlabel(x_label or "时间")
     ax1.set_ylabel(bar_label or bar_col)
@@ -76,7 +78,7 @@ def render_merge_png(
 
     # line on right axis
     ax2 = ax1.twinx()
-    ax2.plot(x_line, y_line, color=line_color, linewidth=2, label=line_label or line_col)
+    ax2.plot(x_line, y_line, color=line_color, linewidth=2, label=line_label or line_col, zorder=3)
     ax2.set_ylabel(line_label or line_col)
 
     # x axis ticks: show months
