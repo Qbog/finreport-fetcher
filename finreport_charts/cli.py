@@ -330,19 +330,24 @@ def _common(
     )
 
 
-def _default_price_csv_path(c: CommonOpts) -> Path:
+def _default_price_csv_path(c: CommonOpts, *, frequency: str = "daily") -> Path:
     """Default price CSV path.
 
     优先读取公司归档目录：
-    - {data_dir}/{公司名}_{code6}/price/{code6}.csv
+    - {data_dir}/{公司名}_{code6}/price/{code6}[_{frequency}].csv
 
     兼容旧路径：
-    - {data_dir}/price/{code6}.csv
+    - {data_dir}/price/{code6}[_{frequency}].csv
+
+    说明：daily 仍使用不带后缀的历史路径；非 daily（weekly/monthly/5d/7d/...）使用 _{frequency} 后缀。
     """
 
+    freq = (frequency or "daily").strip().lower()
+    suffix = "" if freq == "daily" else f"_{freq}"
+
     company_dir = safe_dir_component(f"{(c.rs.name or c.rs.code6)}_{c.rs.code6}")
-    p1 = c.data_dir / company_dir / "price" / f"{c.rs.code6}.csv"
-    p2 = c.data_dir / "price" / f"{c.rs.code6}.csv"
+    p1 = c.data_dir / company_dir / "price" / f"{c.rs.code6}{suffix}.csv"
+    p2 = c.data_dir / "price" / f"{c.rs.code6}{suffix}.csv"
     if p1.exists():
         return p1
     if p2.exists():
@@ -427,7 +432,13 @@ def _maybe_fetch_missing(c: CommonOpts, fetch_start: date | None = None) -> list
 _PRICE_FETCH_CACHE: set[tuple[str, str, str]] = set()
 
 
-def _maybe_fetch_price_missing(c: CommonOpts, *, start: date | None = None, end: date | None = None) -> Path:
+def _maybe_fetch_price_missing(
+    c: CommonOpts,
+    *,
+    start: date | None = None,
+    end: date | None = None,
+    frequency: str = "daily",
+) -> Path:
     """Ensure price CSV exists and covers the requested range.
 
     - 若 CSV 不存在：调用 finprice_fetcher 抓取。
@@ -438,11 +449,12 @@ def _maybe_fetch_price_missing(c: CommonOpts, *, start: date | None = None, end:
     说明：这里不做“增量合并”，直接覆盖写；因为价格抓取相对轻量，且覆盖写更稳定。
     """
 
+    freq = (frequency or "daily").strip().lower()
     s = start or c.start
     e = min(end or c.end, date.today())
-    price_csv = _default_price_csv_path(c)
+    price_csv = _default_price_csv_path(c, frequency=freq)
 
-    cache_key = (str(c.data_dir), c.rs.code6, "daily")
+    cache_key = (str(c.data_dir), c.rs.code6, freq)
 
     need_fetch = False
     if not price_csv.exists():
@@ -482,7 +494,7 @@ def _maybe_fetch_price_missing(c: CommonOpts, *, start: date | None = None, end:
         "--provider",
         c.provider,
         "--frequency",
-        "daily",
+        freq,
     ]
     if c.tushare_token:
         args += ["--tushare-token", c.tushare_token]
@@ -493,7 +505,7 @@ def _maybe_fetch_price_missing(c: CommonOpts, *, start: date | None = None, end:
         tail = lines[-1] if lines else "(no stderr)"
         log_warn(f"股价补数失败 {c.rs.code6} (rc={res.returncode}): {tail}")
 
-    return _default_price_csv_path(c)
+    return _default_price_csv_path(c, frequency=freq)
 
 
 
@@ -718,6 +730,12 @@ def run(
     list_only: bool = typer.Option(False, "--list", help="仅列出将要运行的模板并退出"),
     tushare_token: str | None = typer.Option(None, "--tushare-token"),
     strict: bool = typer.Option(False, "--strict", help="缺失财报时是否直接报错退出（默认：跳过缺失期继续）"),
+    share_axis: bool = typer.Option(
+        False,
+        "--share-axis/--no-share-axis",
+        help="多公司运行时是否共享 y 轴范围（默认否：每家公司独立 y 轴，更饱满）",
+        show_default=True,
+    ),
 ):
     """模板驱动的图表生成（唯一推荐方式）。
 
@@ -958,7 +976,9 @@ def run(
 
                     # 1) ensure price data
                     check_end = min(c.end, date.today())
-                    price_csv = _maybe_fetch_price_missing(c, start=c.start, end=check_end)
+                    base_freq = (getattr(tpl, "frequency", None) or "daily").strip().lower()
+
+                    price_csv = _maybe_fetch_price_missing(c, start=c.start, end=check_end, frequency=base_freq)
                     if not price_csv.exists():
                         log_warn(f"提示：未找到股价 CSV（补数后仍不存在）：{price_csv}")
                         continue
@@ -985,6 +1005,36 @@ def run(
                                 continue
                             if t.startswith("is.") or t.startswith("bs.") or t.startswith("cf."):
                                 fin_ids.add(t)
+
+                    # 2b) detect extra price frequencies referenced in expr: px_5d.* / price_10d.* ...
+                    extra_freqs: set[str] = set()
+                    for b in bars_flat:
+                        expr0 = str(b["expr"])
+                        for t in tokenize(expr0):
+                            m = re.match(r"^(?:px|price)_(?P<f>[A-Za-z0-9_]+)\.", t)
+                            if m:
+                                f0 = m.group("f").strip().lower()
+                                if f0 in {"1d", "d", "day", "daily"}:
+                                    extra_freqs.add("daily")
+                                else:
+                                    extra_freqs.add(f0)
+
+                    # load extra frequency price data (step-mapped by date)
+                    extra_price: dict[str, pd.DataFrame] = {}
+                    for f0 in sorted(extra_freqs):
+                        if f0 == base_freq:
+                            continue
+                        p_csv = _maybe_fetch_price_missing(c, start=c.start, end=check_end, frequency=f0)
+                        if not p_csv.exists():
+                            log_warn(f"提示：未找到股价 CSV（{f0}）：{p_csv}")
+                            continue
+                        try:
+                            df0 = load_price_csv(p_csv)
+                            df0 = df0[(df0["date"] >= c.start) & (df0["date"] <= check_end)].copy()
+                            if not df0.empty:
+                                extra_price[f0] = df0
+                        except Exception:
+                            continue
 
                     fin_cache: dict[str, dict[date, float]] = {}
                     if fin_ids:
@@ -1024,6 +1074,8 @@ def run(
 
                         # base values: price columns
                         values: dict[str, float] = {}
+                        base_tag = "1d" if base_freq == "daily" else base_freq
+
                         for col in df_price.columns:
                             if col == "date":
                                 continue
@@ -1037,6 +1089,31 @@ def run(
                             values[col] = fv
                             values[f"px.{col}"] = fv
                             values[f"price.{col}"] = fv
+                            values[f"px_{base_tag}.{col}"] = fv
+                            values[f"price_{base_tag}.{col}"] = fv
+
+                        # extra frequency values (step function: use last point on/before dt)
+                        for f0, df_ex in extra_price.items():
+                            tag = "1d" if f0 == "daily" else f0
+                            try:
+                                sub = df_ex[df_ex["date"] <= dt0]
+                                if sub.empty:
+                                    continue
+                                rr = sub.iloc[-1]
+                            except Exception:
+                                continue
+                            for col in df_ex.columns:
+                                if col == "date":
+                                    continue
+                                v0 = rr.get(col)
+                                if v0 is None or (isinstance(v0, float) and not math.isfinite(v0)) or pd.isna(v0):
+                                    continue
+                                try:
+                                    fv = float(v0)
+                                except Exception:
+                                    continue
+                                values[f"px_{tag}.{col}"] = fv
+                                values[f"price_{tag}.{col}"] = fv
 
                         # financial values at quarter end on/before dt
                         if fin_ids:
@@ -1082,6 +1159,9 @@ def run(
                         _collect_axis_stats(stats_map[k], df_out, value_cols=value_cols, point_col="date")
                         continue
 
+                    # quarter-end markers (approx financial release markers)
+                    q_marks = [d.strftime("%Y-%m-%d") for d in quarter_ends_between(c.start, check_end)]
+
                     render_png(
                         df_out,
                         title=title,
@@ -1090,6 +1170,8 @@ def run(
                         out_png=out_png,
                         x_label=x_label,
                         y_label=y_label,
+                        mark_dates=q_marks,
+                        max_xticks=8,
                         **axis_png_extra,
                     )
                     write_xlsx(
@@ -1714,7 +1796,7 @@ def run(
             log_info(f"\n全部完成。输出目录: {c.out_dir}")
 
     axis_plan_map: dict[str, AxisPlan] | None = None
-    if len(targets) > 1:
+    if share_axis and len(targets) > 1:
         stats_map: dict[str, AxisStatsCollector] = {}
         for rs in targets:
             c = _build_common(rs)

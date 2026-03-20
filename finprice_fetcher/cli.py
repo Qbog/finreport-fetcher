@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import date
 from enum import IntEnum
 from pathlib import Path
+import re
 
 # 避免 pandas 在某些环境下对 numexpr/bottleneck 版本给出噪声警告
 warnings.filterwarnings("ignore", message=r"Pandas requires version.*", category=UserWarning)
@@ -149,6 +150,32 @@ def _resolve_targets(
     return [_resolve_symbol(code=code, name=name)]
 
 
+def _normalize_frequency(frequency: str) -> str:
+    freq = (frequency or "daily").strip().lower()
+    if freq in {"d", "day", "1d"}:
+        return "daily"
+    if freq in {"w", "week"}:
+        return "weekly"
+    if freq in {"m", "month"}:
+        return "monthly"
+
+    # custom N-day bars (e.g. 5d/7d/10d)
+    m = re.fullmatch(r"(\d+)d", freq)
+    if m:
+        n = int(m.group(1))
+        if n <= 0:
+            raise typer.BadParameter("--frequency 的 Nd 必须为正整数，例如 5d")
+        if n == 1:
+            return "daily"
+        if n > 60:
+            raise typer.BadParameter("--frequency 的 Nd 过大（>60d），请确认是否输入错误")
+        return f"{n}d"
+
+    if freq not in {"daily", "weekly", "monthly"}:
+        raise typer.BadParameter("--frequency 仅支持: daily/weekly/monthly/\"Nd\"(例如 5d/7d/10d)")
+    return freq
+
+
 def _parse_common_args(
     *,
     start: str,
@@ -163,15 +190,7 @@ def _parse_common_args(
     if s > e:
         raise typer.BadParameter(f"--start 不能晚于 --end：{start} > {end}")
 
-    freq = (frequency or "daily").strip().lower()
-    if freq in {"d", "day"}:
-        freq = "daily"
-    if freq in {"w", "week"}:
-        freq = "weekly"
-    if freq in {"m", "month"}:
-        freq = "monthly"
-    if freq not in {"daily", "weekly", "monthly"}:
-        raise typer.BadParameter("--frequency 仅支持: daily/weekly/monthly")
+    freq = _normalize_frequency(frequency)
 
     return (
         s,
@@ -250,16 +269,77 @@ def _fetch_price_tx(code6: str, start: date, end: date) -> pd.DataFrame:
     return out
 
 
+def _aggregate_n_days(df: pd.DataFrame, n: int) -> pd.DataFrame:
+    if df is None or df.empty:
+        return pd.DataFrame(columns=["date", "close"])
+
+    out = df.copy()
+    out["date"] = pd.to_datetime(out["date"], errors="coerce")
+    out = out.dropna(subset=["date"]).sort_values("date")
+    if out.empty:
+        return pd.DataFrame(columns=["date", "close"])
+
+    out = out.reset_index(drop=True)
+    out["__grp"] = (out.index // max(int(n), 1)).astype(int)
+
+    def _first(s):
+        return s.iloc[0] if len(s) else pd.NA
+
+    def _last(s):
+        return s.iloc[-1] if len(s) else pd.NA
+
+    agg: dict[str, object] = {
+        "date": ("date", _last),
+    }
+
+    # OHLC
+    if "open" in out.columns:
+        agg["open"] = ("open", _first)
+    if "high" in out.columns:
+        agg["high"] = ("high", "max")
+    if "low" in out.columns:
+        agg["low"] = ("low", "min")
+    if "close" in out.columns:
+        agg["close"] = ("close", _last)
+
+    # sums
+    for c in ["volume", "amount"]:
+        if c in out.columns:
+            agg[c] = (c, "sum")
+
+    g = out.groupby("__grp", as_index=False).agg(**agg)
+
+    # compute change/pct_chg from close series if possible
+    if "close" in g.columns:
+        g["pre_close"] = pd.to_numeric(g["close"], errors="coerce").shift(1)
+        g["change"] = pd.to_numeric(g["close"], errors="coerce") - pd.to_numeric(g["pre_close"], errors="coerce")
+        g["pct_chg"] = (pd.to_numeric(g["change"], errors="coerce") / pd.to_numeric(g["pre_close"], errors="coerce") * 100.0)
+
+    g["date"] = pd.to_datetime(g["date"]).dt.strftime("%Y-%m-%d")
+    g = g.drop(columns=[c for c in g.columns if c == "__grp"], errors="ignore")
+    return g
+
+
 def _fetch_price_akshare(code6: str, start: date, end: date, frequency: str) -> pd.DataFrame:
     """Fetch price data via akshare.
 
     目标：尽量保留 akshare 能提供的列（开盘/收盘/最高/最低/成交量/成交额/振幅/涨跌幅/换手率...）。
+
+    说明：akshare 原生只支持 daily/weekly/monthly；自定义 Nd(例如 5d/7d/10d) 会先取 daily 再在 fetcher 内聚合。
     """
 
     import akshare as ak
 
     start_s = start.strftime("%Y%m%d")
     end_s = end.strftime("%Y%m%d")
+
+    # custom Nd => fetch daily then aggregate
+    m = re.fullmatch(r"(\d+)d", frequency or "")
+    if m and frequency not in {"daily", "weekly", "monthly"}:
+        n = int(m.group(1))
+        df_daily = _fetch_price_akshare(code6, start, end, "daily")
+        return _aggregate_n_days(df_daily, n)
+
     period = {"daily": "daily", "weekly": "weekly", "monthly": "monthly"}[frequency]
 
     # akshare 底层是 requests，偶发网络抖动会 RemoteDisconnected；这里做轻量重试。
@@ -339,9 +419,10 @@ def _fetch_price_akshare(code6: str, start: date, end: date, frequency: str) -> 
 
 
 def _fetch_price_tushare(ts_code: str, start: date, end: date, frequency: str, token: str) -> pd.DataFrame:
-    """Fetch daily OHLCV via tushare pro.daily.
+    """Fetch OHLCV via tushare pro.daily.
 
-    tushare 这条接口只支持日频；周/月频走 akshare。
+    tushare 只提供日频；weekly/monthly 仍建议走 akshare。
+    对自定义 Nd(例如 5d/7d/10d)：先取日频，再在 fetcher 内聚合。
     """
 
     import tushare as ts
@@ -350,8 +431,9 @@ def _fetch_price_tushare(ts_code: str, start: date, end: date, frequency: str, t
     start_s = start.strftime("%Y%m%d")
     end_s = end.strftime("%Y%m%d")
 
-    if frequency != "daily":
-        raise RuntimeError("tushare provider 目前仅实现 daily；weekly/monthly 请用 akshare")
+    m = re.fullmatch(r"(\d+)d", frequency or "")
+    if frequency in {"weekly", "monthly"}:
+        raise RuntimeError("tushare provider 不支持 weekly/monthly；请用 akshare")
 
     df = pro.daily(ts_code=ts_code, start_date=start_s, end_date=end_s)
     if df is None or df.empty:
@@ -371,6 +453,12 @@ def _fetch_price_tushare(ts_code: str, start: date, end: date, frequency: str, t
             out[c] = pd.to_numeric(out[c], errors="coerce")
 
     out = out.dropna(subset=["date"]).sort_values("date")
+
+    # custom Nd => aggregate
+    if m and frequency not in {"daily", "weekly", "monthly"}:
+        n = int(m.group(1))
+        return _aggregate_n_days(out, n)
+
     return out
 
 
@@ -407,7 +495,7 @@ def fetch(
         "daily",
         "--frequency",
         "-f",
-        help="频率：daily/weekly/monthly（默认 daily）",
+        help="频率：daily/weekly/monthly 或 Nd（例如 5d/7d/10d；Nd 会在 fetcher 内由日频聚合得到）（默认 daily）",
         show_default=True,
     ),
     tushare_token: str | None = typer.Option(None, "--tushare-token", envvar="TUSHARE_TOKEN"),
@@ -456,17 +544,19 @@ def fetch(
         if len(targets) > 1:
             log_info(f"\n公司: {c.rs.name or c.rs.code6} ({c.rs.code6}) [{i+1}/{len(targets)}]")
 
-        # 输出到公司归档目录：{out}/{公司名}_{code6}/price/{code6}.csv
+        # 输出到公司归档目录：{out}/{公司名}_{code6}/price/{code6}[_{frequency}].csv
         company_dir = safe_dir_component(f"{(c.rs.name or c.rs.code6)}_{c.rs.code6}")
         out_dir2 = c.out_dir / company_dir / "price"
         out_dir2.mkdir(parents=True, exist_ok=True)
-        out_path = out_dir2 / f"{c.rs.code6}.csv"
+
+        suffix = "" if c.frequency == "daily" else f"_{c.frequency}"
+        out_path = out_dir2 / f"{c.rs.code6}{suffix}.csv"
 
         try:
             # provider selection
             if c.provider == "auto":
-                # 周/月频：优先 akshare；日频：token 有则优先 tushare，否则 akshare
-                if c.frequency != "daily":
+                # 周/月频：优先 akshare；日频/自定义Nd：token 有则优先 tushare，否则 akshare
+                if c.frequency in {"weekly", "monthly"}:
                     df = _fetch_price_akshare(c.rs.code6, c.start, c.end, c.frequency)
                     src = "akshare"
                 elif c.tushare_token:
@@ -523,7 +613,7 @@ def fetch(
 
         df.to_csv(out_path, index=False)
 
-        out_xlsx = out_dir2 / f"{c.rs.code6}.xlsx"
+        out_xlsx = out_dir2 / f"{c.rs.code6}{suffix}.xlsx"
         # 价格表 Excel：方便人工查看/二次处理
         try:
             with pd.ExcelWriter(out_xlsx, engine="openpyxl") as w:

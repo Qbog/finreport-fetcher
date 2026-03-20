@@ -21,6 +21,8 @@ def render_lines_png(
     y_range: tuple[float, float] | None = None,
     unit_scale: UnitScale | None = None,
     figsize: tuple[float, float] | None = None,
+    mark_dates: list[str] | None = None,
+    max_xticks: int = 8,
 ):
     """Multi-series line chart.
 
@@ -28,11 +30,16 @@ def render_lines_png(
     """
 
     import matplotlib.pyplot as plt
+    import matplotlib.dates as mdates
     from matplotlib.ticker import FuncFormatter
 
     apply_pretty_style()
 
-    x = df[x_col].astype(str).tolist()
+    # x axis: try parse as datetime for smart tick formatting
+    x_raw = df[x_col]
+    x_dt = pd.to_datetime(x_raw, errors="coerce")
+    use_dt = bool(x_dt.notna().sum() >= 2)
+    x = x_dt.to_numpy() if use_dt else x_raw.astype(str).tolist()
     n = len(x)
     k = max(1, len(series))
 
@@ -77,7 +84,25 @@ def render_lines_png(
     ax.set_title(title)
     ax.set_xlabel(x_label or "时间")
     ax.set_ylabel(y_label)
-    ax.tick_params(axis="x", rotation=45)
+
+    if use_dt:
+        locator = mdates.AutoDateLocator(minticks=3, maxticks=max(3, int(max_xticks or 8)))
+        ax.xaxis.set_major_locator(locator)
+        ax.xaxis.set_major_formatter(mdates.ConciseDateFormatter(locator))
+        fig.autofmt_xdate(rotation=30)
+
+        # optional quarter-end markers or other key dates
+        for ds in mark_dates or []:
+            try:
+                d0 = pd.to_datetime(ds, errors="coerce")
+                if pd.isna(d0):
+                    continue
+                ax.axvline(d0, color="#999999", linestyle="--", linewidth=1, alpha=0.35)
+            except Exception:
+                continue
+    else:
+        # category x axis: rotate slightly but avoid printing every label manually
+        ax.tick_params(axis="x", rotation=30)
     ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _pos: fmt_tick(v, us)))
     if y_range and len(y_range) == 2:
         ax.set_ylim(y_range[0], y_range[1])

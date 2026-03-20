@@ -338,9 +338,15 @@ def load_price_csv(price_csv: Path) -> pd.DataFrame:
     # 约定列名 date, close
     if "date" not in df.columns or "close" not in df.columns:
         raise ValueError("股价 CSV 需要包含列: date, close")
-    df["date"] = pd.to_datetime(df["date"]).dt.date
-    df["close"] = pd.to_numeric(df["close"], errors="coerce")
-    return df.dropna(subset=["close"]).sort_values("date")
+    df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.date
+
+    # coerce numeric columns
+    for c in df.columns:
+        if c == "date":
+            continue
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+
+    return df.dropna(subset=["date", "close"]).sort_values("date")
 
 
 def price_on_or_before(df_price: pd.DataFrame, dt: date) -> float | None:

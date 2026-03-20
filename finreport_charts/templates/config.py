@@ -40,6 +40,9 @@ class Template:
     x_label: str | None = None
     y_label: str | None = None
 
+    # Price-specific (mode=price)
+    frequency: str | None = None  # daily|weekly|monthly|{N}d (e.g. 5d)
+
     # Bar-specific
     mode: str | None = None  # trend|structure|peer (legacy: compare)
     statement: str | None = None
@@ -168,6 +171,7 @@ def load_template_file(path: Path) -> Template:
         title=_as_str(data.get("title")),
         x_label=_as_str(data.get("x_label")),
         y_label=_as_str(data.get("y_label")),
+        frequency=_as_str(data.get("frequency")),
         mode=_as_str(data.get("mode")),
         statement=_as_str(data.get("statement")),
         period_end=_as_str(data.get("period_end")),
