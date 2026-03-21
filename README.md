@@ -72,12 +72,20 @@ pip install tushare
   - **新增**：每行包含 `备注`（英文名称），用于你后续校对/补全词典映射；并且 **备注永远是最后一列**
   - **固定列顺序**（跨数据源保持一致）：`科目 | 数值 | (空白列) | key | 备注`
   - **约束**：不再导出 `科目_CN` / `科目_EN` 两列（避免重复）
-- PDF：`--pdf` 下载，保存为 `output/{公司名}_{code6}/pdf/{code6}_{report_period}.pdf`
+- PDF：`--pdf` 下载后优先保存到 `output/{公司名}_{code6}/raw/pdf/{code6}_{report_period}.pdf`（保留历史缓存，不再重复删除/下载；旧版 `pdf/` 目录仍兼容读取）
+
+### 原始报表缓存与 PDF 复用
+
+- 所有抓取的数据源（tushare / akshare_ths / akshare）都会把原始宽表以 Pandas pickle 格式保存到 `output/{公司名}_{code6}/raw/{provider}/`。
+  - 下一次请求同一家公司的同一报告期时会优先直接从缓存里解析，不再访问远端 API；缺失/更新则会自动补齐并覆盖缓存文件。
+  - 原始缓存包含三张表（资产负债/利润/现金流）以及对应的 meta 信息，方便后续数据复核。
+- PDF 也迁移到原始目录：`output/.../raw/pdf/{code6}_{period}.pdf`，成功下载后不再删除。
+  - 程序会先检查该 PDF 是否存在、而不是每次都重新抓取；如文件缺失才会再次调用巨潮公告下载。
 
 ### 清理策略
 
-- 默认：每次执行会先清理“本次公司(code6)”的历史文件（`{code6}_*.xlsx` / `{code6}_*.pdf`），不影响其他公司目录。
-- 若需要增量写入（例如给图表程序补数据用）：加 `--no-clean`。
+- 默认：每次执行会先清理本次公司的 `reports/` 目录中的 `[{code6}_*.xlsx`, `~${code6}_*.xlsx`]`，但不会删除 `raw/` 缓存或 `raw/pdf/` 中的 PDF，与其他公司目录无关。
+- `--no-clean`：禁用报表清理，用于图表程序或补数场景；PDF/raw 缓存始终保留，不因该参数而被清空。
 
 ### 使用示例
 
@@ -151,12 +159,30 @@ output/
     reports/
       600519_merged_20241231.xlsx
       600519_merged_20240930.xlsx
-    pdf/
+    pdf/                       # 旧版兼容目录（若历史文件存在会继续识别）
       600519_20241231.pdf
       600519_20240930.pdf
     charts/
       *.png
       *.xlsx
+    raw/
+      akshare/
+        bs.pkl
+        is.pkl
+        cf.pkl
+      akshare_ths/
+        bs.pkl
+        is.pkl
+        cf.pkl
+      tushare/
+        bs.pkl
+        is.pkl
+        cf.pkl
+      pdf/
+        600519_20241231.pdf
+        600519_20241231.json
+        600519_20240930.pdf
+        600519_20240930.json
 ```
 
 
@@ -196,7 +222,7 @@ output/
 `--data-dir` 需要指向 **finreport_fetcher** 的输出根目录：
 
 - Excel：`output/{公司名}_{code6}/reports/{code6}_{statement}_{period}.xlsx`
-- PDF：`output/{公司名}_{code6}/pdf/{code6}_{period}.pdf`（PDF 与 Excel 不同层级；PDF 统一放入 `pdf/` 子目录）
+- PDF：优先读取/保存 `output/{公司名}_{code6}/raw/pdf/{code6}_{period}.pdf`；旧版 `output/{公司名}_{code6}/pdf/{code6}_{period}.pdf` 仍兼容读取。
 
 股价数据（由 `finprice fetch` 生成）默认约定位置（优先新路径，兼容旧路径）：
 

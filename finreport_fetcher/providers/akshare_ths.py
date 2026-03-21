@@ -6,6 +6,7 @@ from datetime import date
 import pandas as pd
 
 from ..providers.base import StatementBundle
+from ..raw_store import RawReportStore
 
 
 class AkshareThsProvider:
@@ -23,6 +24,12 @@ class AkshareThsProvider:
     """
 
     name = "akshare_ths"
+
+    _RAW_TABLES = {
+        "bs": "资产负债表",
+        "is": "利润表",
+        "cf": "现金流量表",
+    }
 
     def supports(self) -> bool:
         try:
@@ -187,6 +194,58 @@ class AkshareThsProvider:
         out = pd.DataFrame(items, columns=["科目", "数值", "__level", "__is_header"])
         return out, meta
 
+    def _load_raw_tables(self, raw_store: RawReportStore) -> dict[str, pd.DataFrame] | None:
+        tables: dict[str, pd.DataFrame] = {}
+        for key in self._RAW_TABLES:
+            df = raw_store.load_provider_table(self.name, key)
+            if df is None or df.empty:
+                return None
+            tables[key] = df
+        return tables
+
+    def _persist_raw_tables(self, raw_store: RawReportStore, code6: str, tables: dict[str, pd.DataFrame]) -> None:
+        for key, df in tables.items():
+            if df is None or df.empty:
+                continue
+            raw_store.save_provider_table(self.name, key, df)
+
+    def _build_bundle_from_raw(
+        self,
+        ts_code: str,
+        code6: str,
+        period_end: date,
+        statement_type: str,
+        tables: dict[str, pd.DataFrame],
+    ) -> StatementBundle | None:
+        try:
+            bs, meta_bs = self._row_to_items(tables["bs"], period_end=period_end, sheet_cn="资产负债表")
+            bs = self._postprocess_balance_sheet(bs)
+            inc, meta_inc = self._row_to_items(tables["is"], period_end=period_end, sheet_cn="利润表")
+            cf, meta_cf = self._row_to_items(tables["cf"], period_end=period_end, sheet_cn="现金流量表")
+        except Exception:
+            return None
+
+        bundle_meta = {
+            "ts_code": ts_code,
+            "period_end": period_end.strftime("%Y-%m-%d"),
+            "statement_type_requested": statement_type,
+            "note": "THS 数据源通常不区分合并/母公司口径，实际口径以来源为准",
+            "meta_balance": meta_bs,
+            "meta_income": meta_inc,
+            "meta_cashflow": meta_cf,
+        }
+
+        return StatementBundle(
+            period_end=period_end,
+            statement_type=statement_type,
+            provider=self.name,
+            balance_sheet=bs,
+            income_statement=inc,
+            cashflow_statement=cf,
+            meta=bundle_meta,
+            raw_data=tables,
+        )
+
     @staticmethod
     def _postprocess_balance_sheet(df: pd.DataFrame) -> pd.DataFrame:
         """Normalize THS balance sheet structure.
@@ -255,10 +314,29 @@ class AkshareThsProvider:
 
         return out
 
-    def get_bundle(self, ts_code: str, period_end: date, statement_type: str) -> StatementBundle:
+    def get_bundle(
+        self,
+        ts_code: str,
+        period_end: date,
+        statement_type: str,
+        raw_store: RawReportStore | None = None,
+    ) -> StatementBundle:
         import akshare as ak
 
         code6 = self._to_code6(ts_code)
+
+        if raw_store:
+            tables = self._load_raw_tables(raw_store)
+            if tables:
+                cached = self._build_bundle_from_raw(
+                    ts_code=ts_code,
+                    code6=code6,
+                    period_end=period_end,
+                    statement_type=statement_type,
+                    tables=tables,
+                )
+                if cached:
+                    return cached
 
         # 按报告期：通常为累计(YTD)口径，更适配我们后续的 TTM/单季差分转换
         bs_raw = ak.stock_financial_debt_ths(symbol=code6, indicator="按报告期")
@@ -281,7 +359,7 @@ class AkshareThsProvider:
             "meta_cashflow": meta_cf,
         }
 
-        return StatementBundle(
+        bundle = StatementBundle(
             period_end=period_end,
             statement_type=statement_type,
             provider=self.name,
@@ -289,4 +367,10 @@ class AkshareThsProvider:
             income_statement=inc,
             cashflow_statement=cf,
             meta=meta,
+            raw_data={"bs": bs_raw, "is": is_raw, "cf": cf_raw},
         )
+
+        if raw_store:
+            self._persist_raw_tables(raw_store, code6, {"bs": bs_raw, "is": is_raw, "cf": cf_raw})
+
+        return bundle

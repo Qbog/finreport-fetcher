@@ -6,6 +6,7 @@ from datetime import date
 import pandas as pd
 
 from ..providers.base import StatementBundle
+from ..raw_store import RawReportStore
 
 
 class TushareProvider:
@@ -20,6 +21,12 @@ class TushareProvider:
     """
 
     name = "tushare"
+
+    _RAW_TABLES = {
+        "bs": "balancesheet",
+        "is": "income",
+        "cf": "cashflow",
+    }
 
     def __init__(self, token: str | None = None):
         self.token = token or os.getenv("TUSHARE_TOKEN")
@@ -68,7 +75,109 @@ class TushareProvider:
         out["__is_header"] = False
         return out
 
-    def get_bundle(self, ts_code: str, period_end: date, statement_type: str) -> StatementBundle:
+    def _load_raw_tables(self, raw_store: RawReportStore) -> dict[str, pd.DataFrame] | None:
+        tables: dict[str, pd.DataFrame] = {}
+        for key in self._RAW_TABLES:
+            df = raw_store.load_provider_table(self.name, key)
+            if df is None or df.empty:
+                return None
+            tables[key] = df
+        return tables
+
+    def _find_cached_row(
+        self,
+        df: pd.DataFrame,
+        ts_code: str,
+        period_end: date,
+        statement_type: str,
+    ) -> pd.Series | None:
+        if df is None or df.empty:
+            return None
+        if "end_date" not in df.columns or "comp_type" not in df.columns:
+            return None
+
+        key = period_end.strftime("%Y%m%d")
+        comp_type = str(self._comp_type(statement_type))
+
+        df2 = df.copy()
+        df2["__end_norm"] = df2["end_date"].astype(str).str.replace(r"[^0-9]", "", regex=True)
+        df2["__comp_norm"] = df2["comp_type"].astype(str).str.replace(r"[^0-9]", "", regex=True)
+
+        mask = (
+            (df2["ts_code"].astype(str) == ts_code)
+            & (df2["__end_norm"] == key)
+            & (df2["__comp_norm"] == comp_type)
+        )
+        matched = df2[mask]
+        if matched.empty:
+            return None
+        return matched.iloc[0]
+
+    def _build_bundle_from_raw(
+        self,
+        ts_code: str,
+        period_end: date,
+        statement_type: str,
+        tables: dict[str, pd.DataFrame],
+    ) -> StatementBundle | None:
+        bs_row = self._find_cached_row(tables.get("bs"), ts_code, period_end, statement_type)
+        inc_row = self._find_cached_row(tables.get("is"), ts_code, period_end, statement_type)
+        cf_row = self._find_cached_row(tables.get("cf"), ts_code, period_end, statement_type)
+        if any(row is None for row in (bs_row, inc_row, cf_row)):
+            return None
+
+        bs_items = self._to_items(pd.DataFrame([bs_row]), period_end)
+        inc_items = self._to_items(pd.DataFrame([inc_row]), period_end)
+        cf_items = self._to_items(pd.DataFrame([cf_row]), period_end)
+
+        meta = {
+            "ts_code": ts_code,
+            "period_end": period_end.strftime("%Y-%m-%d"),
+            "comp_type": self._comp_type(statement_type),
+        }
+
+        return StatementBundle(
+            period_end=period_end,
+            statement_type=statement_type,
+            provider=self.name,
+            balance_sheet=bs_items,
+            income_statement=inc_items,
+            cashflow_statement=cf_items,
+            meta=meta,
+            raw_data={"bs": pd.DataFrame([bs_row]), "is": pd.DataFrame([inc_row]), "cf": pd.DataFrame([cf_row])},
+        )
+
+    def _persist_raw_tables(
+        self,
+        raw_store: RawReportStore,
+        bs_df: pd.DataFrame,
+        inc_df: pd.DataFrame,
+        cf_df: pd.DataFrame,
+    ) -> None:
+        subset = ["ts_code", "end_date", "comp_type"]
+        raw_store.update_provider_table(self.name, "bs", bs_df, subset=subset)
+        raw_store.update_provider_table(self.name, "is", inc_df, subset=subset)
+        raw_store.update_provider_table(self.name, "cf", cf_df, subset=subset)
+
+    def get_bundle(
+        self,
+        ts_code: str,
+        period_end: date,
+        statement_type: str,
+        raw_store: RawReportStore | None = None,
+    ) -> StatementBundle:
+        if raw_store:
+            tables = self._load_raw_tables(raw_store)
+            if tables:
+                cached = self._build_bundle_from_raw(
+                    ts_code=ts_code,
+                    period_end=period_end,
+                    statement_type=statement_type,
+                    tables=tables,
+                )
+                if cached:
+                    return cached
+
         pro = self._pro()
         end_date = self._period(period_end)
         comp_type = self._comp_type(statement_type)
@@ -81,9 +190,13 @@ class TushareProvider:
         if bs is None or inc is None or cf is None:
             raise RuntimeError("tushare 返回 None")
 
-        bs_items = self._to_items(pd.DataFrame(bs), period_end)
-        inc_items = self._to_items(pd.DataFrame(inc), period_end)
-        cf_items = self._to_items(pd.DataFrame(cf), period_end)
+        bs_df = pd.DataFrame(bs)
+        inc_df = pd.DataFrame(inc)
+        cf_df = pd.DataFrame(cf)
+
+        bs_items = self._to_items(bs_df, period_end)
+        inc_items = self._to_items(inc_df, period_end)
+        cf_items = self._to_items(cf_df, period_end)
 
         if bs_items.empty or inc_items.empty or cf_items.empty:
             raise RuntimeError("tushare 获取到的三大表存在空表")
@@ -94,7 +207,7 @@ class TushareProvider:
             "comp_type": comp_type,
         }
 
-        return StatementBundle(
+        bundle = StatementBundle(
             period_end=period_end,
             statement_type=statement_type,
             provider=self.name,
@@ -102,4 +215,10 @@ class TushareProvider:
             income_statement=inc_items,
             cashflow_statement=cf_items,
             meta=meta,
+            raw_data={"bs": bs_df, "is": inc_df, "cf": cf_df},
         )
+
+        if raw_store:
+            self._persist_raw_tables(raw_store, bs_df, inc_df, cf_df)
+
+        return bundle

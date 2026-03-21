@@ -16,6 +16,7 @@ class StatementBundle:
     income_statement: pd.DataFrame
     cashflow_statement: pd.DataFrame
     meta: dict
+    raw_data: dict[str, pd.DataFrame] | None = None
 
 
 class Provider(Protocol):
@@ -24,5 +25,11 @@ class Provider(Protocol):
     def supports(self) -> bool:
         ...
 
-    def get_bundle(self, ts_code: str, period_end: date, statement_type: str) -> StatementBundle:
+    def get_bundle(
+        self,
+        ts_code: str,
+        period_end: date,
+        statement_type: str,
+        raw_store: "RawReportStore" | None = None,
+    ) -> StatementBundle:
         ...

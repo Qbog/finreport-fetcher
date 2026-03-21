@@ -66,13 +66,21 @@ def expected_xlsx_path(data_dir: Path, code6: str, statement_type: str, period_e
 def expected_pdf_path(data_dir: Path, code6: str, period_end: date, *, name: str | None = None) -> Path:
     fname = f"{code6}_{period_end.strftime('%Y%m%d')}.pdf"
 
-    # legacy
+    # legacy: data_dir/pdf/
     p0 = data_dir / "pdf" / fname
     if p0.exists():
         return p0
 
-    # new layout: company_dir/pdf/*.pdf
-    return _company_root_dir(data_dir, code6, name=name) / "pdf" / fname
+    company_root = _company_root_dir(data_dir, code6, name=name)
+    company_pdf = company_root / "pdf" / fname
+    if company_pdf.exists():
+        return company_pdf
+
+    raw_pdf = company_root / "raw" / "pdf" / fname
+    if raw_pdf.exists():
+        return raw_pdf
+
+    return company_pdf
 
 
 def ensure_finreports(

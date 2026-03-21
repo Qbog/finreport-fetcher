@@ -28,6 +28,7 @@ scripts/regression_test.sh
 - **enrich/去重/结构修补**：防止“长度不一致”“结构标题插入错位”等回归
 - **Excel schema 固定**：列顺序、必需列是否存在（`key/备注/英文`），列宽是否合理
 - **provider 后处理**：例如 akshare_ths 的资产负债表结构注入逻辑
+- **原始缓存 / PDF 复用**：RawReportStore 的 pickle 合并去重、PDF 元数据读写、`expected_pdf_path()` 对 `raw/pdf/` 的优先解析
 
 ---
 

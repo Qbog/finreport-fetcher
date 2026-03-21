@@ -10,6 +10,12 @@
 
 ## 3.1 抓取财报（finreport_fetcher）
 
+**原始报表缓存与 PDF 复用**
+
+- `finreport_fetcher` 会把每个数据源（akshare、akshare_ths、tushare）的原始宽表保存到 `output/{公司名}_{code6}/raw/{provider}/`（bs.pkl/is.pkl/cf.pkl）。如缓存已包含匹配的报告期/口径，就直接从本地解析，无需再次访问网络。
+- PDF 也保留在 `output/{公司名}_{code6}/raw/pdf/{code6}_{period}.pdf`，成功下载后不再自动删除；程序启动时会先检查该路径，以复用历史下载。
+- `RawReportStore` 还会记住 PDF 的元信息（URL/标题/备注），方便复核和诊断，`finreport_charts` 亦会共享这份缓存用于补数。
+
 抓取单个报告期：
 
 ```bash

@@ -14,6 +14,7 @@ from rich.prompt import IntPrompt
 
 from .exporter.excel import export_bundle_to_excel
 from .pdf.cninfo import find_and_download_period_pdf
+from .raw_store import RawReportStore
 from .providers.registry import ProviderConfig, build_providers
 from .utils.dates import candidate_quarter_ends_before, parse_date, quarter_ends_between
 from .utils.paths import safe_dir_component
@@ -165,6 +166,7 @@ def _fetch_one_period(
     want_pdf: bool,
     out_dir: Path,
     tushare_token: str | None,
+    raw_store: RawReportStore | None,
 ) -> tuple[Path, str]:
     last_err: Exception | None = None
     bundle = None
@@ -174,7 +176,12 @@ def _fetch_one_period(
     for p in providers:
         pname = getattr(p, "name", p.__class__.__name__)
         try:
-            bundle = p.get_bundle(ts_code=ts_code, period_end=period_end, statement_type=statement_type)
+            bundle = p.get_bundle(
+                ts_code=ts_code,
+                period_end=period_end,
+                statement_type=statement_type,
+                raw_store=raw_store,
+            )
             used_provider_name = str(getattr(bundle, "provider", None) or pname)
             break
         except Exception as e:
@@ -192,25 +199,48 @@ def _fetch_one_period(
 
     used_provider_name = used_provider_name or str(getattr(bundle, "provider", None) or "unknown")
 
-    # PDF（不用日期文件夹，用文件名区分）
     pdf_url = None
-    pdf_path = None
     pdf_title = None
     pdf_note = None
+    pdf_local_path = None
     if want_pdf:
-        # PDF 单独放到公司目录下的 pdf/ 子目录（与 reports 同级）
-        pdf_root = out_dir.parent / "pdf"
-        pdf_root.mkdir(parents=True, exist_ok=True)
-        pdf_file = pdf_root / f"{code6}_{period_end.strftime('%Y%m%d')}.pdf"
-        pdf_res = find_and_download_period_pdf(code6=code6, period_end=period_end, out_path=pdf_file)
-        if pdf_res.ok:
-            pdf_url = pdf_res.url
-            pdf_path = pdf_res.local_path
-            pdf_title = pdf_res.title
+        if raw_store:
+            pdf_file = raw_store.pdf_path(code6, period_end)
+            pdf_meta = raw_store.load_pdf_metadata(code6, period_end)
         else:
-            pdf_note = pdf_res.note
-            pdf_url = pdf_res.url
-            pdf_title = pdf_res.title
+            pdf_root = out_dir.parent / "pdf"
+            pdf_root.mkdir(parents=True, exist_ok=True)
+            pdf_file = pdf_root / f"{code6}_{period_end.strftime('%Y%m%d')}.pdf"
+            pdf_meta = None
+
+        if pdf_file.exists():
+            pdf_local_path = str(pdf_file)
+            if pdf_meta:
+                pdf_url = pdf_meta.get("url")
+                pdf_title = pdf_meta.get("title")
+                pdf_note = pdf_meta.get("note")
+        else:
+            pdf_res = find_and_download_period_pdf(code6=code6, period_end=period_end, out_path=pdf_file)
+            if pdf_res.ok:
+                pdf_url = pdf_res.url
+                pdf_title = pdf_res.title
+            else:
+                pdf_note = pdf_res.note
+                pdf_url = pdf_res.url
+                pdf_title = pdf_res.title
+            if pdf_file.exists():
+                pdf_local_path = str(pdf_file)
+            if raw_store:
+                raw_store.save_pdf_metadata(
+                    code6,
+                    period_end,
+                    {
+                        "ok": pdf_res.ok,
+                        "url": pdf_res.url,
+                        "title": pdf_res.title,
+                        "note": pdf_res.note,
+                    },
+                )
 
     bs = bundle.balance_sheet
     inc = bundle.income_statement
@@ -228,7 +258,7 @@ def _fetch_one_period(
         "excel_schema_version": "1",
         "pdf_title": pdf_title,
         "pdf_url": pdf_url,
-        "pdf_local_path": pdf_path,
+        "pdf_local_path": pdf_local_path,
         "pdf_note": pdf_note,
     })
     if used_provider_name in {"akshare", "akshare_ths"}:
@@ -261,7 +291,7 @@ def _fetch_one_period(
             "statement_type": bundle.statement_type,
             "provider": bundle.provider,
             "pdf_url": pdf_url,
-            "pdf_path": pdf_path,
+            "pdf_path": pdf_local_path,
             "company_category": cat.category,
         },
     )
@@ -373,8 +403,10 @@ def fetch(
     def _fetch_for_symbol(rs: ResolvedSymbol) -> list[Path]:
         company_name = rs.name or rs.code6
         company_dirname = safe_dir_component(f"{company_name}_{rs.code6}")
-        out_reports_dir = out_root / company_dirname / "reports"
+        company_root = out_root / company_dirname
+        out_reports_dir = company_root / "reports"
         out_reports_dir.mkdir(parents=True, exist_ok=True)
+        raw_store = RawReportStore(company_root)
 
         if not no_clean:
             for p in out_reports_dir.glob(f"{rs.code6}_*.xlsx"):
@@ -387,14 +419,6 @@ def fetch(
                     p.unlink()
                 except Exception:
                     pass
-
-            pdf_dir = out_reports_dir.parent / "pdf"
-            if pdf_dir.exists():
-                for p in pdf_dir.glob(f"{rs.code6}_*.pdf"):
-                    try:
-                        p.unlink()
-                    except Exception:
-                        pass
 
         exported: list[Path] = []
 
@@ -414,6 +438,7 @@ def fetch(
                         want_pdf=pdf,
                         out_dir=out_reports_dir,
                         tushare_token=tushare_token,
+                        raw_store=raw_store,
                     )
                     exported.append(out_path)
                     log_info(f"已导出: {out_path}（provider={used_provider}）")
@@ -442,6 +467,7 @@ def fetch(
                         want_pdf=pdf,
                         out_dir=out_reports_dir,
                         tushare_token=tushare_token,
+                        raw_store=raw_store,
                     )
                     exported.append(out_path)
                     log_info(f"已导出: {out_path}（provider={used_provider}）")
