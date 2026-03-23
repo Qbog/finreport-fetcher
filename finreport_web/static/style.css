@@ -325,46 +325,44 @@ button.ghost {
   font-size: 13px;
 }
 
-.thumb-list {
+.axis-panels {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
   gap: 12px;
   margin-top: 16px;
 }
 
-.thumb {
-  background: rgba(255,255,255,0.75);
+.axis-panel {
+  background: rgba(255,255,255,0.72);
   border: 1px solid var(--line);
   border-radius: 20px;
-  padding: 12px;
-  cursor: pointer;
+  padding: 12px 14px;
 }
 
-.thumb.active {
-  border-color: rgba(0, 113, 227, 0.28);
-  box-shadow: inset 0 0 0 1px rgba(0, 113, 227, 0.2);
-}
-
-.thumb img {
-  width: 100%;
-  height: 128px;
-  object-fit: cover;
-  border-radius: 14px;
+.axis-panel strong {
   display: block;
-  background: #fff;
-}
-
-.thumb strong {
-  display: block;
-  margin-top: 10px;
+  margin-bottom: 10px;
   font-size: 13px;
+  color: var(--muted);
 }
 
-.thumb span {
-  display: block;
-  margin-top: 4px;
-  font-size: 12px;
+.axis-chip-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.axis-chip {
+  border: 1px solid var(--line);
+  background: rgba(15, 23, 42, 0.04);
   color: var(--muted);
+  border-radius: 999px;
+  padding: 8px 12px;
+}
+
+.axis-chip.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: rgba(0, 113, 227, 0.2);
 }
 
 .error-list {

@@ -17,6 +17,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 from finreport_charts.templates.config import Template, load_template_dir, template_lookup_names
 from finreport_charts.utils.files import safe_slug
 from finreport_fetcher.utils.company_categories import load_company_categories
+from finreport_fetcher.utils.dates import parse_date, quarter_ends_between
 from finreport_fetcher.utils.paths import safe_dir_component
 from finreport_fetcher.utils.symbols import ResolvedSymbol, fuzzy_match_name, load_a_share_name_map, parse_code
 
@@ -170,23 +171,51 @@ class AppContext:
             out.append(tpl)
         return out
 
-    def _peer_codes_from_category(self, category_key: str | None, self_code6: str) -> list[str]:
+    def _category_symbols(self, category_key: str | None) -> list[ResolvedSymbol]:
         if not category_key:
             return []
         cats = load_company_categories(self.category_config)
         cat = cats.get(category_key)
         if not cat:
             return []
-        out: list[str] = []
-        seen: set[str] = {self_code6}
+
+        df_map = None
+        try:
+            df_map = load_a_share_name_map()
+        except Exception:
+            df_map = None
+
+        out: list[ResolvedSymbol] = []
+        seen: set[str] = set()
         for it in cat.items:
             if it.code6 in seen:
                 continue
             seen.add(it.code6)
-            out.append(it.code6)
+            rs0 = parse_code(it.code6)
+            if not rs0:
+                continue
+            name0 = it.name
+            if (not name0) and df_map is not None:
+                try:
+                    m = df_map["code"].astype(str).str.zfill(6) == rs0.code6
+                    if m.any():
+                        name0 = str(df_map[m].iloc[0]["name"])
+                except Exception:
+                    pass
+            out.append(ResolvedSymbol(code6=rs0.code6, ts_code=rs0.ts_code, market=rs0.market, name=name0))
         return out
 
-    def _run_chart_template(
+    def _peer_codes_from_category(self, category_key: str | None, self_code6: str) -> list[str]:
+        out: list[str] = []
+        seen: set[str] = {self_code6}
+        for rs in self._category_symbols(category_key):
+            if rs.code6 in seen:
+                continue
+            seen.add(rs.code6)
+            out.append(rs.code6)
+        return out
+
+    def _run_chart_cell(
         self,
         rs: ResolvedSymbol,
         tpl: Template,
@@ -195,9 +224,11 @@ class AppContext:
         end: str,
         out_dir: Path,
         category_key: str | None,
-    ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+        extra_args: list[str] | None = None,
+    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
         out_dir.mkdir(parents=True, exist_ok=True)
         prefix = safe_slug(str(getattr(tpl, "alias", None) or tpl.name))
+        before_pngs = {p.resolve() for p in out_dir.glob(f"{prefix}_{rs.code6}_*.png")}
 
         args = [
             sys.executable,
@@ -219,6 +250,8 @@ class AppContext:
             "--out",
             str(out_dir),
         ]
+        if extra_args:
+            args.extend(extra_args)
 
         mode = str(getattr(tpl, "mode", None) or "").strip().lower().replace("compare", "structure")
         if mode == "peer":
@@ -238,33 +271,47 @@ class AppContext:
             text=True,
             check=False,
         )
+        label = str(getattr(tpl, "alias", None) or tpl.name)
         if proc.returncode != 0:
-            return [], {
+            return None, {
                 "template": tpl.name,
-                "label": str(getattr(tpl, "alias", None) or tpl.name),
+                "label": label,
                 "mode": mode,
+                "company": rs.name or rs.code6,
                 "returncode": proc.returncode,
                 "stderr": (proc.stderr or "").strip()[-2000:],
                 "stdout": (proc.stdout or "").strip()[-2000:],
             }
 
-        pngs = sorted(out_dir.glob(f"{prefix}_{rs.code6}_*.png"))
-        items: list[dict[str, Any]] = []
-        label = str(getattr(tpl, "alias", None) or tpl.name)
-        for p in pngs:
-            xlsx = p.with_suffix(".xlsx")
-            items.append(
-                {
-                    "title": label,
-                    "template": tpl.name,
-                    "label": label,
-                    "image": f"/files/{p.resolve().relative_to(self.repo_root.resolve()).as_posix()}",
-                    "xlsx": f"/files/{xlsx.resolve().relative_to(self.repo_root.resolve()).as_posix()}" if xlsx.exists() else None,
-                    "filename": p.name,
-                    "mode": mode,
-                }
-            )
-        return items, None
+        after_pngs = sorted({p.resolve() for p in out_dir.glob(f"{prefix}_{rs.code6}_*.png")} - before_pngs)
+        target_png = after_pngs[-1] if after_pngs else None
+        if target_png is None:
+            all_pngs = sorted(out_dir.glob(f"{prefix}_{rs.code6}_*.png"))
+            target_png = all_pngs[-1].resolve() if all_pngs else None
+        if target_png is None:
+            return None, {
+                "template": tpl.name,
+                "label": label,
+                "mode": mode,
+                "company": rs.name or rs.code6,
+                "returncode": 0,
+                "stderr": "模板执行成功，但未生成图片文件。",
+                "stdout": (proc.stdout or "").strip()[-1000:],
+            }
+
+        xlsx = target_png.with_suffix(".xlsx")
+        item = {
+            "title": label,
+            "template": tpl.name,
+            "label": label,
+            "company": rs.name or rs.code6,
+            "code6": rs.code6,
+            "image": f"/files/{target_png.relative_to(self.repo_root.resolve()).as_posix()}",
+            "xlsx": f"/files/{xlsx.relative_to(self.repo_root.resolve()).as_posix()}" if xlsx.exists() else None,
+            "filename": target_png.name,
+            "mode": mode,
+        }
+        return item, None
 
     def generate_reports(self, payload: dict[str, Any]) -> dict[str, Any]:
         company = str(payload.get("company") or "").strip()
@@ -278,6 +325,16 @@ class AppContext:
         if not start or not end:
             raise ValueError("开始/结束日期不能为空")
 
+        start_d = parse_date(start)
+        end_d = parse_date(end)
+        if start_d > end_d:
+            raise ValueError("开始日期不能晚于结束日期")
+
+        periods = quarter_ends_between(start_d, end_d)
+        if not periods:
+            raise ValueError("所选时间范围内没有标准报告期末日（03-31/06-30/09-30/12-31）")
+        period_labels = [pe.strftime("%Y-%m-%d") for pe in periods]
+
         rs = self.resolve_symbol_non_interactive(company)
         templates = self._select_templates(selected_templates)
         if not templates:
@@ -288,41 +345,92 @@ class AppContext:
         web_out_dir = company_root / "charts" / "web" / request_id
         web_out_dir.mkdir(parents=True, exist_ok=True)
 
-        sections: dict[str, list[dict[str, Any]]] = {"trend": [], "structure": [], "peer": []}
+        trend_templates = [tpl for tpl in templates if (str(getattr(tpl, "mode", None) or "").strip().lower().replace("compare", "structure") == "trend")]
+        structure_templates = [tpl for tpl in templates if (str(getattr(tpl, "mode", None) or "").strip().lower().replace("compare", "structure") == "structure")]
+        peer_templates = [tpl for tpl in templates if (str(getattr(tpl, "mode", None) or "").strip().lower().replace("compare", "structure") == "peer")]
+
+        trend_companies = [rs]
+        if category_key:
+            merged: list[ResolvedSymbol] = [rs]
+            seen_codes = {rs.code6}
+            for it in self._category_symbols(category_key):
+                if it.code6 in seen_codes:
+                    continue
+                seen_codes.add(it.code6)
+                merged.append(it)
+            trend_companies = merged
+
         errors: list[dict[str, Any]] = []
 
-        for tpl in templates:
-            items, err = self._run_chart_template(
-                rs,
-                tpl,
-                start=start,
-                end=end,
-                out_dir=web_out_dir,
-                category_key=category_key,
-            )
-            mode = str(getattr(tpl, "mode", None) or "").strip().lower().replace("compare", "structure")
-            if err:
-                errors.append(err)
-                continue
-            if not items:
-                errors.append(
-                    {
-                        "template": tpl.name,
-                        "label": str(getattr(tpl, "alias", None) or tpl.name),
-                        "mode": mode,
-                        "stderr": "模板执行成功，但未生成图片文件。",
-                        "stdout": "",
-                        "returncode": 0,
-                    }
+        trend_matrix: dict[str, dict[str, dict[str, dict[str, Any]]]] = {}
+        for tpl in trend_templates:
+            trend_matrix[tpl.name] = {}
+            for comp in trend_companies:
+                trend_matrix[tpl.name][comp.code6] = {}
+                base_dir = web_out_dir / "trend" / tpl.name / comp.code6
+                for pe in periods:
+                    pe_s = pe.strftime("%Y-%m-%d")
+                    item, err = self._run_chart_cell(
+                        comp,
+                        tpl,
+                        start=start,
+                        end=pe_s,
+                        out_dir=base_dir,
+                        category_key=None,
+                    )
+                    if err:
+                        err["time"] = pe_s
+                        errors.append(err)
+                        continue
+                    if item is not None:
+                        item["time"] = pe_s
+                        trend_matrix[tpl.name][comp.code6][pe_s] = item
+
+        structure_matrix: dict[str, dict[str, dict[str, Any]]] = {}
+        for tpl in structure_templates:
+            structure_matrix[tpl.name] = {}
+            base_dir = web_out_dir / "structure" / tpl.name
+            for pe in periods:
+                pe_s = pe.strftime("%Y-%m-%d")
+                item, err = self._run_chart_cell(
+                    rs,
+                    tpl,
+                    start=start,
+                    end=end,
+                    out_dir=base_dir,
+                    category_key=None,
+                    extra_args=["--as-of", pe_s],
                 )
-                continue
-            sections.setdefault(mode, []).append(
-                {
-                    "template": tpl.name,
-                    "label": str(getattr(tpl, "alias", None) or tpl.name),
-                    "items": items,
-                }
-            )
+                if err:
+                    err["time"] = pe_s
+                    errors.append(err)
+                    continue
+                if item is not None:
+                    item["time"] = pe_s
+                    structure_matrix[tpl.name][pe_s] = item
+
+        peer_matrix: dict[str, dict[str, dict[str, Any]]] = {}
+        for tpl in peer_templates:
+            peer_matrix[tpl.name] = {}
+            base_dir = web_out_dir / "peer" / tpl.name
+            for pe in periods:
+                pe_s = pe.strftime("%Y-%m-%d")
+                item, err = self._run_chart_cell(
+                    rs,
+                    tpl,
+                    start=start,
+                    end=end,
+                    out_dir=base_dir,
+                    category_key=category_key,
+                    extra_args=["--as-of", pe_s],
+                )
+                if err:
+                    err["time"] = pe_s
+                    errors.append(err)
+                    continue
+                if item is not None:
+                    item["time"] = pe_s
+                    peer_matrix[tpl.name][pe_s] = item
 
         return {
             "ok": True,
@@ -331,7 +439,24 @@ class AppContext:
             "end": end,
             "category": category_key,
             "reportDir": f"/files/{web_out_dir.resolve().relative_to(self.repo_root.resolve()).as_posix()}",
-            "sections": sections,
+            "sections": {
+                "trend": {
+                    "templates": [{"key": tpl.name, "label": str(getattr(tpl, "alias", None) or tpl.name)} for tpl in trend_templates],
+                    "companies": [{"code6": comp.code6, "name": comp.name or comp.code6} for comp in trend_companies],
+                    "times": period_labels,
+                    "matrix": trend_matrix,
+                },
+                "structure": {
+                    "templates": [{"key": tpl.name, "label": str(getattr(tpl, "alias", None) or tpl.name)} for tpl in structure_templates],
+                    "times": period_labels,
+                    "matrix": structure_matrix,
+                },
+                "peer": {
+                    "templates": [{"key": tpl.name, "label": str(getattr(tpl, "alias", None) or tpl.name)} for tpl in peer_templates],
+                    "times": period_labels,
+                    "matrix": peer_matrix,
+                },
+            },
             "errors": errors,
         }
 

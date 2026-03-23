@@ -3,7 +3,13 @@ const state = {
   report: null,
   sectionOrder: ["trend", "structure", "peer"],
   activeSectionIndex: 0,
-  activeItemIndex: { trend: 0, structure: 0, peer: 0 },
+  trendTemplateIndex: 0,
+  trendCompanyIndex: 0,
+  trendTimeIndex: 0,
+  structureTemplateIndex: 0,
+  structureTimeIndex: 0,
+  peerTemplateIndex: 0,
+  peerTimeIndex: 0,
 };
 
 const sectionLabelMap = {
@@ -18,7 +24,7 @@ const templateGroups = document.getElementById("templateGroups");
 const configEditor = document.getElementById("configEditor");
 const sectionTabs = document.getElementById("sectionTabs");
 const mainStage = document.getElementById("mainStage");
-const thumbList = document.getElementById("thumbList");
+const axisPanels = document.getElementById("axisPanels");
 const viewerHeading = document.getElementById("viewerHeading");
 const viewerSubheading = document.getElementById("viewerSubheading");
 const captionTitle = document.getElementById("captionTitle");
@@ -108,58 +114,158 @@ function getSelectedTemplates() {
   return [...document.querySelectorAll(".tpl-check:checked")].map(el => el.value);
 }
 
-function getSectionBundles(mode) {
-  return state.report?.sections?.[mode] || [];
-}
-
-function getSectionItems(mode) {
-  return getSectionBundles(mode).flatMap(bundle => bundle.items || []);
-}
-
-function getFirstNonEmptySectionIndex() {
-  for (let i = 0; i < state.sectionOrder.length; i += 1) {
-    if (getSectionItems(state.sectionOrder[i]).length > 0) return i;
-  }
-  return 0;
-}
-
-function clampActiveIndex(mode) {
-  const items = getSectionItems(mode);
-  if (!items.length) {
-    state.activeItemIndex[mode] = 0;
-    return;
-  }
-  if (state.activeItemIndex[mode] >= items.length) state.activeItemIndex[mode] = items.length - 1;
-  if (state.activeItemIndex[mode] < 0) state.activeItemIndex[mode] = 0;
-}
-
 function activeMode() {
   return state.sectionOrder[state.activeSectionIndex] || "trend";
 }
 
-function activeItem() {
+function getSectionData(mode) {
+  return state.report?.sections?.[mode] || {};
+}
+
+function getTrendItem() {
+  const data = getSectionData("trend");
+  const templates = data.templates || [];
+  const companies = data.companies || [];
+  const times = data.times || [];
+  if (!templates.length || !companies.length || !times.length) return null;
+
+  state.trendTemplateIndex = Math.min(Math.max(state.trendTemplateIndex, 0), templates.length - 1);
+  state.trendCompanyIndex = Math.min(Math.max(state.trendCompanyIndex, 0), companies.length - 1);
+  state.trendTimeIndex = Math.min(Math.max(state.trendTimeIndex, 0), times.length - 1);
+
+  const tpl = templates[state.trendTemplateIndex];
+  const comp = companies[state.trendCompanyIndex];
+  const time = times[state.trendTimeIndex];
+  const item = data.matrix?.[tpl.key]?.[comp.code6]?.[time] || null;
+  return { item, tpl, comp, time, templates, companies, times };
+}
+
+function getStructureItem() {
+  const data = getSectionData("structure");
+  const templates = data.templates || [];
+  const times = data.times || [];
+  if (!templates.length || !times.length) return null;
+
+  state.structureTemplateIndex = Math.min(Math.max(state.structureTemplateIndex, 0), templates.length - 1);
+  state.structureTimeIndex = Math.min(Math.max(state.structureTimeIndex, 0), times.length - 1);
+
+  const tpl = templates[state.structureTemplateIndex];
+  const time = times[state.structureTimeIndex];
+  const item = data.matrix?.[tpl.key]?.[time] || null;
+  return { item, tpl, time, templates, times };
+}
+
+function getPeerItem() {
+  const data = getSectionData("peer");
+  const templates = data.templates || [];
+  const times = data.times || [];
+  if (!templates.length || !times.length) return null;
+
+  state.peerTemplateIndex = Math.min(Math.max(state.peerTemplateIndex, 0), templates.length - 1);
+  state.peerTimeIndex = Math.min(Math.max(state.peerTimeIndex, 0), times.length - 1);
+
+  const tpl = templates[state.peerTemplateIndex];
+  const time = times[state.peerTimeIndex];
+  const item = data.matrix?.[tpl.key]?.[time] || null;
+  return { item, tpl, time, templates, times };
+}
+
+function getCurrentView() {
   const mode = activeMode();
-  clampActiveIndex(mode);
-  const items = getSectionItems(mode);
-  return items[state.activeItemIndex[mode]] || null;
+  if (mode === "trend") return getTrendItem();
+  if (mode === "structure") return getStructureItem();
+  return getPeerItem();
+}
+
+function firstNonEmptySectionIndex() {
+  for (let i = 0; i < state.sectionOrder.length; i += 1) {
+    const mode = state.sectionOrder[i];
+    const data = getSectionData(mode);
+    if ((data.templates || []).length) return i;
+  }
+  return 0;
 }
 
 function renderSectionTabs() {
   sectionTabs.innerHTML = "";
   for (let i = 0; i < state.sectionOrder.length; i += 1) {
     const mode = state.sectionOrder[i];
-    const items = getSectionItems(mode);
+    const count = (getSectionData(mode).templates || []).length;
     const button = document.createElement("button");
     button.type = "button";
     button.className = `section-tab ${i === state.activeSectionIndex ? "active" : ""}`;
-    button.textContent = `${sectionLabelMap[mode]} · ${items.length}`;
-    button.disabled = items.length === 0;
+    button.textContent = `${sectionLabelMap[mode]} · ${count}`;
+    button.disabled = count === 0;
     button.addEventListener("click", () => {
       state.activeSectionIndex = i;
       renderViewer();
     });
     sectionTabs.appendChild(button);
   }
+}
+
+function buildAxisPanel(title, items, activeIndex, onSelect, formatter) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "axis-panel";
+  const strong = document.createElement("strong");
+  strong.textContent = title;
+  wrapper.appendChild(strong);
+
+  const chips = document.createElement("div");
+  chips.className = "axis-chip-wrap";
+  items.forEach((item, idx) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = `axis-chip ${idx === activeIndex ? "active" : ""}`;
+    btn.textContent = formatter(item);
+    btn.addEventListener("click", () => onSelect(idx));
+    chips.appendChild(btn);
+  });
+  wrapper.appendChild(chips);
+  return wrapper;
+}
+
+function renderAxisPanels(view) {
+  axisPanels.innerHTML = "";
+  if (!view) return;
+
+  const mode = activeMode();
+  if (mode === "trend") {
+    axisPanels.appendChild(buildAxisPanel("趋势科目（点击切换）", view.templates, state.trendTemplateIndex, (idx) => {
+      state.trendTemplateIndex = idx;
+      renderViewer();
+    }, (item) => item.label));
+    axisPanels.appendChild(buildAxisPanel("公司（↑ ↓）", view.companies, state.trendCompanyIndex, (idx) => {
+      state.trendCompanyIndex = idx;
+      renderViewer();
+    }, (item) => item.name));
+    axisPanels.appendChild(buildAxisPanel("时间（← →）", view.times, state.trendTimeIndex, (idx) => {
+      state.trendTimeIndex = idx;
+      renderViewer();
+    }, (item) => item));
+    return;
+  }
+
+  if (mode === "structure") {
+    axisPanels.appendChild(buildAxisPanel("分析科目（↑ ↓）", view.templates, state.structureTemplateIndex, (idx) => {
+      state.structureTemplateIndex = idx;
+      renderViewer();
+    }, (item) => item.label));
+    axisPanels.appendChild(buildAxisPanel("时间（← →）", view.times, state.structureTimeIndex, (idx) => {
+      state.structureTimeIndex = idx;
+      renderViewer();
+    }, (item) => item));
+    return;
+  }
+
+  axisPanels.appendChild(buildAxisPanel("同业科目（← →）", view.templates, state.peerTemplateIndex, (idx) => {
+    state.peerTemplateIndex = idx;
+    renderViewer();
+  }, (item) => item.label));
+  axisPanels.appendChild(buildAxisPanel("时间（↑ ↓）", view.times, state.peerTimeIndex, (idx) => {
+    state.peerTimeIndex = idx;
+    renderViewer();
+  }, (item) => item));
 }
 
 function renderErrors() {
@@ -173,7 +279,7 @@ function renderErrors() {
   errorBox.style.display = "block";
   errorBox.innerHTML = `<div class="section-title"><h3>生成提示 / 错误</h3></div>` + errors.map(err => `
     <div class="error-card">
-      <strong>${escapeHtml(err.label || err.template || "模板")}</strong>
+      <strong>${escapeHtml(err.company || "")}${err.company ? " · " : ""}${escapeHtml(err.label || err.template || "模板")}${err.time ? " · " + escapeHtml(err.time) : ""}</strong>
       <pre>${escapeHtml(err.stderr || err.stdout || "执行失败")}</pre>
     </div>
   `).join("");
@@ -187,7 +293,7 @@ function renderViewer() {
     viewerHeading.textContent = "图表浏览区";
     viewerSubheading.textContent = "生成后会按趋势分析 / 结构分析 / 同业分析分类展示。";
     mainStage.innerHTML = '<div class="empty">先在左侧设置公司和时间范围，然后点击“生成全部图表”。</div>';
-    thumbList.innerHTML = "";
+    axisPanels.innerHTML = "";
     captionTitle.textContent = "暂无图表";
     captionMeta.textContent = "生成后可在此查看图片与下载 Excel。";
     downloadXlsxLink.style.display = "none";
@@ -195,56 +301,45 @@ function renderViewer() {
     return;
   }
 
-  const mode = activeMode();
-  const items = getSectionItems(mode);
-  if (!items.length) {
-    state.activeSectionIndex = getFirstNonEmptySectionIndex();
+  if (!(getSectionData(activeMode()).templates || []).length) {
+    state.activeSectionIndex = firstNonEmptySectionIndex();
   }
-  const currentMode = activeMode();
-  const currentItems = getSectionItems(currentMode);
-  clampActiveIndex(currentMode);
-  const currentItem = activeItem();
 
-  viewerHeading.textContent = `${state.report.company.name} · ${sectionLabelMap[currentMode]}`;
+  const mode = activeMode();
+  const view = getCurrentView();
+  renderAxisPanels(view);
+
+  viewerHeading.textContent = `${state.report.company.name} · ${sectionLabelMap[mode]}`;
   viewerSubheading.textContent = `${state.report.start} → ${state.report.end}` + (state.report.category ? ` · 分类：${state.report.category}` : "");
 
-  if (!currentItem) {
-    mainStage.innerHTML = '<div class="empty">这个分析分类暂时没有生成出图表。</div>';
-    thumbList.innerHTML = "";
-    captionTitle.textContent = "暂无图表";
-    captionMeta.textContent = "请选择其它分析分类，或检查模板配置。";
+  if (!view || !view.item) {
+    mainStage.innerHTML = '<div class="empty">当前位置暂无图表，可以换一个时间、公司或科目继续看。</div>';
+    captionTitle.textContent = "当前位置暂无图表";
+    captionMeta.textContent = "你可以点击下方维度按钮，或使用方向键继续切换。";
     downloadXlsxLink.style.display = "none";
     openImageLink.style.display = "none";
     return;
   }
 
-  mainStage.innerHTML = `<img src="${currentItem.image}" alt="${escapeHtml(currentItem.title)}">`;
-  captionTitle.textContent = currentItem.title || currentItem.label || currentItem.template || "图表";
-  captionMeta.textContent = `${sectionLabelMap[currentMode]} · ${state.activeItemIndex[currentMode] + 1} / ${currentItems.length} · ${currentItem.filename}`;
+  mainStage.innerHTML = `<img src="${view.item.image}" alt="${escapeHtml(view.item.title)}">`;
+  captionTitle.textContent = view.item.title || view.item.label || view.item.template || "图表";
 
-  openImageLink.href = currentItem.image;
+  if (mode === "trend") {
+    captionMeta.textContent = `公司：${view.comp.name} · 截止：${view.time} · 模板：${view.tpl.label}`;
+  } else if (mode === "structure") {
+    captionMeta.textContent = `科目：${view.tpl.label} · 期末：${view.time}`;
+  } else {
+    captionMeta.textContent = `科目：${view.tpl.label} · 期末：${view.time}`;
+  }
+
+  openImageLink.href = view.item.image;
   openImageLink.style.display = "inline-flex";
-  if (currentItem.xlsx) {
-    downloadXlsxLink.href = currentItem.xlsx;
+  if (view.item.xlsx) {
+    downloadXlsxLink.href = view.item.xlsx;
     downloadXlsxLink.style.display = "inline-flex";
   } else {
     downloadXlsxLink.style.display = "none";
   }
-
-  thumbList.innerHTML = currentItems.map((item, idx) => `
-    <div class="thumb ${idx === state.activeItemIndex[currentMode] ? "active" : ""}" data-index="${idx}">
-      <img src="${item.image}" alt="${escapeHtml(item.title)}">
-      <strong>${escapeHtml(item.title)}</strong>
-      <span>${escapeHtml(item.filename)}</span>
-    </div>
-  `).join("");
-
-  thumbList.querySelectorAll(".thumb").forEach(el => {
-    el.addEventListener("click", () => {
-      state.activeItemIndex[currentMode] = Number(el.dataset.index || 0);
-      renderViewer();
-    });
-  });
 }
 
 function moveSection(delta) {
@@ -252,7 +347,7 @@ function moveSection(delta) {
   let idx = state.activeSectionIndex;
   for (let step = 0; step < state.sectionOrder.length; step += 1) {
     idx = (idx + delta + state.sectionOrder.length) % state.sectionOrder.length;
-    if (getSectionItems(state.sectionOrder[idx]).length > 0) {
+    if ((getSectionData(state.sectionOrder[idx]).templates || []).length) {
       state.activeSectionIndex = idx;
       renderViewer();
       return;
@@ -260,12 +355,27 @@ function moveSection(delta) {
   }
 }
 
-function moveItem(delta) {
-  if (!state.report) return;
+function moveInCurrentSection(horizontalDelta, verticalDelta) {
   const mode = activeMode();
-  const items = getSectionItems(mode);
-  if (!items.length) return;
-  state.activeItemIndex[mode] = (state.activeItemIndex[mode] + delta + items.length) % items.length;
+  if (mode === "trend") {
+    const data = getSectionData("trend");
+    const timeCount = (data.times || []).length;
+    const companyCount = (data.companies || []).length;
+    if (timeCount && horizontalDelta) state.trendTimeIndex = (state.trendTimeIndex + horizontalDelta + timeCount) % timeCount;
+    if (companyCount && verticalDelta) state.trendCompanyIndex = (state.trendCompanyIndex + verticalDelta + companyCount) % companyCount;
+  } else if (mode === "structure") {
+    const data = getSectionData("structure");
+    const timeCount = (data.times || []).length;
+    const tplCount = (data.templates || []).length;
+    if (timeCount && horizontalDelta) state.structureTimeIndex = (state.structureTimeIndex + horizontalDelta + timeCount) % timeCount;
+    if (tplCount && verticalDelta) state.structureTemplateIndex = (state.structureTemplateIndex + verticalDelta + tplCount) % tplCount;
+  } else {
+    const data = getSectionData("peer");
+    const timeCount = (data.times || []).length;
+    const tplCount = (data.templates || []).length;
+    if (tplCount && horizontalDelta) state.peerTemplateIndex = (state.peerTemplateIndex + horizontalDelta + tplCount) % tplCount;
+    if (timeCount && verticalDelta) state.peerTimeIndex = (state.peerTimeIndex + verticalDelta + timeCount) % timeCount;
+  }
   renderViewer();
 }
 
@@ -319,8 +429,14 @@ async function generateReports() {
       body: JSON.stringify({ company, start, end, category, templates }),
     });
     state.report = data;
-    state.activeSectionIndex = getFirstNonEmptySectionIndex();
-    state.activeItemIndex = { trend: 0, structure: 0, peer: 0 };
+    state.activeSectionIndex = firstNonEmptySectionIndex();
+    state.trendTemplateIndex = 0;
+    state.trendCompanyIndex = 0;
+    state.trendTimeIndex = 0;
+    state.structureTemplateIndex = 0;
+    state.structureTimeIndex = 0;
+    state.peerTemplateIndex = 0;
+    state.peerTimeIndex = 0;
     setStatus(`生成完成：${data.company.name}，输出目录 ${data.reportDir}`);
     renderViewer();
   } catch (error) {
@@ -348,14 +464,20 @@ function bindEvents() {
     if (["INPUT", "TEXTAREA", "SELECT"].includes(tag)) return;
     if (event.key === "ArrowLeft") {
       event.preventDefault();
-      moveItem(-1);
+      moveInCurrentSection(-1, 0);
     } else if (event.key === "ArrowRight") {
       event.preventDefault();
-      moveItem(1);
+      moveInCurrentSection(1, 0);
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
-      moveSection(-1);
+      moveInCurrentSection(0, -1);
     } else if (event.key === "ArrowDown") {
+      event.preventDefault();
+      moveInCurrentSection(0, 1);
+    } else if (event.key === "PageUp") {
+      event.preventDefault();
+      moveSection(-1);
+    } else if (event.key === "PageDown") {
       event.preventDefault();
       moveSection(1);
     }

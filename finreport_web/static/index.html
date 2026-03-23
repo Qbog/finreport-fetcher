@@ -13,7 +13,7 @@
         <h1>财报分析台</h1>
         <p>按 Apple 风格做的简约报表界面：先选公司、时间范围、分类，再一键生成趋势分析、结构分析、同业分析三类图表。图表区域支持方向键浏览。</p>
       </div>
-      <div class="meta-badge">← → 切图　↑ ↓ 切分析类目</div>
+      <div class="meta-badge">按当前分析模式使用 ← → ↑ ↓ 切换；点顶部标签切换三大分析类目</div>
     </header>
 
     <div class="layout">
@@ -75,7 +75,7 @@
       <main class="content">
         <section class="panel toolbar">
           <div id="statusText" class="status">等待生成图表。</div>
-          <div class="hint">键盘：<kbd>←</kbd> <kbd>→</kbd> 切换图片，<kbd>↑</kbd> <kbd>↓</kbd> 切换分析分类。</div>
+          <div class="hint">方向键按分析类型变化：趋势=左右时间/上下公司；结构=左右时间/上下科目；同业=左右科目/上下时间。</div>
         </section>
 
         <section class="panel viewer">
@@ -102,7 +102,7 @@
             </div>
           </div>
 
-          <div id="thumbList" class="thumb-list"></div>
+          <div id="axisPanels" class="axis-panels"></div>
         </section>
 
         <section id="errorBox" class="panel error-list" style="display:none;"></section>
