@@ -16,9 +16,8 @@
   - 同业分析
   - 合并报表（财务数据 + 股价）
 - 支持：
-  - 创建公司类别
+  - 创建公司类别（前台操作后自动写回 `config/company_categories.toml`）
   - 模板创建
-  - 直接保存 `config/company_categories.toml`
 
 ---
 
@@ -28,13 +27,13 @@
 
 ```bash
 cd /mnt/hgfs/share_with_vm/a_share_finreport_fetcher
-fincompany fetch --out output
+python3 -m fincompany_fetcher fetch --out output
 ```
 
 如果要在 Web 中看到全量财报指标汇总，也可以补抓：
 
 ```bash
-finmetrics fetch --out output
+python3 -m finmetrics_fetcher fetch --out output
 ```
 
 同时，Web 分析仍然依赖 `output/{公司名}_{code6}/reports/*.xlsx` 和 `output/{公司名}_{code6}/price/{code6}.csv`。
@@ -87,7 +86,6 @@ http://127.0.0.1:8787
 
 - **创建公司类别**：从全局公司总表里挑选公司，写回 `config/company_categories.toml`
 - **模板创建**：快速生成一个 `templates/{name}.toml`
-- **保存 TOML**：直接保存分类配置文本
 
 ### 右侧：报表浏览区
 

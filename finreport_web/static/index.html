@@ -60,14 +60,10 @@
           <h3>配置辅助</h3>
           <div class="actions">
             <button id="createCategoryBtn" class="secondary" type="button">创建公司类别</button>
-            <button id="saveConfigBtn" class="ghost" type="button">保存 TOML</button>
           </div>
         </div>
-        <div class="field">
-          <label for="configEditor">config/company_categories.toml</label>
-          <textarea id="configEditor" spellcheck="false"></textarea>
-        </div>
-        <p class="hint">启动时会优先读取 <code>output/_global/company_basics/company_basics.csv</code> 作为公司总表；如果还没有，先运行 <code>fincompany fetch --out output</code>。</p>
+        <p class="hint">公司类别只在前台创建，保存后会自动写回 <code>config/company_categories.toml</code>，不再需要手工编辑 TOML。</p>
+        <p class="hint">启动时会优先读取 <code>output/_global/company_basics/company_basics.csv</code> 作为公司总表；如果还没有，先运行 <code>python3 -m fincompany_fetcher fetch --out output</code>。</p>
         <p class="hint" id="datasetHint"></p>
       </aside>
 

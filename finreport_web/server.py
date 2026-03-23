@@ -21,7 +21,8 @@ import matplotlib.pyplot as plt
 from finreport_charts.data.finreport_store import expected_xlsx_path, load_price_csv, read_statement_df
 from finreport_charts.templates.config import BarBlock, Template, load_template_dir, template_lookup_names
 from finreport_charts.utils.expr import ExprError, eval_expr, tokenize
-from finreport_fetcher.global_datasets import load_company_basics_csv, load_financial_metrics_csv
+from fincompany_fetcher.dataset import load_company_basics_csv
+from finmetrics_fetcher.dataset import load_financial_metrics_csv
 from finreport_fetcher.utils.company_categories import CompanyCategory, CompanyCategoryItem, load_company_categories
 from finreport_fetcher.utils.dates import parse_date, quarter_ends_between
 from finreport_fetcher.utils.paths import safe_dir_component

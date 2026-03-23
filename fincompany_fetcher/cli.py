@@ -5,7 +5,7 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
-from .global_datasets import fetch_company_basics_dataset
+from finreport_fetcher.global_datasets import fetch_company_basics_dataset
 
 app = typer.Typer(add_completion=False)
 console = Console()
@@ -13,7 +13,7 @@ console = Console()
 
 @app.callback()
 def _root():
-    """兼容入口：建议改用 python3 -m fincompany_fetcher fetch。"""
+    """全局公司基础信息抓取程序。"""
 
 
 @app.command("fetch")
@@ -21,7 +21,7 @@ def fetch(
     out_dir: Path = typer.Option(Path("output"), "--out", help="输出根目录"),
     tushare_token: str | None = typer.Option(None, "--tushare-token", help="Tushare token，可选"),
 ):
-    """抓取全部公司基础信息，输出到全局目录。"""
+    """抓取全部公司基础信息，输出到独立全局目录。"""
 
     paths = fetch_company_basics_dataset(data_dir=out_dir.resolve(), tushare_token=tushare_token)
     console.print(f"已输出公司基础信息 CSV: {paths.csv_path}")

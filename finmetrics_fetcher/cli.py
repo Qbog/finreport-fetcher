@@ -5,7 +5,7 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
-from .global_datasets import fetch_financial_metrics_dataset
+from finreport_fetcher.global_datasets import fetch_financial_metrics_dataset
 
 app = typer.Typer(add_completion=False)
 console = Console()
@@ -13,7 +13,7 @@ console = Console()
 
 @app.callback()
 def _root():
-    """兼容入口：建议改用 python3 -m finmetrics_fetcher fetch。"""
+    """全局财报指标抓取程序。"""
 
 
 @app.command("fetch")
@@ -22,7 +22,7 @@ def fetch(
     tushare_token: str | None = typer.Option(None, "--tushare-token", help="Tushare token"),
     limit: int | None = typer.Option(None, "--limit", help="仅抓前 N 家公司，便于调试"),
 ):
-    """抓取公司财报指标，输出到全局目录。"""
+    """抓取公司财报指标，输出到独立全局目录。"""
 
     paths = fetch_financial_metrics_dataset(
         data_dir=out_dir.resolve(),

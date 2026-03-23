@@ -36,8 +36,8 @@ source .venv/bin/activate
 pip install -U pip setuptools wheel
 
 # 安装为 editable（会提供 finfetch / fincompany / finmetrics / finchart / finprice / finweb 命令；
-# 也支持 python -m finreport_fetcher / finreport_fetcher.company_basics_cli /
-# python -m finreport_fetcher.financial_metrics_cli / finreport_charts / finprice_fetcher / finreport_web）
+# 也支持 python -m finreport_fetcher / python -m fincompany_fetcher /
+# python -m finmetrics_fetcher / python -m finreport_web / python -m finprice_fetcher）
 pip install -e .
 
 # 如需 tushare（可选）：
@@ -375,10 +375,10 @@ output/贵州茅台_600519/price/600519.xlsx
 
 ```bash
 # 1) 抓全部公司基础信息
-fincompany fetch --out output
+python3 -m fincompany_fetcher fetch --out output
 
 # 2) 抓公司财报指标（ROE / ROA / ROIC / EV / EBITDA 等；拿不到就留空）
-finmetrics fetch --out output
+python3 -m finmetrics_fetcher fetch --out output
 ```
 
 输出结构：

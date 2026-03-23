@@ -24,7 +24,6 @@ const sectionLabelMap = {
 const statusText = document.getElementById("statusText");
 const categorySelect = document.getElementById("categorySelect");
 const templateGroups = document.getElementById("templateGroups");
-const configEditor = document.getElementById("configEditor");
 const sectionTabs = document.getElementById("sectionTabs");
 const mainStage = document.getElementById("mainStage");
 const axisPanels = document.getElementById("axisPanels");
@@ -373,16 +372,8 @@ async function loadBootstrap() {
   state.bootstrap = data;
   renderCategories(data.categories || []);
   renderTemplateGroups(data.templates || []);
-  configEditor.value = data.configText || "";
   datasetHint.textContent = `公司总表：${(data.companyBasics || []).length} 家；财报指标：${data.metricSummary?.rows || 0} 行 / ${data.metricSummary?.companies || 0} 家。`;
   setStatus("配置已加载，等待开始分析。");
-}
-
-async function saveCategories() {
-  setStatus("正在保存分类配置...");
-  const data = await apiFetch("/api/categories/save", { method: "POST", body: JSON.stringify({ text: configEditor.value }) });
-  renderCategories(data.categories || []);
-  setStatus("分类配置已保存。");
 }
 
 async function createCategory() {
@@ -409,7 +400,6 @@ async function createCategory() {
     body: JSON.stringify({ label, companies }),
   });
   renderCategories(data.categories || []);
-  configEditor.value = (await apiFetch("/api/categories")).text || configEditor.value;
   setStatus(`已创建公司类别：${data.created}`);
 }
 
@@ -470,7 +460,6 @@ async function generateReports() {
 
 function bindEvents() {
   document.getElementById("reloadBtn").addEventListener("click", loadBootstrap);
-  document.getElementById("saveConfigBtn").addEventListener("click", saveCategories);
   document.getElementById("createCategoryBtn").addEventListener("click", createCategory);
   document.getElementById("createTemplateBtn").addEventListener("click", createTemplate);
   document.getElementById("generateBtn").addEventListener("click", generateReports);
