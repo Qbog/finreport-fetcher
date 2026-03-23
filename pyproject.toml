@@ -23,6 +23,8 @@ dev = ["pytest>=8.0.0"]
 
 [project.scripts]
 finfetch = "finreport_fetcher.cli:app"
+fincompany = "finreport_fetcher.company_basics_cli:app"
+finmetrics = "finreport_fetcher.financial_metrics_cli:app"
 finchart = "finreport_charts.cli:app"
 finprice = "finprice_fetcher.cli:app"
 finmerge = "finchart_merge.cli:app"

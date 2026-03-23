@@ -35,7 +35,9 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -U pip setuptools wheel
 
-# 安装为 editable（会提供 finfetch / finchart / finprice / finweb 命令；也支持 python -m finreport_fetcher / finreport_charts / finprice_fetcher / finreport_web）
+# 安装为 editable（会提供 finfetch / fincompany / finmetrics / finchart / finprice / finweb 命令；
+# 也支持 python -m finreport_fetcher / finreport_fetcher.company_basics_cli /
+# python -m finreport_fetcher.financial_metrics_cli / finreport_charts / finprice_fetcher / finreport_web）
 pip install -e .
 
 # 如需 tushare（可选）：
@@ -367,14 +369,45 @@ output/贵州茅台_600519/price/600519.xlsx
 
 ---
 
-## 4) finreport_web（Web 报表分析台）
+## 4) 全局数据集（公司基础信息 / 财报指标）
+
+新增两个全局抓取程序，输出都落在 `output/_global/`，不会写进单家公司目录：
+
+```bash
+# 1) 抓全部公司基础信息
+fincompany fetch --out output
+
+# 2) 抓公司财报指标（ROE / ROA / ROIC / EV / EBITDA 等；拿不到就留空）
+finmetrics fetch --out output
+```
+
+输出结构：
+
+```text
+output/_global/company_basics/
+  company_basics.csv
+  raw/*.csv
+  latest.json
+
+output/_global/financial_metrics/
+  financial_metrics.csv
+  raw/index.csv
+  raw/{code6}.csv
+  latest.json
+```
+
+Web 启动时会优先从 `output/_global/company_basics/company_basics.csv` 加载公司总表。
+
+---
+
+## 5) finreport_web（Web 报表分析台）
 
 提供一个本地 Web 服务，用来：
 
-- 选择公司、时间范围、公司分类
-- 一次性运行全部财报分析模板
-- 按 **趋势分析 / 结构分析 / 同业分析** 三类显示图表
-- 直接在页面里切换图片、下载 Excel
+- 只保留 3 个分析入口：**公司类别 / 时间范围 / 分析内容**
+- 直接读取财报与股价原始数据，在 Web 端生成图表与 Excel
+- 支持 **趋势分析 / 结构分析 / 同业分析 / 合并报表（财务 + 股价）**
+- 支持“创建公司类别”“模板创建”
 - 直接编辑并保存 `config/company_categories.toml`
 
 启动示例：
@@ -395,8 +428,12 @@ http://127.0.0.1:8787
 ```
 
 页面支持键盘：
-- `← / →`：切图
-- `↑ / ↓`：切换分析类目
+- 趋势分析：`← / →` 切分析内容，`↑ / ↓` 切公司
+- 结构分析：`← / →` 切时间，`↑ / ↓` 切公司
+- 同业分析：`← / →` 切时间，`↑ / ↓` 切分析内容
+- 合并报表：`← / →` 切分析内容，`↑ / ↓` 切公司
+
+输出目录统一为：`output/_global/web_runs/{时间戳}/...`
 
 详见：[`docs/WEB_UI.md`](docs/WEB_UI.md)
 

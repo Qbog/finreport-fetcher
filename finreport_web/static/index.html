@@ -11,9 +11,9 @@
     <header class="hero">
       <div>
         <h1>财报分析台</h1>
-        <p>按 Apple 风格做的简约报表界面：先选公司、时间范围、分类，再一键生成趋势分析、结构分析、同业分析三类图表。图表区域支持方向键浏览。</p>
+        <p>Web 端现在只保留 3 个分析入口：公司类别、时间范围、分析内容。页面会直接读取财报/股价原始数据生成图表，不再依赖旧的图表批处理程序。</p>
       </div>
-      <div class="meta-badge">按当前分析模式使用 ← → ↑ ↓ 切换；点顶部标签切换三大分析类目</div>
+      <div class="meta-badge">趋势：←→ 内容 / ↑↓ 公司；结构：←→ 时间 / ↑↓ 公司；同业：←→ 时间 / ↑↓ 内容</div>
     </header>
 
     <div class="layout">
@@ -25,70 +25,69 @@
 
         <div class="field-grid">
           <div class="field">
-            <label for="companyInput">公司（代码或名称）</label>
-            <input id="companyInput" type="text" placeholder="例如：600519 / 贵州茅台">
+            <label for="categorySelect">公司类别</label>
+            <select id="categorySelect"></select>
           </div>
 
-          <div class="field">
-            <label for="categorySelect">公司分类（用于同业对比）</label>
-            <select id="categorySelect">
-              <option value="">不指定</option>
-            </select>
-          </div>
-
-          <div class="field">
-            <label for="startInput">开始日期</label>
-            <input id="startInput" type="date">
-          </div>
-
-          <div class="field">
-            <label for="endInput">结束日期</label>
-            <input id="endInput" type="date">
+          <div class="field dual">
+            <div>
+              <label for="startInput">开始日期</label>
+              <input id="startInput" type="date">
+            </div>
+            <div>
+              <label for="endInput">结束日期</label>
+              <input id="endInput" type="date">
+            </div>
           </div>
         </div>
 
-        <div class="section-title" style="margin-top:18px;">
-          <h3>模板</h3>
+        <div class="section-title top-gap">
+          <h3>分析内容</h3>
           <div class="actions">
+            <button id="createTemplateBtn" class="secondary" type="button">模板创建</button>
             <button id="selectAllTplBtn" class="secondary" type="button">全选</button>
             <button id="clearTplBtn" class="ghost" type="button">清空</button>
           </div>
         </div>
         <div id="templateGroups" class="template-groups"></div>
 
-        <div class="actions" style="margin-top:18px;">
-          <button id="generateBtn" class="primary" type="button">生成全部图表</button>
+        <div class="actions top-gap">
+          <button id="generateBtn" class="primary" type="button">开始分析</button>
         </div>
-        <p class="hint">提示：Web 端会按模板逐个生成，并把本次结果单独输出到公司目录下的 <code>charts/web/时间戳/</code>，避免和旧图混在一起。</p>
+        <p class="hint">输出目录：<code>output/_global/web_runs/时间戳/</code>。同一次分析内的趋势/结构/同业/合并图表都会放在全局目录中。</p>
 
-        <div class="section-title" style="margin-top:24px;">
-          <h3>公司分类配置</h3>
-          <button id="saveConfigBtn" class="secondary" type="button">保存配置</button>
+        <div class="section-title top-gap">
+          <h3>配置辅助</h3>
+          <div class="actions">
+            <button id="createCategoryBtn" class="secondary" type="button">创建公司类别</button>
+            <button id="saveConfigBtn" class="ghost" type="button">保存 TOML</button>
+          </div>
         </div>
         <div class="field">
           <label for="configEditor">config/company_categories.toml</label>
           <textarea id="configEditor" spellcheck="false"></textarea>
         </div>
-        <p class="hint">这里直接编辑分类配置 TOML。保存后，下拉框会立即刷新。</p>
+        <p class="hint">启动时会优先读取 <code>output/_global/company_basics/company_basics.csv</code> 作为公司总表；如果还没有，先运行 <code>fincompany fetch --out output</code>。</p>
+        <p class="hint" id="datasetHint"></p>
       </aside>
 
       <main class="content">
         <section class="panel toolbar">
-          <div id="statusText" class="status">等待生成图表。</div>
-          <div class="hint">方向键按分析类型变化：趋势=左右时间/上下公司；结构=左右时间/上下科目；同业=左右科目/上下时间。</div>
+          <div id="statusText" class="status">等待开始分析。</div>
+          <div class="hint">支持“创建公司类别”“模板创建”；分析内容默认来自 templates/*.toml，支持趋势/结构/同业/合并报表。</div>
         </section>
 
         <section class="panel viewer">
           <div class="viewer-top">
             <div class="viewer-title">
               <h2 id="viewerHeading">图表浏览区</h2>
-              <p id="viewerSubheading">生成后会按趋势分析 / 结构分析 / 同业分析分类展示。</p>
+              <p id="viewerSubheading">按类别批量分析后，这里会展示图表和导航维度。</p>
             </div>
             <div id="sectionTabs" class="section-tabs"></div>
           </div>
 
           <div id="mainStage" class="main-stage">
-            <div class="empty">先在左侧设置公司和时间范围，然后点击“生成全部图表”。</div>
+            <div class="empty">先在左侧选择公司类别、时间范围和分析内容，然后点击“开始分析”。</div>
           </div>
 
           <div class="caption-bar">

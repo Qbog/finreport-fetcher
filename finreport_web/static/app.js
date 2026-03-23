@@ -1,21 +1,24 @@
 const state = {
   bootstrap: null,
   report: null,
-  sectionOrder: ["trend", "structure", "peer"],
+  sectionOrder: ["trend", "structure", "peer", "merge"],
   activeSectionIndex: 0,
   trendTemplateIndex: 0,
   trendCompanyIndex: 0,
-  trendTimeIndex: 0,
   structureTemplateIndex: 0,
+  structureCompanyIndex: 0,
   structureTimeIndex: 0,
   peerTemplateIndex: 0,
   peerTimeIndex: 0,
+  mergeTemplateIndex: 0,
+  mergeCompanyIndex: 0,
 };
 
 const sectionLabelMap = {
   trend: "趋势分析",
   structure: "结构分析",
   peer: "同业分析",
+  merge: "合并报表",
 };
 
 const statusText = document.getElementById("statusText");
@@ -32,6 +35,7 @@ const captionMeta = document.getElementById("captionMeta");
 const downloadXlsxLink = document.getElementById("downloadXlsxLink");
 const openImageLink = document.getElementById("openImageLink");
 const errorBox = document.getElementById("errorBox");
+const datasetHint = document.getElementById("datasetHint");
 
 function setStatus(text) {
   statusText.textContent = text;
@@ -69,7 +73,7 @@ async function apiFetch(url, options = {}) {
 
 function renderCategories(categories) {
   const current = categorySelect.value;
-  categorySelect.innerHTML = '<option value="">不指定</option>';
+  categorySelect.innerHTML = "";
   for (const cat of categories) {
     const option = document.createElement("option");
     option.value = cat.key;
@@ -82,29 +86,25 @@ function renderCategories(categories) {
 }
 
 function renderTemplateGroups(templates) {
-  const groups = { trend: [], structure: [], peer: [] };
+  const groups = { trend: [], structure: [], peer: [], merge: [] };
   for (const tpl of templates) {
     if (groups[tpl.mode]) groups[tpl.mode].push(tpl);
   }
-
   templateGroups.innerHTML = "";
   for (const mode of state.sectionOrder) {
+    const items = groups[mode] || [];
+    if (!items.length) continue;
     const group = document.createElement("section");
     group.className = "template-group";
-    const title = document.createElement("h4");
-    title.textContent = sectionLabelMap[mode];
-    group.appendChild(title);
-
+    group.innerHTML = `<h4>${sectionLabelMap[mode]}</h4>`;
     const wrap = document.createElement("div");
     wrap.className = "chip-wrap";
-
-    for (const tpl of groups[mode]) {
+    for (const tpl of items) {
       const label = document.createElement("label");
       label.className = "chip";
       label.innerHTML = `<input type="checkbox" class="tpl-check" value="${escapeHtml(tpl.key)}" checked> <span>${escapeHtml(tpl.label)}</span>`;
       wrap.appendChild(label);
     }
-
     group.appendChild(wrap);
     templateGroups.appendChild(group);
   }
@@ -126,33 +126,29 @@ function getTrendItem() {
   const data = getSectionData("trend");
   const templates = data.templates || [];
   const companies = data.companies || [];
-  const times = data.times || [];
-  if (!templates.length || !companies.length || !times.length) return null;
-
+  if (!templates.length || !companies.length) return null;
   state.trendTemplateIndex = Math.min(Math.max(state.trendTemplateIndex, 0), templates.length - 1);
   state.trendCompanyIndex = Math.min(Math.max(state.trendCompanyIndex, 0), companies.length - 1);
-  state.trendTimeIndex = Math.min(Math.max(state.trendTimeIndex, 0), times.length - 1);
-
   const tpl = templates[state.trendTemplateIndex];
   const comp = companies[state.trendCompanyIndex];
-  const time = times[state.trendTimeIndex];
-  const item = data.matrix?.[tpl.key]?.[comp.code6]?.[time] || null;
-  return { item, tpl, comp, time, templates, companies, times };
+  const item = data.matrix?.[tpl.key]?.[comp.code6] || null;
+  return { item, tpl, comp, templates, companies };
 }
 
 function getStructureItem() {
   const data = getSectionData("structure");
   const templates = data.templates || [];
+  const companies = data.companies || [];
   const times = data.times || [];
-  if (!templates.length || !times.length) return null;
-
+  if (!templates.length || !companies.length || !times.length) return null;
   state.structureTemplateIndex = Math.min(Math.max(state.structureTemplateIndex, 0), templates.length - 1);
+  state.structureCompanyIndex = Math.min(Math.max(state.structureCompanyIndex, 0), companies.length - 1);
   state.structureTimeIndex = Math.min(Math.max(state.structureTimeIndex, 0), times.length - 1);
-
   const tpl = templates[state.structureTemplateIndex];
+  const comp = companies[state.structureCompanyIndex];
   const time = times[state.structureTimeIndex];
-  const item = data.matrix?.[tpl.key]?.[time] || null;
-  return { item, tpl, time, templates, times };
+  const item = data.matrix?.[tpl.key]?.[comp.code6]?.[time] || null;
+  return { item, tpl, comp, time, templates, companies, times };
 }
 
 function getPeerItem() {
@@ -160,28 +156,38 @@ function getPeerItem() {
   const templates = data.templates || [];
   const times = data.times || [];
   if (!templates.length || !times.length) return null;
-
   state.peerTemplateIndex = Math.min(Math.max(state.peerTemplateIndex, 0), templates.length - 1);
   state.peerTimeIndex = Math.min(Math.max(state.peerTimeIndex, 0), times.length - 1);
-
   const tpl = templates[state.peerTemplateIndex];
   const time = times[state.peerTimeIndex];
   const item = data.matrix?.[tpl.key]?.[time] || null;
   return { item, tpl, time, templates, times };
 }
 
+function getMergeItem() {
+  const data = getSectionData("merge");
+  const templates = data.templates || [];
+  const companies = data.companies || [];
+  if (!templates.length || !companies.length) return null;
+  state.mergeTemplateIndex = Math.min(Math.max(state.mergeTemplateIndex, 0), templates.length - 1);
+  state.mergeCompanyIndex = Math.min(Math.max(state.mergeCompanyIndex, 0), companies.length - 1);
+  const tpl = templates[state.mergeTemplateIndex];
+  const comp = companies[state.mergeCompanyIndex];
+  const item = data.matrix?.[tpl.key]?.[comp.code6] || null;
+  return { item, tpl, comp, templates, companies };
+}
+
 function getCurrentView() {
   const mode = activeMode();
   if (mode === "trend") return getTrendItem();
   if (mode === "structure") return getStructureItem();
-  return getPeerItem();
+  if (mode === "peer") return getPeerItem();
+  return getMergeItem();
 }
 
 function firstNonEmptySectionIndex() {
   for (let i = 0; i < state.sectionOrder.length; i += 1) {
-    const mode = state.sectionOrder[i];
-    const data = getSectionData(mode);
-    if ((data.templates || []).length) return i;
+    if ((getSectionData(state.sectionOrder[i]).templates || []).length) return i;
   }
   return 0;
 }
@@ -207,10 +213,7 @@ function renderSectionTabs() {
 function buildAxisPanel(title, items, activeIndex, onSelect, formatter) {
   const wrapper = document.createElement("div");
   wrapper.className = "axis-panel";
-  const strong = document.createElement("strong");
-  strong.textContent = title;
-  wrapper.appendChild(strong);
-
+  wrapper.innerHTML = `<strong>${title}</strong>`;
   const chips = document.createElement("div");
   chips.className = "axis-chip-wrap";
   items.forEach((item, idx) => {
@@ -228,44 +231,43 @@ function buildAxisPanel(title, items, activeIndex, onSelect, formatter) {
 function renderAxisPanels(view) {
   axisPanels.innerHTML = "";
   if (!view) return;
-
   const mode = activeMode();
   if (mode === "trend") {
-    axisPanels.appendChild(buildAxisPanel("趋势科目（点击切换）", view.templates, state.trendTemplateIndex, (idx) => {
-      state.trendTemplateIndex = idx;
-      renderViewer();
-    }, (item) => item.label));
+    axisPanels.appendChild(buildAxisPanel("分析内容（← →）", view.templates, state.trendTemplateIndex, (idx) => {
+      state.trendTemplateIndex = idx; renderViewer();
+    }, item => item.label));
     axisPanels.appendChild(buildAxisPanel("公司（↑ ↓）", view.companies, state.trendCompanyIndex, (idx) => {
-      state.trendCompanyIndex = idx;
-      renderViewer();
-    }, (item) => item.name));
-    axisPanels.appendChild(buildAxisPanel("时间（← →）", view.times, state.trendTimeIndex, (idx) => {
-      state.trendTimeIndex = idx;
-      renderViewer();
-    }, (item) => item));
+      state.trendCompanyIndex = idx; renderViewer();
+    }, item => item.name));
     return;
   }
-
   if (mode === "structure") {
-    axisPanels.appendChild(buildAxisPanel("分析科目（↑ ↓）", view.templates, state.structureTemplateIndex, (idx) => {
-      state.structureTemplateIndex = idx;
-      renderViewer();
-    }, (item) => item.label));
+    axisPanels.appendChild(buildAxisPanel("结构内容", view.templates, state.structureTemplateIndex, (idx) => {
+      state.structureTemplateIndex = idx; renderViewer();
+    }, item => item.label));
     axisPanels.appendChild(buildAxisPanel("时间（← →）", view.times, state.structureTimeIndex, (idx) => {
-      state.structureTimeIndex = idx;
-      renderViewer();
-    }, (item) => item));
+      state.structureTimeIndex = idx; renderViewer();
+    }, item => item));
+    axisPanels.appendChild(buildAxisPanel("公司（↑ ↓）", view.companies, state.structureCompanyIndex, (idx) => {
+      state.structureCompanyIndex = idx; renderViewer();
+    }, item => item.name));
     return;
   }
-
-  axisPanels.appendChild(buildAxisPanel("同业科目（← →）", view.templates, state.peerTemplateIndex, (idx) => {
-    state.peerTemplateIndex = idx;
-    renderViewer();
-  }, (item) => item.label));
-  axisPanels.appendChild(buildAxisPanel("时间（↑ ↓）", view.times, state.peerTimeIndex, (idx) => {
-    state.peerTimeIndex = idx;
-    renderViewer();
-  }, (item) => item));
+  if (mode === "peer") {
+    axisPanels.appendChild(buildAxisPanel("同业内容（↑ ↓）", view.templates, state.peerTemplateIndex, (idx) => {
+      state.peerTemplateIndex = idx; renderViewer();
+    }, item => item.label));
+    axisPanels.appendChild(buildAxisPanel("时间（← →）", view.times, state.peerTimeIndex, (idx) => {
+      state.peerTimeIndex = idx; renderViewer();
+    }, item => item));
+    return;
+  }
+  axisPanels.appendChild(buildAxisPanel("合并内容（← →）", view.templates, state.mergeTemplateIndex, (idx) => {
+    state.mergeTemplateIndex = idx; renderViewer();
+  }, item => item.label));
+  axisPanels.appendChild(buildAxisPanel("公司（↑ ↓）", view.companies, state.mergeCompanyIndex, (idx) => {
+    state.mergeCompanyIndex = idx; renderViewer();
+  }, item => item.name));
 }
 
 function renderErrors() {
@@ -275,11 +277,10 @@ function renderErrors() {
     errorBox.innerHTML = "";
     return;
   }
-
   errorBox.style.display = "block";
   errorBox.innerHTML = `<div class="section-title"><h3>生成提示 / 错误</h3></div>` + errors.map(err => `
     <div class="error-card">
-      <strong>${escapeHtml(err.company || "")}${err.company ? " · " : ""}${escapeHtml(err.label || err.template || "模板")}${err.time ? " · " + escapeHtml(err.time) : ""}</strong>
+      <strong>${escapeHtml(err.company || "全部公司")}${err.company ? " · " : ""}${escapeHtml(err.label || err.template || "模板")}${err.time ? " · " + escapeHtml(err.time) : ""}</strong>
       <pre>${escapeHtml(err.stderr || err.stdout || "执行失败")}</pre>
     </div>
   `).join("");
@@ -288,11 +289,10 @@ function renderErrors() {
 function renderViewer() {
   renderSectionTabs();
   renderErrors();
-
   if (!state.report) {
     viewerHeading.textContent = "图表浏览区";
-    viewerSubheading.textContent = "生成后会按趋势分析 / 结构分析 / 同业分析分类展示。";
-    mainStage.innerHTML = '<div class="empty">先在左侧设置公司和时间范围，然后点击“生成全部图表”。</div>';
+    viewerSubheading.textContent = "按类别批量分析后，这里会展示图表和导航维度。";
+    mainStage.innerHTML = '<div class="empty">先在左侧选择公司类别、时间范围和分析内容，然后点击“开始分析”。</div>';
     axisPanels.innerHTML = "";
     captionTitle.textContent = "暂无图表";
     captionMeta.textContent = "生成后可在此查看图片与下载 Excel。";
@@ -300,38 +300,33 @@ function renderViewer() {
     openImageLink.style.display = "none";
     return;
   }
-
   if (!(getSectionData(activeMode()).templates || []).length) {
     state.activeSectionIndex = firstNonEmptySectionIndex();
   }
-
   const mode = activeMode();
   const view = getCurrentView();
   renderAxisPanels(view);
-
-  viewerHeading.textContent = `${state.report.company.name} · ${sectionLabelMap[mode]}`;
-  viewerSubheading.textContent = `${state.report.start} → ${state.report.end}` + (state.report.category ? ` · 分类：${state.report.category}` : "");
-
+  viewerHeading.textContent = `${sectionLabelMap[mode]} · ${state.report.category}`;
+  viewerSubheading.textContent = `${state.report.start} → ${state.report.end}`;
   if (!view || !view.item) {
-    mainStage.innerHTML = '<div class="empty">当前位置暂无图表，可以换一个时间、公司或科目继续看。</div>';
+    mainStage.innerHTML = '<div class="empty">当前位置暂无图表，可以切换公司 / 时间 / 内容继续查看。</div>';
     captionTitle.textContent = "当前位置暂无图表";
     captionMeta.textContent = "你可以点击下方维度按钮，或使用方向键继续切换。";
     downloadXlsxLink.style.display = "none";
     openImageLink.style.display = "none";
     return;
   }
-
   mainStage.innerHTML = `<img src="${view.item.image}" alt="${escapeHtml(view.item.title)}">`;
   captionTitle.textContent = view.item.title || view.item.label || view.item.template || "图表";
-
   if (mode === "trend") {
-    captionMeta.textContent = `公司：${view.comp.name} · 截止：${view.time} · 模板：${view.tpl.label}`;
+    captionMeta.textContent = `公司：${view.comp.name} · 内容：${view.tpl.label}`;
   } else if (mode === "structure") {
-    captionMeta.textContent = `科目：${view.tpl.label} · 期末：${view.time}`;
+    captionMeta.textContent = `公司：${view.comp.name} · 时间：${view.time} · 内容：${view.tpl.label}`;
+  } else if (mode === "peer") {
+    captionMeta.textContent = `时间：${view.time} · 内容：${view.tpl.label}`;
   } else {
-    captionMeta.textContent = `科目：${view.tpl.label} · 期末：${view.time}`;
+    captionMeta.textContent = `公司：${view.comp.name} · 内容：${view.tpl.label}`;
   }
-
   openImageLink.href = view.item.image;
   openImageLink.style.display = "inline-flex";
   if (view.item.xlsx) {
@@ -342,39 +337,32 @@ function renderViewer() {
   }
 }
 
-function moveSection(delta) {
-  if (!state.report) return;
-  let idx = state.activeSectionIndex;
-  for (let step = 0; step < state.sectionOrder.length; step += 1) {
-    idx = (idx + delta + state.sectionOrder.length) % state.sectionOrder.length;
-    if ((getSectionData(state.sectionOrder[idx]).templates || []).length) {
-      state.activeSectionIndex = idx;
-      renderViewer();
-      return;
-    }
-  }
-}
-
 function moveInCurrentSection(horizontalDelta, verticalDelta) {
   const mode = activeMode();
   if (mode === "trend") {
     const data = getSectionData("trend");
-    const timeCount = (data.times || []).length;
+    const tplCount = (data.templates || []).length;
     const companyCount = (data.companies || []).length;
-    if (timeCount && horizontalDelta) state.trendTimeIndex = (state.trendTimeIndex + horizontalDelta + timeCount) % timeCount;
+    if (tplCount && horizontalDelta) state.trendTemplateIndex = (state.trendTemplateIndex + horizontalDelta + tplCount) % tplCount;
     if (companyCount && verticalDelta) state.trendCompanyIndex = (state.trendCompanyIndex + verticalDelta + companyCount) % companyCount;
   } else if (mode === "structure") {
     const data = getSectionData("structure");
     const timeCount = (data.times || []).length;
-    const tplCount = (data.templates || []).length;
+    const companyCount = (data.companies || []).length;
     if (timeCount && horizontalDelta) state.structureTimeIndex = (state.structureTimeIndex + horizontalDelta + timeCount) % timeCount;
-    if (tplCount && verticalDelta) state.structureTemplateIndex = (state.structureTemplateIndex + verticalDelta + tplCount) % tplCount;
-  } else {
+    if (companyCount && verticalDelta) state.structureCompanyIndex = (state.structureCompanyIndex + verticalDelta + companyCount) % companyCount;
+  } else if (mode === "peer") {
     const data = getSectionData("peer");
     const timeCount = (data.times || []).length;
     const tplCount = (data.templates || []).length;
-    if (tplCount && horizontalDelta) state.peerTemplateIndex = (state.peerTemplateIndex + horizontalDelta + tplCount) % tplCount;
-    if (timeCount && verticalDelta) state.peerTimeIndex = (state.peerTimeIndex + verticalDelta + timeCount) % timeCount;
+    if (timeCount && horizontalDelta) state.peerTimeIndex = (state.peerTimeIndex + horizontalDelta + timeCount) % timeCount;
+    if (tplCount && verticalDelta) state.peerTemplateIndex = (state.peerTemplateIndex + verticalDelta + tplCount) % tplCount;
+  } else {
+    const data = getSectionData("merge");
+    const tplCount = (data.templates || []).length;
+    const companyCount = (data.companies || []).length;
+    if (tplCount && horizontalDelta) state.mergeTemplateIndex = (state.mergeTemplateIndex + horizontalDelta + tplCount) % tplCount;
+    if (companyCount && verticalDelta) state.mergeCompanyIndex = (state.mergeCompanyIndex + verticalDelta + companyCount) % companyCount;
   }
   renderViewer();
 }
@@ -386,62 +374,94 @@ async function loadBootstrap() {
   renderCategories(data.categories || []);
   renderTemplateGroups(data.templates || []);
   configEditor.value = data.configText || "";
-  setStatus("配置已加载，等待生成图表。");
+  datasetHint.textContent = `公司总表：${(data.companyBasics || []).length} 家；财报指标：${data.metricSummary?.rows || 0} 行 / ${data.metricSummary?.companies || 0} 家。`;
+  setStatus("配置已加载，等待开始分析。");
 }
 
 async function saveCategories() {
-  const text = configEditor.value;
   setStatus("正在保存分类配置...");
-  const data = await apiFetch("/api/categories/save", {
-    method: "POST",
-    body: JSON.stringify({ text }),
-  });
+  const data = await apiFetch("/api/categories/save", { method: "POST", body: JSON.stringify({ text: configEditor.value }) });
   renderCategories(data.categories || []);
   setStatus("分类配置已保存。");
 }
 
+async function createCategory() {
+  const basics = state.bootstrap?.companyBasics || [];
+  const label = window.prompt("新公司类别名称（显示名）");
+  if (!label) return;
+  const keyword = window.prompt("输入关键词筛选公司（可留空显示前 30 家）", "");
+  const filtered = basics.filter(item => !keyword || item.name.includes(keyword) || item.code6.includes(keyword)).slice(0, 30);
+  if (!filtered.length) {
+    alert("没有匹配到公司，请先准备 company_basics.csv 或换个关键词。");
+    return;
+  }
+  const picked = window.prompt(`请输入要加入的代码，逗号分隔：\n${filtered.map(x => `${x.code6} ${x.name}`).join("\n")}`);
+  if (!picked) return;
+  const codes = picked.split(/[，,\s]+/).map(x => x.trim()).filter(Boolean);
+  const companies = filtered.filter(item => codes.includes(item.code6));
+  if (!companies.length) {
+    alert("没有选中有效代码。");
+    return;
+  }
+  setStatus("正在创建公司类别...");
+  const data = await apiFetch("/api/categories/create", {
+    method: "POST",
+    body: JSON.stringify({ label, companies }),
+  });
+  renderCategories(data.categories || []);
+  configEditor.value = (await apiFetch("/api/categories")).text || configEditor.value;
+  setStatus(`已创建公司类别：${data.created}`);
+}
+
+async function createTemplate() {
+  const mode = window.prompt("模板类别：trend / structure / peer / merge", "trend");
+  if (!mode) return;
+  const label = window.prompt("模板名称（显示名）");
+  if (!label) return;
+  let payload = { mode, label };
+  if (mode === "merge") {
+    const barItem = window.prompt("财务字段（如 is.revenue_total）", "is.revenue_total");
+    const line = window.prompt("股价字段（默认 close）", "close");
+    payload = { ...payload, barItem, line };
+  } else {
+    const expr = window.prompt("表达式（如 is.revenue_total / bs.total_assets / cf.net_cash_from_ops）", "is.revenue_total");
+    if (!expr) return;
+    payload = { ...payload, expr };
+  }
+  setStatus("正在创建模板...");
+  const data = await apiFetch("/api/templates/create", { method: "POST", body: JSON.stringify(payload) });
+  renderTemplateGroups(data.templates || []);
+  setStatus(`已创建模板：${data.created}`);
+}
+
 async function generateReports() {
-  const company = document.getElementById("companyInput").value.trim();
+  const category = categorySelect.value;
   const start = document.getElementById("startInput").value;
   const end = document.getElementById("endInput").value;
-  const category = categorySelect.value;
   const templates = getSelectedTemplates();
-
-  if (!company) {
-    alert("请先输入公司代码或名称。");
-    return;
-  }
-  if (!start || !end) {
-    alert("请先设置时间范围。");
-    return;
-  }
-  if (!templates.length) {
-    alert("请至少选择一个模板。");
-    return;
-  }
-
-  setStatus("正在生成图表，请稍候...");
+  if (!category) return alert("请先选择公司类别。");
+  if (!start || !end) return alert("请先设置时间范围。");
+  if (!templates.length) return alert("请至少选择一个分析内容。");
+  setStatus("正在按类别生成图表，请稍候...");
   document.getElementById("generateBtn").disabled = true;
-
   try {
-    const data = await apiFetch("/api/generate", {
-      method: "POST",
-      body: JSON.stringify({ company, start, end, category, templates }),
-    });
+    const data = await apiFetch("/api/generate", { method: "POST", body: JSON.stringify({ category, start, end, templates }) });
     state.report = data;
     state.activeSectionIndex = firstNonEmptySectionIndex();
     state.trendTemplateIndex = 0;
     state.trendCompanyIndex = 0;
-    state.trendTimeIndex = 0;
     state.structureTemplateIndex = 0;
+    state.structureCompanyIndex = 0;
     state.structureTimeIndex = 0;
     state.peerTemplateIndex = 0;
     state.peerTimeIndex = 0;
-    setStatus(`生成完成：${data.company.name}，输出目录 ${data.reportDir}`);
+    state.mergeTemplateIndex = 0;
+    state.mergeCompanyIndex = 0;
+    setStatus(`分析完成：${data.category}，输出目录 ${data.reportDir}`);
     renderViewer();
   } catch (error) {
     console.error(error);
-    setStatus(`生成失败：${error.message}`);
+    setStatus(`分析失败：${error.message}`);
     alert(error.message);
   } finally {
     document.getElementById("generateBtn").disabled = false;
@@ -451,6 +471,8 @@ async function generateReports() {
 function bindEvents() {
   document.getElementById("reloadBtn").addEventListener("click", loadBootstrap);
   document.getElementById("saveConfigBtn").addEventListener("click", saveCategories);
+  document.getElementById("createCategoryBtn").addEventListener("click", createCategory);
+  document.getElementById("createTemplateBtn").addEventListener("click", createTemplate);
   document.getElementById("generateBtn").addEventListener("click", generateReports);
   document.getElementById("selectAllTplBtn").addEventListener("click", () => {
     document.querySelectorAll(".tpl-check").forEach(el => { el.checked = true; });
@@ -458,29 +480,13 @@ function bindEvents() {
   document.getElementById("clearTplBtn").addEventListener("click", () => {
     document.querySelectorAll(".tpl-check").forEach(el => { el.checked = false; });
   });
-
   document.addEventListener("keydown", (event) => {
     const tag = document.activeElement?.tagName || "";
     if (["INPUT", "TEXTAREA", "SELECT"].includes(tag)) return;
-    if (event.key === "ArrowLeft") {
-      event.preventDefault();
-      moveInCurrentSection(-1, 0);
-    } else if (event.key === "ArrowRight") {
-      event.preventDefault();
-      moveInCurrentSection(1, 0);
-    } else if (event.key === "ArrowUp") {
-      event.preventDefault();
-      moveInCurrentSection(0, -1);
-    } else if (event.key === "ArrowDown") {
-      event.preventDefault();
-      moveInCurrentSection(0, 1);
-    } else if (event.key === "PageUp") {
-      event.preventDefault();
-      moveSection(-1);
-    } else if (event.key === "PageDown") {
-      event.preventDefault();
-      moveSection(1);
-    }
+    if (event.key === "ArrowLeft") { event.preventDefault(); moveInCurrentSection(-1, 0); }
+    else if (event.key === "ArrowRight") { event.preventDefault(); moveInCurrentSection(1, 0); }
+    else if (event.key === "ArrowUp") { event.preventDefault(); moveInCurrentSection(0, -1); }
+    else if (event.key === "ArrowDown") { event.preventDefault(); moveInCurrentSection(0, 1); }
   });
 }
 

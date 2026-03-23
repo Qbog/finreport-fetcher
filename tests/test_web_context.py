@@ -5,7 +5,7 @@ from pathlib import Path
 from finreport_web.server import AppContext
 
 
-def test_web_context_bootstrap_and_config_save(tmp_path: Path):
+def test_web_context_bootstrap_and_category_template_create(tmp_path: Path):
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
     data_dir = repo_root / "output"
@@ -26,17 +26,19 @@ items = [
         encoding="utf-8",
     )
 
+    (data_dir / "_global" / "company_basics").mkdir(parents=True)
+    (data_dir / "_global" / "company_basics" / "company_basics.csv").write_text(
+        "code6,name,industry\n600519,贵州茅台,白酒\n300454,深信服,网络安全\n",
+        encoding="utf-8",
+    )
+
     (templates_dir / "income_trend.toml").write_text(
         """
 name = "income_trend"
 alias = "收入趋势"
-names = ["营业总收入趋势"]
 
 type = "bar"
 mode = "trend"
-title = "收入趋势"
-x_label = "报告期"
-y_label = "金额"
 
 [[bars]]
 name = "营业总收入"
@@ -44,44 +46,37 @@ expr = "is.revenue_total"
 """.strip(),
         encoding="utf-8",
     )
-    (templates_dir / "liability_structure.toml").write_text(
+    (templates_dir / "price_merge.toml").write_text(
         """
-name = "liability_structure"
-alias = "负债结构"
+name = "price_merge"
+alias = "收入+股价"
 
-type = "bar"
-mode = "structure"
-title = "负债结构"
-x_label = "科目"
-y_label = "金额"
-
-[[bars]]
-name = "负债合计"
-expr = "bs.total_liabilities"
+type = "combo"
+mode = "merge"
+bar_item = "is.revenue_total"
+line = "close"
 """.strip(),
         encoding="utf-8",
     )
 
-    ctx = AppContext(
-        repo_root=repo_root,
-        data_dir=data_dir,
-        templates_dir=templates_dir,
-        category_config=category_config,
-    )
-
+    ctx = AppContext(repo_root=repo_root, data_dir=data_dir, templates_dir=templates_dir, category_config=category_config)
     payload = ctx.bootstrap_payload()
     assert payload["categories"][0]["key"] == "demo"
-    assert [tpl["key"] for tpl in payload["templates"]] == ["income_trend", "liability_structure"]
-    assert payload["templates"][0]["names"] == ["income_trend", "收入趋势", "营业总收入趋势"]
+    assert [tpl["key"] for tpl in payload["templates"]] == ["income_trend", "price_merge"]
+    assert payload["companyBasics"][0]["code6"] == "600519"
 
-    result = ctx.save_category_config(
-        """
-[categories.saved]
-alias = "保存后的分类"
-items = [
-  { name = "三六零", code = "601360" },
-]
-""".strip()
+    result = ctx.create_category(
+        {
+            "label": "新分类",
+            "companies": [
+                {"code6": "601360", "name": "三六零"},
+                {"code6": "300454", "name": "深信服"},
+            ],
+        }
     )
     assert result["ok"] is True
-    assert result["categories"][0]["key"] == "saved"
+    assert result["created"] == "item"
+
+    tpl_result = ctx.create_template({"mode": "peer", "label": "归母净利润同业", "expr": "is.net_profit_parent"})
+    assert tpl_result["ok"] is True
+    assert any(x["key"] == "item" for x in tpl_result["templates"])
