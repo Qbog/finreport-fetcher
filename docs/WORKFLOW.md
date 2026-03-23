@@ -122,6 +122,7 @@ python3 -m finreport_charts -l info run \
 
 - `mode=trend`：给定 `--start/--end` 输出 **1 张**跨期趋势图（横轴=时间）
 - `mode=structure`（旧 compare）：给定 `--start/--end` 输出 **每个报告期 1 张**结构分析图（横轴=科目）
+  - 同一家公司在一次运行中批量生成的 structure 图，会自动统一纵轴范围/单位/图宽，便于直接横向比较不同日期。
   - 若要“单期末 structure”，需要：`--as-of` 或模板内 `period_end`
 - `mode=peer`：输出 **1 张**同业分析图（横轴=公司），同业公司列表可来自：
   - 模板内 `peers = [...]`

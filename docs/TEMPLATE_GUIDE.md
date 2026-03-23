@@ -52,6 +52,7 @@ expr = "is.net_profit_parent - is.net_profit_parent.prev_in_year"
 
 - `mode=trend`（趋势分析）：区间内输出 **1 张**趋势图（横轴=时间）
 - `mode=structure`（结构分析，旧 compare）：区间内输出 **每个报告期 1 张**结构图（横轴=科目）
+  - 同一家公司、同一次 `run` 里批量生成的这些 structure 图，会自动统一纵轴范围/单位/图宽，方便按不同报告期横向对比。
   - 如果你要只输出“单期末 structure”，用：
     - CLI：`--as-of 2024-12-31`
     - 或模板：`period_end = "2024-12-31"`

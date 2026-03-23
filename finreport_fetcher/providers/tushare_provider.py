@@ -159,6 +159,25 @@ class TushareProvider:
         raw_store.update_provider_table(self.name, "is", inc_df, subset=subset)
         raw_store.update_provider_table(self.name, "cf", cf_df, subset=subset)
 
+    def _fetch_full_history_tables(self, ts_code: str, statement_type: str) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        """Fetch one company's full raw history (listing -> current) from Tushare.
+
+        这里刻意不传 end_date：用户要求 raw 缓存里保存整家公司完整历史，而不是单一期末切片。
+        单公司三大表的全量返回通常体量可控，后续再从缓存中按期抽取。
+        """
+
+        pro = self._pro()
+        comp_type = self._comp_type(statement_type)
+
+        bs = pro.balancesheet(ts_code=ts_code, comp_type=comp_type)
+        inc = pro.income(ts_code=ts_code, comp_type=comp_type)
+        cf = pro.cashflow(ts_code=ts_code, comp_type=comp_type)
+
+        if bs is None or inc is None or cf is None:
+            raise RuntimeError("tushare 返回 None")
+
+        return pd.DataFrame(bs), pd.DataFrame(inc), pd.DataFrame(cf)
+
     def get_bundle(
         self,
         ts_code: str,
@@ -176,8 +195,28 @@ class TushareProvider:
                     tables=tables,
                 )
                 if cached:
+                    cached.meta["raw_scope"] = "full_history"
                     return cached
 
+            # raw 缓存缺失/不完整时，拉取整家公司全历史宽表后再回填缓存。
+            bs_df, inc_df, cf_df = self._fetch_full_history_tables(ts_code, statement_type)
+            self._persist_raw_tables(raw_store, bs_df, inc_df, cf_df)
+
+            tables = self._load_raw_tables(raw_store)
+            if tables:
+                cached = self._build_bundle_from_raw(
+                    ts_code=ts_code,
+                    period_end=period_end,
+                    statement_type=statement_type,
+                    tables=tables,
+                )
+                if cached:
+                    cached.meta["raw_scope"] = "full_history"
+                    return cached
+
+            raise RuntimeError(f"tushare 全历史原始表中未找到报告期 {period_end.strftime('%Y-%m-%d')}")
+
+        # 未启用 raw_store 时，保持旧逻辑：按单个报告期请求，减少无关数据。
         pro = self._pro()
         end_date = self._period(period_end)
         comp_type = self._comp_type(statement_type)
@@ -205,6 +244,7 @@ class TushareProvider:
             "ts_code": ts_code,
             "period_end": period_end.strftime("%Y-%m-%d"),
             "comp_type": comp_type,
+            "raw_scope": "single_period",
         }
 
         bundle = StatementBundle(
@@ -217,8 +257,5 @@ class TushareProvider:
             meta=meta,
             raw_data={"bs": bs_df, "is": inc_df, "cf": cf_df},
         )
-
-        if raw_store:
-            self._persist_raw_tables(raw_store, bs_df, inc_df, cf_df)
 
         return bundle

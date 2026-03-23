@@ -32,7 +32,7 @@
 
 - `net_profit_q.toml`：归母净利润趋势（bar trend）
 - `revenue_total_trend.toml`：营业总收入趋势（bar trend）
-- `bs_key_items_structure.toml`：资产负债表关键科目结构分析（bar structure）
+- `bs_key_items_structure.toml`：资产负债表关键科目结构分析（bar structure；同次批量输出会自动统一纵轴）
 - `balance_sheet_analysis.toml`：资产负债表分析（bar structure，含嵌套分组 + 颜色示例）
 - `net_profit_peer.toml`：净利润同业分析示例（bar peer）
 

@@ -1804,16 +1804,25 @@ def run(
         if not collect_only:
             log_info(f"\n全部完成。输出目录: {c.out_dir}")
 
-    axis_plan_map: dict[str, AxisPlan] | None = None
+    # 纵轴规划分两层：
+    # 1) 默认：对“单个公司的一次 run”先做一次收集，再统一该公司本次产出的纵轴。
+    #    这样结构分析按多个报告期批量出图时，纵轴范围/单位/图宽会保持一致，便于横向对比。
+    # 2) 当显式开启 --share-axis 且目标公司 > 1 时，再升级为“跨公司共享同一套纵轴”。
+    global_axis_plan_map: dict[str, AxisPlan] | None = None
     if share_axis and len(targets) > 1:
         stats_map: dict[str, AxisStatsCollector] = {}
         for rs in targets:
             c = _build_common(rs)
             _run_templates_for_company(c, collect_only=True, axis_plan_map=None, stats_map=stats_map)
-        axis_plan_map = {k: v.build_plan() for k, v in stats_map.items() if v.build_plan() is not None}
+        global_axis_plan_map = {k: v.build_plan() for k, v in stats_map.items() if v.build_plan() is not None}
 
     for rs in targets:
         c = _build_common(rs)
+        axis_plan_map = global_axis_plan_map
+        if axis_plan_map is None:
+            local_stats_map: dict[str, AxisStatsCollector] = {}
+            _run_templates_for_company(c, collect_only=True, axis_plan_map=None, stats_map=local_stats_map)
+            axis_plan_map = {k: v.build_plan() for k, v in local_stats_map.items() if v.build_plan() is not None}
         _run_templates_for_company(c, collect_only=False, axis_plan_map=axis_plan_map, stats_map=None)
 
 

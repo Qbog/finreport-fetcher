@@ -77,6 +77,7 @@ pip install tushare
 ### 原始报表缓存与 PDF 复用
 
 - 所有抓取的数据源（tushare / akshare_ths / akshare）都会把原始宽表以 Pandas pickle 格式保存到 `output/{公司名}_{code6}/raw/{provider}/`。
+  - 其中 **tushare raw 缓存会按“单公司全历史”抓取**：即从上市以来到当前可取到的所有期末数据，不再只缓存某一个报告期切片。
   - 下一次请求同一家公司的同一报告期时会优先直接从缓存里解析，不再访问远端 API；缺失/更新则会自动补齐并覆盖缓存文件。
   - 原始缓存包含三张表（资产负债/利润/现金流）以及对应的 meta 信息，方便后续数据复核。
 - PDF 也迁移到原始目录：`output/.../raw/pdf/{code6}_{period}.pdf`，成功下载后不再删除。
