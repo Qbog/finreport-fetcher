@@ -17,6 +17,10 @@
 - 每根柱都用一个配置块表示：`[[bars]]`
   - `name`：显示名称
   - `expr`：取数/计算表达式（推荐用 key，如 `is.admin_expense + is.sell_expense`）
+- 模板名支持多种写法：
+  - `name`：英文主名（推荐用于脚本）
+  - `alias`：中文显示名（也可直接 `--template 中文名` 使用）
+  - `names`：额外别名列表（可同时放英文/中文同义名）
 
 > 说明：不再使用 `transform=ttm/ytd/q/raw` 这类配置；现在 **只按 expr 取值**。
 
@@ -28,13 +32,28 @@
 - `is.xxx.prev`：上一季度（可链式：`.prev.prev`）
 - `is.xxx.prev_in_year`：同年上一季度（Q1 视为 0.0）
 
-## 3) 内置示例模板（本目录已有）
+## 3) 内置模板（按“财报分析”分类）
 
-- `net_profit_q.toml`：归母净利润趋势（bar trend）
-- `revenue_total_trend.toml`：营业总收入趋势（bar trend）
+### 趋势分析
+- `income_trend.toml`：收入趋势（营业总收入，单季）
+- `profit_trend.toml`：利润趋势（归母净利润，单季）
+- `net_assets_trend.toml`：资产趋势（净资产）
+- `cashflow_trend.toml`：现金流趋势（总现金流 + 经营现金流，单季）
+
+### 结构分析
+- `asset_structure.toml`：资产结构（更完整的主要资产科目）
+- `liability_structure.toml`：负债结构（更完整的主要负债科目）
+- `expense_structure.toml`：成本结构（三费：销售/管理/研发，单季）
+- `cashflow_structure.toml`：现金流结构（经营/投资/融资，单季）
 - `bs_key_items_structure.toml`：资产负债表关键科目结构分析（bar structure；同次批量输出会自动统一纵轴）
 - `balance_sheet_analysis.toml`：资产负债表分析（bar structure，含嵌套分组 + 颜色示例）
-- `net_profit_peer.toml`：净利润同业分析示例（bar peer）
+
+### 公司对比
+- `revenue_peer.toml`：收入对比
+- `profit_peer.toml`：利润对比
+- `roe_peer.toml`：ROE 对比（近似）
+- `asset_scale_peer.toml`：资产规模对比
+- `net_profit_peer.toml`：净利润同业分析示例（旧模板，仍可用）
 
 ## 4) 最小示例（bar trend：单季 = 当期累计 - 同年上期累计）
 
@@ -79,6 +98,13 @@ python3 -m finreport_charts run --code 600519 --start 2024-01-01 --end 2024-12-3
 ```bash
 python3 -m finreport_charts run --code 600519 --start 2024-01-01 --end 2024-12-31 \
   --data-dir output --templates templates --template net_profit_q
+```
+
+- 也可以直接用中文模板名：
+
+```bash
+python3 -m finreport_charts run --code 600519 --start 2024-01-01 --end 2024-12-31 \
+  --data-dir output --templates templates --template 收入趋势 --template 负债结构
 ```
 
 ## 6) 输出位置

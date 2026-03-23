@@ -1,0 +1,20 @@
+# 财报分析 / 公司对比 / 收入对比
+
+name = "revenue_peer"
+alias = "收入对比"
+names = ["公司对比-收入对比", "营业总收入对比"]
+
+type = "bar"
+mode = "peer"
+
+peers = ["688561", "300454", "002212", "601360"]
+
+title = "收入对比（单季营业总收入）"
+x_label = "公司"
+y_label = "金额"
+
+statement = "利润表"
+
+[[bars]]
+name = "营业总收入"
+expr = "is.revenue_total - is.revenue_total.prev_in_year"

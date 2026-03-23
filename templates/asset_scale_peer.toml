@@ -1,0 +1,20 @@
+# 财报分析 / 公司对比 / 资产规模对比
+
+name = "asset_scale_peer"
+alias = "资产规模对比"
+names = ["公司对比-资产规模对比", "总资产对比"]
+
+type = "bar"
+mode = "peer"
+
+peers = ["688561", "300454", "002212", "601360"]
+
+title = "资产规模对比（总资产）"
+x_label = "公司"
+y_label = "金额"
+
+statement = "资产负债表"
+
+[[bars]]
+name = "总资产"
+expr = "bs.total_assets"

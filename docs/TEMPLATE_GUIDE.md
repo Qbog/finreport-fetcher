@@ -29,6 +29,10 @@ expr = "is.net_profit_parent - is.net_profit_parent.prev_in_year"
 ```
 
 - **强烈建议** `expr` 使用 Excel 中的 `key`（如 `is.net_profit_parent`），不要写中文科目名。
+- 模板支持多名字查找：
+  - `name`：英文主名
+  - `alias`：中文显示名
+  - `names`：额外别名（中英文都可）
 - `mode=trend` 会把区间内每个报告期算出一个点，然后画一张趋势图。
 
 ---

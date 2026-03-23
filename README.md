@@ -12,10 +12,12 @@
 - `finreport_fetcher/`：财报抓取程序（已实现）
 - `finreport_charts/`：图表生成程序（新增）
 - `finprice_fetcher/`：股价抓取程序（新增）
+- `finreport_web/`：Web 报表分析台（服务化浏览界面）
 
 文档：
 - 快速开始：[`docs/QUICKSTART.md`](docs/QUICKSTART.md)
 - 模板说明：[`docs/TEMPLATE_GUIDE.md`](docs/TEMPLATE_GUIDE.md)
+- Web 报表分析台：[`docs/WEB_UI.md`](docs/WEB_UI.md)
 - Price 折线图（mode=price）：[`docs/price_line.md`](docs/price_line.md)
 - 图表合并（merge，双轴 PNG）：[`docs/merge.md`](docs/merge.md)
 - 回归测试：[`docs/TESTING.md`](docs/TESTING.md)
@@ -33,7 +35,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -U pip setuptools wheel
 
-# 安装为 editable（会提供 finfetch / finchart 命令；也支持 python -m finreport_fetcher / finreport_charts）
+# 安装为 editable（会提供 finfetch / finchart / finprice / finweb 命令；也支持 python -m finreport_fetcher / finreport_charts / finprice_fetcher / finreport_web）
 pip install -e .
 
 # 如需 tushare（可选）：
@@ -292,6 +294,14 @@ python3 -m finreport_charts run --code 600519 --start 2024-01-01 --end 2024-12-3
   --template net_profit_q
 ```
 
+也支持直接使用中文模板名（来自模板里的 `alias` / `names`）：
+
+```bash
+python3 -m finreport_charts run --code 600519 --start 2024-01-01 --end 2024-12-31 \
+  --data-dir output --templates templates \
+  --template 收入趋势 --template 资产结构
+```
+
 > 兼容旧版：仍支持单文件多模板（`charts.toml` + `finreport_charts template --type xxx`），但不再推荐。
 
 ---
@@ -329,6 +339,10 @@ python3 -m finreport_charts run --code 600519 --start 2024-01-01 --end 2024-12-3
 
 用于给 `combo` 双轴图提供 `{data-dir}/{公司名}_{code6}/price/{code6}.csv`（兼容 `{data-dir}/price/{code6}.csv`）。
 
+行为说明：
+- **第一次无缓存时**：先抓整家公司“全历史日线原始数据”，保存到 `output/{公司名}_{code6}/raw/price/{provider}/daily.pkl`
+- **后续再抓股价**：直接从 raw 中按 `--start/--end` 裁切，并按 `daily/weekly/monthly/Nd` 聚合输出，不再重复访问远端
+
 示例（日频）：
 
 ```bash
@@ -339,15 +353,52 @@ finprice fetch --code 600519 \
   --out output
 ```
 
-- provider：`auto|akshare|tushare`（auto 默认 token 有则 tushare，否则 akshare）
-- frequency：`daily|weekly|monthly`（tushare 目前仅支持 daily；周/月请用 akshare）
+- provider：`auto|akshare|tushare`（auto 默认优先复用已有 raw；无 raw 时 token 有则先试 tushare，否则 akshare）
+- frequency：`daily|weekly|monthly|Nd`（例如 `5d/7d/10d`）
 
 输出：
 
 ```
+output/贵州茅台_600519/raw/price/akshare/daily.pkl
+output/贵州茅台_600519/raw/price/akshare/daily.json
 output/贵州茅台_600519/price/600519.csv
 output/贵州茅台_600519/price/600519.xlsx
 ```
+
+---
+
+## 4) finreport_web（Web 报表分析台）
+
+提供一个本地 Web 服务，用来：
+
+- 选择公司、时间范围、公司分类
+- 一次性运行全部财报分析模板
+- 按 **趋势分析 / 结构分析 / 同业分析** 三类显示图表
+- 直接在页面里切换图片、下载 Excel
+- 直接编辑并保存 `config/company_categories.toml`
+
+启动示例：
+
+```bash
+python3 -m finreport_web serve \
+  --host 0.0.0.0 \
+  --port 8787 \
+  --data-dir output \
+  --templates templates \
+  --category-config config/company_categories.toml
+```
+
+打开浏览器：
+
+```text
+http://127.0.0.1:8787
+```
+
+页面支持键盘：
+- `← / →`：切图
+- `↑ / ↓`：切换分析类目
+
+详见：[`docs/WEB_UI.md`](docs/WEB_UI.md)
 
 ---
 

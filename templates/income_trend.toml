@@ -1,0 +1,18 @@
+# 财报分析 / 趋势分析 / 收入趋势
+
+name = "income_trend"
+alias = "收入趋势"
+names = ["营业总收入趋势", "收入趋势-营业总收入"]
+
+type = "bar"
+mode = "trend"
+
+title = "营业总收入趋势（单季）"
+x_label = "报告期"
+y_label = "金额"
+
+statement = "利润表"
+
+[[bars]]
+name = "营业总收入"
+expr = "is.revenue_total - is.revenue_total.prev_in_year"

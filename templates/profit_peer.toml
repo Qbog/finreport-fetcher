@@ -1,0 +1,20 @@
+# 财报分析 / 公司对比 / 利润对比
+
+name = "profit_peer"
+alias = "利润对比"
+names = ["公司对比-利润对比", "净利润对比"]
+
+type = "bar"
+mode = "peer"
+
+peers = ["688561", "300454", "002212", "601360"]
+
+title = "利润对比（单季归母净利润）"
+x_label = "公司"
+y_label = "金额"
+
+statement = "利润表"
+
+[[bars]]
+name = "归母净利润"
+expr = "is.net_profit_parent - is.net_profit_parent.prev_in_year"

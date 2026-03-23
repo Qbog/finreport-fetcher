@@ -62,12 +62,20 @@ output/比亚迪_002594/reports/002594_merged_20200331.xlsx
 ## 2.3 股价数据（finprice_fetcher）
 
 ```
+{data-dir}/{公司名}_{code6}/raw/price/{provider}/
+  daily.pkl
+  daily.json
+
 {data-dir}/{公司名}_{code6}/price/
   {code6}.csv
   {code6}.xlsx
 ```
 
-CSV 列：`date, close`（combo 图读取 CSV）。
+说明：
+- `raw/price/{provider}/daily.pkl` 保存整家公司全历史日线原始数据
+- `price/{code6}.csv/.xlsx` 为从 raw 中按时间范围裁切/聚合后的使用输出
+
+CSV 列：`date, close`（combo 图读取 CSV；实际也会尽量保留 open/high/low/volume/amount 等列）。
 
 ---
 

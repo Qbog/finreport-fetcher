@@ -14,7 +14,9 @@
 
 5) 模板规范与最佳实践 → [TEMPLATE_GUIDE.md](TEMPLATE_GUIDE.md)
 
-6) 测试与 CI → [TESTING.md](TESTING.md)
+6) Web 报表分析台 → [WEB_UI.md](WEB_UI.md)
+
+7) 测试与 CI → [TESTING.md](TESTING.md)
 
 ---
 
@@ -22,5 +24,6 @@
 
 - 第一次用：INSTALL → WORKFLOW
 - 想做图表模板：TEMPLATE_GUIDE
+- 想直接在浏览器里看图：WEB_UI
 - 遇到“未映射科目/缺失财报/没有可用数据”：TROUBLESHOOTING
 - 想把改动做稳：TESTING

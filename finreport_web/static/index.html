@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>财报分析台</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="page">
+    <header class="hero">
+      <div>
+        <h1>财报分析台</h1>
+        <p>按 Apple 风格做的简约报表界面：先选公司、时间范围、分类，再一键生成趋势分析、结构分析、同业分析三类图表。图表区域支持方向键浏览。</p>
+      </div>
+      <div class="meta-badge">← → 切图　↑ ↓ 切分析类目</div>
+    </header>
+
+    <div class="layout">
+      <aside class="panel sidebar">
+        <div class="section-title">
+          <h2>分析设置</h2>
+          <button id="reloadBtn" class="ghost" type="button">刷新</button>
+        </div>
+
+        <div class="field-grid">
+          <div class="field">
+            <label for="companyInput">公司（代码或名称）</label>
+            <input id="companyInput" type="text" placeholder="例如：600519 / 贵州茅台">
+          </div>
+
+          <div class="field">
+            <label for="categorySelect">公司分类（用于同业对比）</label>
+            <select id="categorySelect">
+              <option value="">不指定</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="startInput">开始日期</label>
+            <input id="startInput" type="date">
+          </div>
+
+          <div class="field">
+            <label for="endInput">结束日期</label>
+            <input id="endInput" type="date">
+          </div>
+        </div>
+
+        <div class="section-title" style="margin-top:18px;">
+          <h3>模板</h3>
+          <div class="actions">
+            <button id="selectAllTplBtn" class="secondary" type="button">全选</button>
+            <button id="clearTplBtn" class="ghost" type="button">清空</button>
+          </div>
+        </div>
+        <div id="templateGroups" class="template-groups"></div>
+
+        <div class="actions" style="margin-top:18px;">
+          <button id="generateBtn" class="primary" type="button">生成全部图表</button>
+        </div>
+        <p class="hint">提示：Web 端会按模板逐个生成，并把本次结果单独输出到公司目录下的 <code>charts/web/时间戳/</code>，避免和旧图混在一起。</p>
+
+        <div class="section-title" style="margin-top:24px;">
+          <h3>公司分类配置</h3>
+          <button id="saveConfigBtn" class="secondary" type="button">保存配置</button>
+        </div>
+        <div class="field">
+          <label for="configEditor">config/company_categories.toml</label>
+          <textarea id="configEditor" spellcheck="false"></textarea>
+        </div>
+        <p class="hint">这里直接编辑分类配置 TOML。保存后，下拉框会立即刷新。</p>
+      </aside>
+
+      <main class="content">
+        <section class="panel toolbar">
+          <div id="statusText" class="status">等待生成图表。</div>
+          <div class="hint">键盘：<kbd>←</kbd> <kbd>→</kbd> 切换图片，<kbd>↑</kbd> <kbd>↓</kbd> 切换分析分类。</div>
+        </section>
+
+        <section class="panel viewer">
+          <div class="viewer-top">
+            <div class="viewer-title">
+              <h2 id="viewerHeading">图表浏览区</h2>
+              <p id="viewerSubheading">生成后会按趋势分析 / 结构分析 / 同业分析分类展示。</p>
+            </div>
+            <div id="sectionTabs" class="section-tabs"></div>
+          </div>
+
+          <div id="mainStage" class="main-stage">
+            <div class="empty">先在左侧设置公司和时间范围，然后点击“生成全部图表”。</div>
+          </div>
+
+          <div class="caption-bar">
+            <div>
+              <h3 id="captionTitle">暂无图表</h3>
+              <p id="captionMeta">生成后可在此查看图片与下载 Excel。</p>
+            </div>
+            <div class="actions">
+              <a id="downloadXlsxLink" class="ghost" href="#" target="_blank" rel="noreferrer" style="display:none; text-decoration:none; padding:11px 18px;">下载 Excel</a>
+              <a id="openImageLink" class="secondary" href="#" target="_blank" rel="noreferrer" style="display:none; text-decoration:none; padding:11px 18px;">打开原图</a>
+            </div>
+          </div>
+
+          <div id="thumbList" class="thumb-list"></div>
+        </section>
+
+        <section id="errorBox" class="panel error-list" style="display:none;"></section>
+      </main>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

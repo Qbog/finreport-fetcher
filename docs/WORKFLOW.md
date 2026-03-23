@@ -67,8 +67,12 @@ python3 -m finprice_fetcher -l info fetch \
 
 输出到：
 
+- `output/比亚迪_002594/raw/price/{provider}/daily.pkl`（首次无缓存时保存整家公司全历史日线 raw）
+- `output/比亚迪_002594/raw/price/{provider}/daily.json`
 - `output/比亚迪_002594/price/002594.csv`
 - `output/比亚迪_002594/price/002594.xlsx`
+
+> 后续再抓 daily/weekly/monthly/Nd 时，会直接从 raw 中裁切/聚合，不再重复访问远端。
 
 ---
 

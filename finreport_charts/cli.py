@@ -44,7 +44,7 @@ from .data.finreport_store import (
     read_sheet_provider,
     read_statement_df,
 )
-from .templates.config import load_template_dir, load_template_file
+from .templates.config import find_template_file, load_template_dir, load_template_file
 from .utils.expr import ExprError, eval_expr, tokenize
 from .utils.files import safe_slug
 from .utils.numfmt import UnitScale, choose_unit_scale, fmt_tick
@@ -853,6 +853,11 @@ def run(
         for pp in cands:
             if pp.exists() and pp.is_file():
                 return pp
+
+        pp = find_template_file(templates, s0)
+        if pp is not None:
+            return pp
+
         raise FileNotFoundError(f"未找到模板文件: {s0}（已尝试: {', '.join(str(x) for x in cands)}）")
 
     # '*' means all templates
@@ -1882,6 +1887,9 @@ def merge(
         p2 = tpl_dir / f"{spec}.toml"
         if p2.exists():
             return load_template_file(p2)
+        p3 = find_template_file(tpl_dir, spec)
+        if p3 is not None:
+            return load_template_file(p3)
         raise RuntimeError(f"未找到模板: {spec}（在目录 {tpl_dir} 中）")
 
     tpl_bar = _load_one(bar_template)

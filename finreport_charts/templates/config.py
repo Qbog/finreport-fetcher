@@ -34,6 +34,7 @@ class Template:
 
     # Required
     type: str  # bar|pie|combo|line
+    names: list[str] | None = None  # extra lookup names, e.g. ["income_trend", "收入趋势"]
 
     # Common display fields
     title: str | None = None
@@ -77,6 +78,57 @@ def _as_str(v: Any) -> str | None:
         return None
     s = str(v).strip()
     return s or None
+
+
+def _as_str_list(v: Any) -> list[str] | None:
+    if not isinstance(v, list):
+        return None
+    out: list[str] = []
+    seen: set[str] = set()
+    for x in v:
+        s = _as_str(x)
+        if not s:
+            continue
+        k = s.strip().lower()
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(s)
+    return out or None
+
+
+def _normalize_lookup_name(s: str | None) -> str:
+    return str(s or "").strip().lower()
+
+
+def template_lookup_names(tpl: Template) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for s in [tpl.name, tpl.alias, *(tpl.names or [])]:
+        if not s:
+            continue
+        k = _normalize_lookup_name(s)
+        if not k or k in seen:
+            continue
+        seen.add(k)
+        out.append(str(s))
+    return out
+
+
+def find_template_file(dir_path: Path, spec: str) -> Path | None:
+    want = _normalize_lookup_name(spec)
+    if not want:
+        return None
+    for p in sorted(dir_path.glob("*.toml")):
+        tpl = load_template_file(p)
+        keys = {_normalize_lookup_name(x) for x in template_lookup_names(tpl)}
+        file_stem = _normalize_lookup_name(p.stem)
+        file_name = _normalize_lookup_name(p.name)
+        if want in keys or want == file_stem or want == file_name:
+            return p
+        if not want.endswith(".toml") and f"{want}.toml" == file_name:
+            return p
+    return None
 
 
 def _parse_bar_blocks(data: dict[str, Any]) -> list[BarBlock] | None:
@@ -159,6 +211,7 @@ def load_template_file(path: Path) -> Template:
 
     name = str(data.get("name") or path.stem)
     alias = _as_str(data.get("alias"))
+    names = _as_str_list(data.get("names") or data.get("template_names") or data.get("aliases"))
 
     type_ = _as_str(data.get("type") or data.get("chart"))
     if not type_:
@@ -168,6 +221,7 @@ def load_template_file(path: Path) -> Template:
         name=name,
         alias=alias,
         type=type_,
+        names=names,
         title=_as_str(data.get("title")),
         x_label=_as_str(data.get("x_label")),
         y_label=_as_str(data.get("y_label")),
