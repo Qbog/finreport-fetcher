@@ -21,7 +21,7 @@ from rich.prompt import IntPrompt
 from finreport_fetcher.utils.company_categories import resolve_company_category, default_company_categories_path
 from finreport_fetcher.utils.dates import parse_date, quarter_ends_between
 from finreport_fetcher.utils.paths import safe_dir_component
-from finreport_fetcher.utils.symbols import (
+from finshared.symbols import (
     ResolvedSymbol,
     fuzzy_match_name,
     load_a_share_name_map,

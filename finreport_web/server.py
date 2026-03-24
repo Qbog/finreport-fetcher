@@ -27,7 +27,7 @@ from finshared.global_datasets import load_company_basics_csv, load_financial_me
 from finreport_fetcher.utils.company_categories import CompanyCategory, CompanyCategoryItem, load_company_categories
 from finreport_fetcher.utils.dates import parse_date, quarter_ends_between
 from finreport_fetcher.utils.paths import safe_dir_component
-from finreport_fetcher.utils.symbols import ResolvedSymbol, load_a_share_name_map, parse_code
+from finshared.symbols import ResolvedSymbol, load_a_share_name_map, parse_code
 
 
 _ID_DATE_SUFFIX = re.compile(r"^(?P<id>.+?)\.(?P<y>\d{4})\.(?P<m>\d{2})\.(?P<d>\d{2})$")

@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from finreport_charts.templates.config import Template
-from finreport_fetcher.utils.symbols import ResolvedSymbol
+from finshared.symbols import ResolvedSymbol
 from finreport_web.server import AppContext
 
 

@@ -7,7 +7,7 @@ import pandas as pd
 
 from finprice_fetcher.cli import CommonOpts, _ensure_raw_daily_price
 from finprice_fetcher.raw_store import RawPriceStore
-from finreport_fetcher.utils.symbols import ResolvedSymbol
+from finshared.symbols import ResolvedSymbol
 
 
 def _sample_daily_df() -> pd.DataFrame:

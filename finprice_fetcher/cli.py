@@ -17,7 +17,7 @@ from rich.console import Console
 from finreport_fetcher.utils.company_categories import resolve_company_category
 from finreport_fetcher.utils.dates import parse_date
 from finreport_fetcher.utils.paths import safe_dir_component
-from finreport_fetcher.utils.symbols import ResolvedSymbol, fuzzy_match_name, load_a_share_name_map, parse_code
+from finshared.symbols import ResolvedSymbol, fuzzy_match_name, load_a_share_name_map, parse_code
 
 from .raw_store import RawPriceStore
 

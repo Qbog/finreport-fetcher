@@ -39,7 +39,7 @@ from finreport_fetcher.providers.akshare_sina import AkshareSinaProvider
 from finreport_fetcher.providers.akshare_ths import AkshareThsProvider
 from finreport_fetcher.providers.tushare_provider import TushareProvider
 from finreport_fetcher.utils.dates import parse_date
-from finreport_fetcher.utils.symbols import parse_code
+from finshared.symbols import parse_code
 from finreport_fetcher.mappings.enrich import _normalize_subject  # type: ignore
 from finreport_fetcher.mappings.subject_glossary import lookup_subject
 
@@ -214,7 +214,7 @@ def _try_load_stock_basic_samples(token: str, n: int, *, category: str) -> list[
 def _try_load_name_map_samples(n: int, *, category: str) -> list[dict[str, str]]:
     """Return [{code6,name}] using cninfo/akshare name map (no tushare permission required)."""
 
-    from finreport_fetcher.utils.symbols import load_a_share_name_map
+    from finshared.symbols import load_a_share_name_map
 
     df = load_a_share_name_map().copy()
     df["code"] = df["code"].astype(str).str.zfill(6)

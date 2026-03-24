@@ -11,7 +11,7 @@ from typing import Any, Iterable
 
 import pandas as pd
 
-from finreport_fetcher.utils.symbols import parse_code
+from finshared.symbols import parse_code
 
 
 @dataclass(frozen=True)
@@ -243,7 +243,7 @@ class CompanyBasicsProvider:
             errors.append(f"akshare: {exc}")
 
         try:
-            from finreport_fetcher.utils.symbols import load_a_share_name_map
+            from finshared.symbols import load_a_share_name_map
 
             df = load_a_share_name_map().rename(columns={"code": "symbol", "name": "name"})
             if df is not None and not df.empty:
