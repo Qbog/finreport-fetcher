@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from finreport_fetcher.global_datasets import (  # shared low-level helpers
+from finshared.global_datasets import (
     CompanyBasicsProvider,
     DatasetPaths,
     fetch_company_basics_dataset,

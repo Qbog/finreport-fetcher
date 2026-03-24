@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from finreport_fetcher.global_datasets import (
+from finshared.global_datasets import (
     CompanyBasicsProvider,
     FinancialMetricsProvider,
     fetch_company_basics_dataset,
@@ -49,3 +49,19 @@ def test_fetch_financial_metrics_dataset(tmp_path: Path):
     assert list(df.columns) == ["ts_code", "code6", "name", "end_date", "ann_date", "roe", "roa", "roic", "ev", "ebitda"]
     assert len(df.index) == 2
     assert (paths.raw_dir / "600519.csv").exists()
+
+
+def test_fetch_financial_metrics_dataset_without_token_writes_empty_csv(tmp_path: Path):
+    class TokenRequiredProvider(FakeMetricsProvider):
+        def fetch_company_metrics(self, ts_code: str, tushare_token=None):
+            if not tushare_token:
+                raise RuntimeError("抓取财报指标需要 TUSHARE_TOKEN")
+            return super().fetch_company_metrics(ts_code, tushare_token=tushare_token)
+
+    paths = fetch_financial_metrics_dataset(data_dir=tmp_path, provider=TokenRequiredProvider())
+    assert paths.csv_path.exists()
+    df = load_financial_metrics_csv(tmp_path)
+    assert list(df.columns) == ["ts_code", "code6", "name", "end_date", "ann_date", "roe", "roa", "roic", "ev", "ebitda"]
+    assert df.empty
+    meta = paths.latest_meta_path.read_text(encoding="utf-8")
+    assert "unavailable" in meta

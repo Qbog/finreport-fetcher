@@ -105,6 +105,38 @@
     </div>
   </div>
 
+  <div id="categoryModal" class="modal-backdrop" style="display:none;">
+    <div class="modal-card">
+      <div class="section-title">
+        <h3>创建公司类别</h3>
+        <button id="closeCategoryModalBtn" class="ghost" type="button">关闭</button>
+      </div>
+      <div class="field-grid">
+        <div class="field">
+          <label for="categoryNameInput">类别名称</label>
+          <input id="categoryNameInput" type="text" placeholder="例如：网络安全软件开发-观察池">
+        </div>
+        <div class="field">
+          <label for="companySearchInput">搜索公司（名称/代码）</label>
+          <input id="companySearchInput" type="text" placeholder="输入关键词过滤公司列表">
+        </div>
+      </div>
+      <div class="modal-grid">
+        <div class="modal-pane">
+          <strong>可选公司</strong>
+          <div id="companyPickerList" class="picker-list"></div>
+        </div>
+        <div class="modal-pane">
+          <strong>已选公司</strong>
+          <div id="selectedCompanyList" class="picker-list"></div>
+        </div>
+      </div>
+      <div class="actions top-gap">
+        <button id="saveCategoryModalBtn" class="primary" type="button">保存类别</button>
+      </div>
+    </div>
+  </div>
+
   <script src="/static/app.js"></script>
 </body>
 </html>

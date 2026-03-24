@@ -4,6 +4,8 @@ import json
 import mimetypes
 import os
 import re
+import subprocess
+import sys
 import traceback
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -21,8 +23,7 @@ import matplotlib.pyplot as plt
 from finreport_charts.data.finreport_store import expected_xlsx_path, load_price_csv, read_statement_df
 from finreport_charts.templates.config import BarBlock, Template, load_template_dir, template_lookup_names
 from finreport_charts.utils.expr import ExprError, eval_expr, tokenize
-from fincompany_fetcher.dataset import load_company_basics_csv
-from finmetrics_fetcher.dataset import load_financial_metrics_csv
+from finshared.global_datasets import load_company_basics_csv, load_financial_metrics_csv
 from finreport_fetcher.utils.company_categories import CompanyCategory, CompanyCategoryItem, load_company_categories
 from finreport_fetcher.utils.dates import parse_date, quarter_ends_between
 from finreport_fetcher.utils.paths import safe_dir_component
@@ -233,6 +234,70 @@ class AppContext:
             if rs:
                 out.append(ResolvedSymbol(code6=rs.code6, ts_code=rs.ts_code, market=rs.market, name=it.name))
         return out
+
+    def _run_fetcher(self, args: list[str]) -> tuple[int, str, str]:
+        env = os.environ.copy()
+        py_path = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = str(self.repo_root) + (os.pathsep + py_path if py_path else "")
+        proc = subprocess.run(
+            args,
+            cwd=str(self.repo_root),
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+        return proc.returncode, proc.stdout or "", proc.stderr or ""
+
+    def ensure_finreport_ready(self, rs: ResolvedSymbol, pe: date) -> None:
+        xlsx = expected_xlsx_path(self.data_dir, rs.code6, "merged", pe, name=rs.name)
+        if xlsx.exists():
+            return
+        rc, out, err = self._run_fetcher([
+            sys.executable,
+            "-m",
+            "finreport_fetcher",
+            "fetch",
+            "--code",
+            rs.code6,
+            "--start",
+            pe.strftime("%Y-%m-%d"),
+            "--end",
+            pe.strftime("%Y-%m-%d"),
+            "--out",
+            str(self.data_dir),
+            "--no-clean",
+        ])
+        if rc != 0:
+            raise RuntimeError(f"自动补抓财报失败：{rs.code6} {pe.strftime('%Y-%m-%d')}\n{(err or out).strip()[-1200:]}")
+        xlsx = expected_xlsx_path(self.data_dir, rs.code6, "merged", pe, name=rs.name)
+        if not xlsx.exists():
+            raise FileNotFoundError(f"自动补抓后仍缺少财报文件：{xlsx}")
+
+    def ensure_price_ready(self, rs: ResolvedSymbol, start: date, end: date) -> None:
+        company_dir = self.data_dir / f"{safe_dir_component((rs.name or rs.code6) + '_' + rs.code6)}" / "price"
+        cand = company_dir / f"{rs.code6}.csv"
+        if cand.exists():
+            return
+        rc, out, err = self._run_fetcher([
+            sys.executable,
+            "-m",
+            "finprice_fetcher",
+            "fetch",
+            "--code",
+            rs.code6,
+            "--start",
+            start.strftime("%Y-%m-%d"),
+            "--end",
+            end.strftime("%Y-%m-%d"),
+            "--out",
+            str(self.data_dir),
+        ])
+        if rc != 0:
+            raise RuntimeError(f"自动补抓股价失败：{rs.code6}\n{(err or out).strip()[-1200:]}")
+        if not cand.exists():
+            raise FileNotFoundError(f"自动补抓后仍缺少股价 CSV：{cand}")
 
     def generate_reports(self, payload: dict[str, Any]) -> dict[str, Any]:
         category_key = str(payload.get("category") or "").strip() or None
@@ -630,7 +695,11 @@ class CompanyDataResolver:
         self._price_cache: pd.DataFrame | None = None
 
     def xlsx_for(self, pe: date) -> Path:
-        return expected_xlsx_path(self.ctx.data_dir, self.rs.code6, "merged", pe, name=self.rs.name)
+        xlsx = expected_xlsx_path(self.ctx.data_dir, self.rs.code6, "merged", pe, name=self.rs.name)
+        if not xlsx.exists():
+            self.ctx.ensure_finreport_ready(self.rs, pe)
+            xlsx = expected_xlsx_path(self.ctx.data_dir, self.rs.code6, "merged", pe, name=self.rs.name)
+        return xlsx
 
     def _load_statement_df(self, pe: date, statement: str) -> pd.DataFrame:
         key = (pe, statement)
@@ -719,6 +788,13 @@ class CompanyDataResolver:
             company_matches = list(self.ctx.data_dir.glob(f"*_{self.rs.code6}/price/{self.rs.code6}*.csv"))
             candidates = sorted(company_matches)
         if not candidates:
+            # 股价默认补到最近两年，足够当前 Web 趋势/合并分析使用。
+            self.ctx.ensure_price_ready(self.rs, date(date.today().year - 2, 1, 1), date.today())
+            candidates = list((self.ctx.data_dir / f"{safe_dir_component((self.rs.name or self.rs.code6) + '_' + self.rs.code6)}" / "price").glob(f"{self.rs.code6}*.csv"))
+            if not candidates:
+                company_matches = list(self.ctx.data_dir.glob(f"*_{self.rs.code6}/price/{self.rs.code6}*.csv"))
+                candidates = sorted(company_matches)
+        if not candidates:
             raise FileNotFoundError(f"缺少股价 CSV：{self.rs.code6}")
         self._price_cache = load_price_csv(candidates[0])
         return self._price_cache
@@ -772,8 +848,9 @@ def build_trend_chart(ctx: AppContext, tpl: Template, rs: ResolvedSymbol, period
         data[bar["name"]] = values
     df = pd.DataFrame(data)
     fig, ax = plt.subplots(figsize=(10, 4.8))
+    x_vals = df["period"].tolist()
     for bar in bars:
-        ax.plot(df["period"], df[bar["name"]], marker="o", label=bar["name"])
+        ax.plot(x_vals, df[bar["name"]].tolist(), marker="o", label=bar["name"])
     ax.set_title(f"{rs.name or rs.code6} · {tpl.alias or tpl.name}")
     ax.set_xlabel(tpl.x_label or "报告期")
     ax.set_ylabel(tpl.y_label or "数值")
@@ -793,7 +870,7 @@ def build_structure_chart(ctx: AppContext, tpl: Template, rs: ResolvedSymbol, pe
         rows.append({"item": bar["name"], "value": resolver.eval_expr(bar["expr"], current_pe=pe, default_statement=str(bar.get("statement") or tpl.statement or "利润表"))})
     df = pd.DataFrame(rows)
     fig, ax = plt.subplots(figsize=(10, 4.8))
-    ax.bar(df["item"], df["value"], color="#4E79A7")
+    ax.bar(df["item"].tolist(), df["value"].tolist(), color="#4E79A7")
     ax.set_title(f"{rs.name or rs.code6} · {tpl.alias or tpl.name} · {pe.strftime('%Y-%m-%d')}")
     ax.set_xlabel(tpl.x_label or "科目")
     ax.set_ylabel(tpl.y_label or "数值")
@@ -816,13 +893,13 @@ def build_peer_chart(ctx: AppContext, tpl: Template, companies: list[ResolvedSym
     df = pd.DataFrame(rows)
     fig, ax = plt.subplots(figsize=(10, 4.8))
     if len(bars) == 1:
-        ax.bar(df["company"], df[bars[0]["name"]], color="#4E79A7")
+        ax.bar(df["company"].tolist(), df[bars[0]["name"]].tolist(), color="#4E79A7")
     else:
         base = range(len(df.index))
         width = 0.8 / max(len(bars), 1)
         for idx, bar in enumerate(bars):
             pos = [x + idx * width for x in base]
-            ax.bar(pos, df[bar["name"]], width=width, label=bar["name"])
+            ax.bar(pos, df[bar["name"]].tolist(), width=width, label=bar["name"])
         ax.set_xticks([x + width * (len(bars) - 1) / 2 for x in base], df["company"])
         ax.legend(loc="best")
     ax.set_title(f"{tpl.alias or tpl.name} · {pe.strftime('%Y-%m-%d')}")
@@ -844,10 +921,11 @@ def build_merge_chart(ctx: AppContext, tpl: Template, rs: ResolvedSymbol, period
     px_values = resolver.price_series(periods, field=line_field)
     df = pd.DataFrame({"period": labels, "financial": fin_values, line_field: px_values})
     fig, ax1 = plt.subplots(figsize=(10, 4.8))
-    ax1.bar(df["period"], df["financial"], color="#4E79A7", alpha=0.8, label="financial")
+    x_vals = df["period"].tolist()
+    ax1.bar(x_vals, df["financial"].tolist(), color="#4E79A7", alpha=0.8, label="financial")
     ax1.set_ylabel(tpl.y_label or "财务数值")
     ax2 = ax1.twinx()
-    ax2.plot(df["period"], df[line_field], color="#E15759", marker="o", label=line_field)
+    ax2.plot(x_vals, df[line_field].tolist(), color="#E15759", marker="o", label=line_field)
     ax2.set_ylabel(line_field)
     ax1.set_title(f"{rs.name or rs.code6} · {tpl.alias or tpl.name}")
     ax1.tick_params(axis="x", rotation=30)

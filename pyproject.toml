@@ -40,7 +40,7 @@ select = ["E", "F", "I"]
 line-length = 100
 
 [tool.setuptools.packages.find]
-include = ["finreport_fetcher*", "fincompany_fetcher*", "finmetrics_fetcher*", "finreport_charts*", "finprice_fetcher*", "finchart_merge*", "finreport_web*"]
+include = ["finshared*", "finreport_fetcher*", "fincompany_fetcher*", "finmetrics_fetcher*", "finreport_charts*", "finprice_fetcher*", "finchart_merge*", "finreport_web*"]
 exclude = ["output*", "templates*"]
 
 [tool.setuptools.package-data]

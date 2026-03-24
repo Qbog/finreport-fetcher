@@ -5,7 +5,7 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
-from finreport_fetcher.global_datasets import fetch_company_basics_dataset
+from finshared.global_datasets import fetch_company_basics_dataset
 
 app = typer.Typer(add_completion=False)
 console = Console()

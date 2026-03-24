@@ -12,6 +12,7 @@ const state = {
   peerTimeIndex: 0,
   mergeTemplateIndex: 0,
   mergeCompanyIndex: 0,
+  categoryBuilderSelection: [],
 };
 
 const sectionLabelMap = {
@@ -35,6 +36,11 @@ const downloadXlsxLink = document.getElementById("downloadXlsxLink");
 const openImageLink = document.getElementById("openImageLink");
 const errorBox = document.getElementById("errorBox");
 const datasetHint = document.getElementById("datasetHint");
+const categoryModal = document.getElementById("categoryModal");
+const categoryNameInput = document.getElementById("categoryNameInput");
+const companySearchInput = document.getElementById("companySearchInput");
+const companyPickerList = document.getElementById("companyPickerList");
+const selectedCompanyList = document.getElementById("selectedCompanyList");
 
 function setStatus(text) {
   statusText.textContent = text;
@@ -376,22 +382,77 @@ async function loadBootstrap() {
   setStatus("配置已加载，等待开始分析。");
 }
 
-async function createCategory() {
+function filteredBasics() {
   const basics = state.bootstrap?.companyBasics || [];
-  const label = window.prompt("新公司类别名称（显示名）");
-  if (!label) return;
-  const keyword = window.prompt("输入关键词筛选公司（可留空显示前 30 家）", "");
-  const filtered = basics.filter(item => !keyword || item.name.includes(keyword) || item.code6.includes(keyword)).slice(0, 30);
-  if (!filtered.length) {
-    alert("没有匹配到公司，请先准备 company_basics.csv 或换个关键词。");
+  const kw = (companySearchInput.value || "").trim();
+  return basics.filter(item => !kw || item.name.includes(kw) || item.code6.includes(kw)).slice(0, 200);
+}
+
+function renderCategoryBuilder() {
+  const selectedMap = new Map(state.categoryBuilderSelection.map(item => [item.code6, item]));
+  const basics = filteredBasics();
+  companyPickerList.innerHTML = basics.map(item => `
+    <div class="picker-item">
+      <div>
+        <div>${escapeHtml(item.name)} <small>${escapeHtml(item.code6)}</small></div>
+        <small>${escapeHtml(item.industry || "")}</small>
+      </div>
+      <button class="secondary picker-add-btn" data-code="${item.code6}" type="button">${selectedMap.has(item.code6) ? "已选" : "加入"}</button>
+    </div>
+  `).join("") || '<div class="empty">没有匹配的公司。</div>';
+
+  selectedCompanyList.innerHTML = state.categoryBuilderSelection.map(item => `
+    <div class="picker-item">
+      <div>
+        <div>${escapeHtml(item.name)} <small>${escapeHtml(item.code6)}</small></div>
+        <small>${escapeHtml(item.industry || "")}</small>
+      </div>
+      <button class="ghost picker-remove-btn" data-code="${item.code6}" type="button">移除</button>
+    </div>
+  `).join("") || '<div class="empty">还没有选择公司。</div>';
+
+  companyPickerList.querySelectorAll('.picker-add-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const code = btn.dataset.code;
+      const found = (state.bootstrap?.companyBasics || []).find(x => x.code6 === code);
+      if (!found) return;
+      if (!state.categoryBuilderSelection.some(x => x.code6 === code)) {
+        state.categoryBuilderSelection.push(found);
+        renderCategoryBuilder();
+      }
+    });
+  });
+
+  selectedCompanyList.querySelectorAll('.picker-remove-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const code = btn.dataset.code;
+      state.categoryBuilderSelection = state.categoryBuilderSelection.filter(x => x.code6 !== code);
+      renderCategoryBuilder();
+    });
+  });
+}
+
+function openCategoryModal() {
+  state.categoryBuilderSelection = [];
+  categoryNameInput.value = "";
+  companySearchInput.value = "";
+  renderCategoryBuilder();
+  categoryModal.style.display = "grid";
+}
+
+function closeCategoryModal() {
+  categoryModal.style.display = "none";
+}
+
+async function createCategory() {
+  const label = categoryNameInput.value.trim();
+  const companies = state.categoryBuilderSelection.slice();
+  if (!label) {
+    alert("请先填写类别名称。");
     return;
   }
-  const picked = window.prompt(`请输入要加入的代码，逗号分隔：\n${filtered.map(x => `${x.code6} ${x.name}`).join("\n")}`);
-  if (!picked) return;
-  const codes = picked.split(/[，,\s]+/).map(x => x.trim()).filter(Boolean);
-  const companies = filtered.filter(item => codes.includes(item.code6));
   if (!companies.length) {
-    alert("没有选中有效代码。");
+    alert("请至少选择一家公司。");
     return;
   }
   setStatus("正在创建公司类别...");
@@ -400,6 +461,7 @@ async function createCategory() {
     body: JSON.stringify({ label, companies }),
   });
   renderCategories(data.categories || []);
+  closeCategoryModal();
   setStatus(`已创建公司类别：${data.created}`);
 }
 
@@ -460,7 +522,13 @@ async function generateReports() {
 
 function bindEvents() {
   document.getElementById("reloadBtn").addEventListener("click", loadBootstrap);
-  document.getElementById("createCategoryBtn").addEventListener("click", createCategory);
+  document.getElementById("createCategoryBtn").addEventListener("click", openCategoryModal);
+  document.getElementById("closeCategoryModalBtn").addEventListener("click", closeCategoryModal);
+  document.getElementById("saveCategoryModalBtn").addEventListener("click", createCategory);
+  companySearchInput.addEventListener("input", renderCategoryBuilder);
+  categoryModal.addEventListener("click", (event) => {
+    if (event.target === categoryModal) closeCategoryModal();
+  });
   document.getElementById("createTemplateBtn").addEventListener("click", createTemplate);
   document.getElementById("generateBtn").addEventListener("click", generateReports);
   document.getElementById("selectAllTplBtn").addEventListener("click", () => {
