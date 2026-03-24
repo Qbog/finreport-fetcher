@@ -24,7 +24,7 @@ from finreport_charts.data.finreport_store import expected_xlsx_path, load_price
 from finreport_charts.templates.config import BarBlock, Template, load_template_dir, template_lookup_names
 from finreport_charts.utils.expr import ExprError, eval_expr, tokenize
 from finshared.global_datasets import load_company_basics_csv, load_financial_metrics_csv
-from finreport_fetcher.utils.company_categories import CompanyCategory, CompanyCategoryItem, load_company_categories
+from finshared.company_categories import CompanyCategory, CompanyCategoryItem, load_company_categories
 from finreport_fetcher.utils.dates import parse_date, quarter_ends_between
 from finreport_fetcher.utils.paths import safe_dir_component
 from finshared.symbols import ResolvedSymbol, load_a_share_name_map, parse_code

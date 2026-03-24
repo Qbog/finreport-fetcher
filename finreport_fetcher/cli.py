@@ -19,7 +19,7 @@ from .providers.registry import ProviderConfig, build_providers
 from .utils.dates import candidate_quarter_ends_before, parse_date, quarter_ends_between
 from .utils.paths import safe_dir_component
 from .utils.company_category import detect_company_category
-from .utils.company_categories import resolve_company_category, default_company_categories_path
+from finshared.company_categories import resolve_company_category, default_company_categories_path
 from .utils.symbols import ResolvedSymbol, fuzzy_match_name, load_a_share_name_map, parse_code
 
 app = typer.Typer(add_completion=False)

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import typer
 
-from finreport_fetcher.utils.company_categories import default_company_categories_path
+from finshared.company_categories import default_company_categories_path
 
 from .server import serve_app
 

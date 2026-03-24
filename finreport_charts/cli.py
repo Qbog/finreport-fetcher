@@ -18,7 +18,7 @@ import typer
 from rich.console import Console
 from rich.prompt import IntPrompt
 
-from finreport_fetcher.utils.company_categories import resolve_company_category, default_company_categories_path
+from finshared.company_categories import resolve_company_category, default_company_categories_path
 from finreport_fetcher.utils.dates import parse_date, quarter_ends_between
 from finreport_fetcher.utils.paths import safe_dir_component
 from finshared.symbols import (

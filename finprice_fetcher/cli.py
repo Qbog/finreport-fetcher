@@ -14,7 +14,7 @@ import pandas as pd
 import typer
 from rich.console import Console
 
-from finreport_fetcher.utils.company_categories import resolve_company_category
+from finshared.company_categories import resolve_company_category
 from finreport_fetcher.utils.dates import parse_date
 from finreport_fetcher.utils.paths import safe_dir_component
 from finshared.symbols import ResolvedSymbol, fuzzy_match_name, load_a_share_name_map, parse_code

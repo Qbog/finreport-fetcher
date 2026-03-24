@@ -4,6 +4,7 @@ import csv
 import json
 import os
 import re
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -169,10 +170,26 @@ def _extract_akshare_metric_row(df: pd.DataFrame, candidates: list[str]) -> pd.S
     return None
 
 
+def _akshare_call_with_retry(fn, *, attempts: int = 3, sleep_seconds: float = 1.5):
+    last_exc: Exception | None = None
+    for i in range(attempts):
+        try:
+            df = fn()
+            if df is not None:
+                return df
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+        if i < attempts - 1:
+            time.sleep(sleep_seconds)
+    if last_exc:
+        raise last_exc
+    raise RuntimeError("akshare 返回空结果")
+
+
 def fetch_company_metrics_akshare(code6: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     import akshare as ak
 
-    raw_df = ak.stock_financial_abstract(symbol=code6)
+    raw_df = _akshare_call_with_retry(lambda: ak.stock_financial_abstract(symbol=code6))
     if raw_df is None or raw_df.empty:
         return pd.DataFrame(), pd.DataFrame(columns=DEFAULT_METRIC_COLUMNS)
 
@@ -205,6 +222,8 @@ def fetch_company_metrics_akshare(code6: str) -> tuple[pd.DataFrame, pd.DataFram
             }
         )
     tidy_df = pd.DataFrame(rows, columns=DEFAULT_METRIC_COLUMNS)
+    metric_cols = ["roe", "roa", "roic", "ev", "ebitda"]
+    tidy_df = tidy_df.dropna(subset=metric_cols, how="all").reset_index(drop=True)
     return raw_df, tidy_df
 
 
@@ -300,9 +319,13 @@ def fetch_financial_metrics_dataset(
     tushare_token: str | None = None,
     provider: FinancialMetricsProvider | None = None,
     limit: int | None = None,
+    code6_list: list[str] | None = None,
 ) -> DatasetPaths:
     provider = provider or FinancialMetricsProvider()
     company_df = provider.fetch_company_list(tushare_token=tushare_token)
+    if code6_list:
+        wanted = {str(x).zfill(6) for x in code6_list if str(x).strip()}
+        company_df = company_df[company_df["code6"].astype(str).str.zfill(6).isin(wanted)].reset_index(drop=True)
     if limit is not None and limit > 0:
         company_df = company_df.head(limit)
 
