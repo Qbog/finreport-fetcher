@@ -156,6 +156,10 @@ def _exc_short(e: Exception) -> str:
     return f"{type(e).__name__}: {e}"
 
 
+def _expected_xlsx_path(out_dir: Path, code6: str, statement_type: str, period_end: date) -> Path:
+    return out_dir / f"{code6}_{statement_type}_{period_end.strftime('%Y%m%d')}.xlsx"
+
+
 def _fetch_one_period(
     ts_code: str,
     code6: str,
@@ -313,6 +317,8 @@ def fetch(
     pdf: bool = typer.Option(False, "--pdf", help="下载对应报告期 PDF 原文，并写入 Excel"),
     out_dir: Path = typer.Option(Path("output"), "--out", help="输出目录"),
     no_clean: bool = typer.Option(False, "--no-clean", help="不清空输出目录，改为增量写入（供图表程序补数据使用）"),
+    update_raw: bool = typer.Option(False, "--update-raw", help="更新原始数据快照（保留旧快照）"),
+    clear_raw: bool = typer.Option(False, "--clear-raw", help="清理旧原始数据快照，仅保留最新一版"),
     tushare_token: str | None = typer.Option(None, "--tushare-token", help="Tushare token（可选，未提供则尝试环境变量）"),
 ):
     """抓取 A 股三大报表并导出 Excel。"""
@@ -329,8 +335,8 @@ def fetch(
         raise typer.BadParameter("--date 与 --start/--end 不能同时使用")
     if (start and not end) or (end and not start):
         raise typer.BadParameter("--start 与 --end 必须同时提供")
-    if not date_ and not (start and end):
-        raise typer.BadParameter("必须提供 --date 或 --start/--end")
+    if not update_raw and not clear_raw and not date_ and not (start and end):
+        raise typer.BadParameter("必须提供 --date 或 --start/--end；若仅维护原始数据，可使用 --update-raw/--clear-raw")
 
     cfg = ProviderConfig(
         provider=provider,
@@ -394,11 +400,35 @@ def fetch(
 
         return targets
 
+    maintenance_only = not date_ and not (start and end)
+
     targets: list[ResolvedSymbol]
     if category:
         targets = _resolve_category_targets()
     else:
         targets = [_resolve_symbol(code=code, name=name)]
+
+    def _update_raw_for_symbol(rs: ResolvedSymbol, raw_store: RawReportStore) -> str:
+        last_err: Exception | None = None
+        for p in providers:
+            refresh = getattr(p, "refresh_raw_history", None)
+            if callable(refresh):
+                try:
+                    snapshot_id = refresh(rs.ts_code, statement_type, raw_store)
+                    log_info(f"已更新原始数据快照：{rs.name or rs.code6}({rs.code6}) provider={getattr(p, 'name', p)} snapshot={snapshot_id}")
+                    return snapshot_id
+                except Exception as exc:
+                    last_err = exc
+                    log_debug(f"update_raw 失败，继续尝试下一个 provider：{getattr(p, 'name', p)} => {_exc_short(exc)}")
+                    continue
+        raise RuntimeError(f"更新原始数据失败：{last_err}")
+
+    def _clear_raw_for_symbol(raw_store: RawReportStore) -> None:
+        all_providers = set(raw_store.available_providers()) | {getattr(p, 'name', str(p)) for p in providers}
+        for pname in sorted(all_providers):
+            removed = raw_store.clear_old_provider_snapshots(pname)
+            if removed:
+                log_info(f"已清理 provider={pname} 旧原始快照 {len(removed)} 个")
 
     def _fetch_for_symbol(rs: ResolvedSymbol) -> list[Path]:
         company_name = rs.name or rs.code6
@@ -407,6 +437,11 @@ def fetch(
         out_reports_dir = company_root / "reports"
         out_reports_dir.mkdir(parents=True, exist_ok=True)
         raw_store = RawReportStore(company_root)
+
+        if update_raw:
+            _update_raw_for_symbol(rs, raw_store)
+        if clear_raw:
+            _clear_raw_for_symbol(raw_store)
 
         if not no_clean:
             for p in out_reports_dir.glob(f"{rs.code6}_*.xlsx"):
@@ -422,11 +457,19 @@ def fetch(
 
         exported: list[Path] = []
 
+        if not date_ and not (start and end):
+            return exported
+
         if date_:
             dt = parse_date(date_)
             candidates = candidate_quarter_ends_before(dt, years_back=10)
             last_err = None
             for pe in candidates:
+                out_path0 = _expected_xlsx_path(out_reports_dir, rs.code6, statement_type, pe)
+                if no_clean and out_path0.exists():
+                    exported.append(out_path0)
+                    log_info(f"已存在，跳过重生成：{out_path0}")
+                    break
                 try:
                     out_path, used_provider = _fetch_one_period(
                         ts_code=rs.ts_code,
@@ -456,6 +499,11 @@ def fetch(
                 raise RuntimeError("日期范围内没有任何标准报告期末日（03-31/06-30/09-30/12-31）")
             failed: list[tuple[date, str]] = []
             for pe in periods:
+                out_path0 = _expected_xlsx_path(out_reports_dir, rs.code6, statement_type, pe)
+                if no_clean and out_path0.exists():
+                    exported.append(out_path0)
+                    log_info(f"已存在，跳过重生成：{out_path0}")
+                    continue
                 try:
                     out_path, used_provider = _fetch_one_period(
                         ts_code=rs.ts_code,
@@ -514,7 +562,7 @@ def fetch(
     # 如果全部失败：
     # - 单公司：抛出更具体的失败原因（便于 finreport_charts 的补数日志直接定位）
     # - 多公司：保留汇总错误
-    if total_exported == 0:
+    if total_exported == 0 and not maintenance_only:
         if len(failed_companies) == 1:
             rs0, exc0 = failed_companies[0]
             raise RuntimeError(f"公司 {rs0.name or rs0.code6}({rs0.code6}) 抓取失败：{exc0}")
@@ -522,6 +570,8 @@ def fetch(
 
     if failed_companies:
         log_warn(f"提示：{len(failed_companies)} 家公司抓取失败（其余已完成）。")
+    elif maintenance_only:
+        log_info("原始数据维护完成。")
 
 
 def main():

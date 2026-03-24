@@ -225,6 +225,22 @@ class AkshareSinaProvider:
                 continue
             raw_store.save_provider_table(self.name, key, df)
 
+    def refresh_raw_history(self, ts_code: str, statement_type: str, raw_store: RawReportStore) -> str:
+        code6 = self._to_code6(ts_code)
+        bs_raw = self._fetch_one(code6, "资产负债表")
+        is_raw = self._fetch_one(code6, "利润表")
+        cf_raw = self._fetch_one(code6, "现金流量表")
+        return raw_store.save_provider_snapshot(
+            self.name,
+            {"bs": bs_raw, "is": is_raw, "cf": cf_raw},
+            metadata={
+                "scope": "full_history",
+                "ts_code": ts_code,
+                "statement_type": statement_type,
+                "provider": self.name,
+            },
+        )
+
     def _build_bundle_from_raw(
         self,
         ts_code: str,
@@ -295,6 +311,9 @@ class AkshareSinaProvider:
                 )
                 if cached:
                     return cached
+                meta = raw_store.load_provider_metadata(self.name) or {}
+                if meta.get("scope") == "full_history":
+                    raise RuntimeError(f"原始数据中没有 {period_end.strftime('%Y-%m-%d')} 日期的财报")
 
         bs_raw = self._fetch_one(code6, "资产负债表")
         is_raw = self._fetch_one(code6, "利润表")
@@ -341,6 +360,15 @@ class AkshareSinaProvider:
         )
 
         if raw_store:
-            self._persist_raw_tables(raw_store, code6, {"bs": bs_raw, "is": is_raw, "cf": cf_raw})
+            raw_store.save_provider_snapshot(
+                self.name,
+                {"bs": bs_raw, "is": is_raw, "cf": cf_raw},
+                metadata={
+                    "scope": "full_history",
+                    "ts_code": ts_code,
+                    "statement_type": statement_type,
+                    "provider": self.name,
+                },
+            )
 
         return bundle

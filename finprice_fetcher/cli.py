@@ -475,13 +475,26 @@ def _save_raw_daily(store: RawPriceStore, provider_name: str, df: pd.DataFrame) 
     return out
 
 
+def _save_raw_daily_snapshot(store: RawPriceStore, provider_name: str, df: pd.DataFrame) -> pd.DataFrame:
+    out = _coerce_price_df(df)
+    store.save_daily_snapshot(
+        provider_name,
+        out,
+        metadata={
+            "scope": "full_history_daily",
+            "note": "手动更新的全历史股价原始数据快照。",
+        },
+    )
+    return out
+
+
 def _ensure_raw_daily_price(c: CommonOpts, company_root: Path) -> tuple[pd.DataFrame, str]:
     store = RawPriceStore(company_root)
 
     def _load(provider_name: str) -> pd.DataFrame | None:
         return _load_cached_raw_daily(store, provider_name)
 
-    def _fetch_and_save(provider_name: str) -> pd.DataFrame:
+    def _fetch_and_save(provider_name: str, *, snapshot: bool = False) -> pd.DataFrame:
         if provider_name == "tushare":
             if not c.tushare_token:
                 raise RuntimeError("未提供 TUSHARE_TOKEN，无法抓取 tushare 全历史股价 raw")
@@ -490,7 +503,7 @@ def _ensure_raw_daily_price(c: CommonOpts, company_root: Path) -> tuple[pd.DataF
             raw_df = _fetch_full_history_akshare(c.rs.code6)
         else:
             raise RuntimeError(f"不支持的 raw 价格 provider: {provider_name}")
-        return _save_raw_daily(store, provider_name, raw_df)
+        return _save_raw_daily_snapshot(store, provider_name, raw_df) if snapshot else _save_raw_daily(store, provider_name, raw_df)
 
     if c.provider in {"akshare", "tushare"}:
         cached = _load(c.provider)
@@ -522,6 +535,34 @@ def _ensure_raw_daily_price(c: CommonOpts, company_root: Path) -> tuple[pd.DataF
             continue
 
     raise RuntimeError(f"无法获取全历史股价 raw：{last_err}")
+
+
+def _update_raw_daily_price(c: CommonOpts, company_root: Path) -> tuple[pd.DataFrame, str]:
+    store = RawPriceStore(company_root)
+    preferred = [c.provider] if c.provider in {"akshare", "tushare"} else (["tushare", "akshare"] if c.tushare_token else ["akshare"])
+    last_err: Exception | None = None
+    for provider_name in preferred:
+        try:
+            if provider_name == "tushare" and not c.tushare_token:
+                continue
+            if provider_name == "tushare":
+                raw_df = _fetch_full_history_tushare(c.rs.ts_code, c.tushare_token)
+            else:
+                raw_df = _fetch_full_history_akshare(c.rs.code6)
+            df2 = _save_raw_daily_snapshot(store, provider_name, raw_df)
+            return df2, provider_name
+        except Exception as ex:
+            last_err = ex
+            continue
+    raise RuntimeError(f"更新全历史股价 raw 失败：{last_err}")
+
+
+def _clear_old_raw_daily_price(company_root: Path) -> None:
+    store = RawPriceStore(company_root)
+    for pname in store.available_providers():
+        removed = store.clear_old_snapshots(pname)
+        if removed:
+            log_info(f"已清理股价 provider={pname} 旧原始快照 {len(removed)} 个")
 
 
 def _fetch_price_akshare(code6: str, start: date, end: date, frequency: str) -> pd.DataFrame:
@@ -686,8 +727,8 @@ def fetch(
     name: str | None = typer.Option(None, "--name"),
     category: str | None = typer.Option(None, "--category", help="公司分类名（见 config/company_categories.toml）"),
     category_config: Path | None = typer.Option(None, "--category-config", help="分类配置文件路径（默认：config/company_categories.toml）"),
-    start: str = typer.Option(..., "--start"),
-    end: str = typer.Option(..., "--end"),
+    start: str | None = typer.Option(None, "--start"),
+    end: str | None = typer.Option(None, "--end"),
     out: Path = typer.Option(Path("output"), "--out", help="输出根目录（默认 output）"),
     provider: str = typer.Option(
         "auto",
@@ -702,6 +743,8 @@ def fetch(
         help="频率：daily/weekly/monthly 或 Nd（例如 5d/7d/10d；Nd 会在 fetcher 内由日频聚合得到）（默认 daily）",
         show_default=True,
     ),
+    update_raw: bool = typer.Option(False, "--update-raw", help="更新全历史原始股价快照（保留旧快照）"),
+    clear_raw: bool = typer.Option(False, "--clear-raw", help="清理旧原始股价快照，仅保留最新一版"),
     tushare_token: str | None = typer.Option(None, "--tushare-token", envvar="TUSHARE_TOKEN"),
 ):
     """抓取股价数据（CSV + Excel）。
@@ -724,10 +767,14 @@ def fetch(
     - avg_ohlc4 = (open+high+low+close)/4
     """
 
+    maintenance_only = not start and not end
+    if not maintenance_only and (not start or not end):
+        raise typer.BadParameter("正常抓取股价时必须同时提供 --start 和 --end；若仅维护原始数据，可使用 --update-raw/--clear-raw")
+
     # 解析通用参数（不依赖单公司 code/name）
     s, e, out_dir0, provider0, freq0, token0 = _parse_common_args(
-        start=start,
-        end=end,
+        start=start or date.today().strftime('%Y-%m-%d'),
+        end=end or date.today().strftime('%Y-%m-%d'),
         out_dir=out,
         provider=provider,
         frequency=frequency,
@@ -763,7 +810,16 @@ def fetch(
         out_path = out_dir2 / f"{c.rs.code6}{suffix}.csv"
 
         try:
-            raw_daily, src = _ensure_raw_daily_price(c, company_root)
+            if update_raw:
+                raw_daily, src = _update_raw_daily_price(c, company_root)
+            else:
+                raw_daily, src = _ensure_raw_daily_price(c, company_root)
+            if clear_raw:
+                _clear_old_raw_daily_price(company_root)
+
+            if maintenance_only:
+                log_info(f"原始股价维护完成：{c.rs.name or c.rs.code6}({c.rs.code6})")
+                continue
 
             df_range = _filter_price_range(raw_daily, c.start, c.end)
             if c.frequency == "daily":

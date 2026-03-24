@@ -159,6 +159,19 @@ class TushareProvider:
         raw_store.update_provider_table(self.name, "is", inc_df, subset=subset)
         raw_store.update_provider_table(self.name, "cf", cf_df, subset=subset)
 
+    def refresh_raw_history(self, ts_code: str, statement_type: str, raw_store: RawReportStore) -> str:
+        bs_df, inc_df, cf_df = self._fetch_full_history_tables(ts_code, statement_type)
+        return raw_store.save_provider_snapshot(
+            self.name,
+            {"bs": bs_df, "is": inc_df, "cf": cf_df},
+            metadata={
+                "scope": "full_history",
+                "ts_code": ts_code,
+                "statement_type": statement_type,
+                "provider": self.name,
+            },
+        )
+
     def _fetch_full_history_tables(self, ts_code: str, statement_type: str) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """Fetch one company's full raw history (listing -> current) from Tushare.
 
@@ -197,10 +210,12 @@ class TushareProvider:
                 if cached:
                     cached.meta["raw_scope"] = "full_history"
                     return cached
+                meta = raw_store.load_provider_metadata(self.name) or {}
+                if meta.get("scope") == "full_history":
+                    raise RuntimeError(f"原始数据中没有 {period_end.strftime('%Y-%m-%d')} 日期的财报")
 
             # raw 缓存缺失/不完整时，拉取整家公司全历史宽表后再回填缓存。
-            bs_df, inc_df, cf_df = self._fetch_full_history_tables(ts_code, statement_type)
-            self._persist_raw_tables(raw_store, bs_df, inc_df, cf_df)
+            self.refresh_raw_history(ts_code, statement_type, raw_store)
 
             tables = self._load_raw_tables(raw_store)
             if tables:
@@ -214,7 +229,7 @@ class TushareProvider:
                     cached.meta["raw_scope"] = "full_history"
                     return cached
 
-            raise RuntimeError(f"tushare 全历史原始表中未找到报告期 {period_end.strftime('%Y-%m-%d')}")
+            raise RuntimeError(f"原始数据中没有 {period_end.strftime('%Y-%m-%d')} 日期的财报")
 
         # 未启用 raw_store 时，保持旧逻辑：按单个报告期请求，减少无关数据。
         pro = self._pro()

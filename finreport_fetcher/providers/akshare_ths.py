@@ -209,6 +209,24 @@ class AkshareThsProvider:
                 continue
             raw_store.save_provider_table(self.name, key, df)
 
+    def refresh_raw_history(self, ts_code: str, statement_type: str, raw_store: RawReportStore) -> str:
+        import akshare as ak
+
+        code6 = self._to_code6(ts_code)
+        bs_raw = ak.stock_financial_debt_ths(symbol=code6, indicator="按报告期")
+        is_raw = ak.stock_financial_benefit_ths(symbol=code6, indicator="按报告期")
+        cf_raw = ak.stock_financial_cash_ths(symbol=code6, indicator="按报告期")
+        return raw_store.save_provider_snapshot(
+            self.name,
+            {"bs": bs_raw, "is": is_raw, "cf": cf_raw},
+            metadata={
+                "scope": "full_history",
+                "ts_code": ts_code,
+                "statement_type": statement_type,
+                "provider": self.name,
+            },
+        )
+
     def _build_bundle_from_raw(
         self,
         ts_code: str,
@@ -337,6 +355,9 @@ class AkshareThsProvider:
                 )
                 if cached:
                     return cached
+                meta = raw_store.load_provider_metadata(self.name) or {}
+                if meta.get("scope") == "full_history":
+                    raise RuntimeError(f"原始数据中没有 {period_end.strftime('%Y-%m-%d')} 日期的财报")
 
         # 按报告期：通常为累计(YTD)口径，更适配我们后续的 TTM/单季差分转换
         bs_raw = ak.stock_financial_debt_ths(symbol=code6, indicator="按报告期")
@@ -371,6 +392,15 @@ class AkshareThsProvider:
         )
 
         if raw_store:
-            self._persist_raw_tables(raw_store, code6, {"bs": bs_raw, "is": is_raw, "cf": cf_raw})
+            raw_store.save_provider_snapshot(
+                self.name,
+                {"bs": bs_raw, "is": is_raw, "cf": cf_raw},
+                metadata={
+                    "scope": "full_history",
+                    "ts_code": ts_code,
+                    "statement_type": statement_type,
+                    "provider": self.name,
+                },
+            )
 
         return bundle
