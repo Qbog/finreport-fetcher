@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import json
 import os
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -40,6 +41,14 @@ def dataset_paths(data_dir: Path, dataset_name: str, csv_name: str) -> DatasetPa
 def ensure_dir(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def _safe_dir_component(s: str) -> str:
+    return re.sub(r'[\\/:*?"<>|]+', '_', str(s or '').strip()).strip() or 'unknown'
+
+
+def company_metrics_dir(data_dir: Path, code6: str, name: str | None) -> Path:
+    return ensure_dir(data_dir.resolve() / f"{_safe_dir_component((name or code6) + '_' + code6)}" / "metrics")
 
 
 def write_dataset(df: pd.DataFrame, *, paths: DatasetPaths, provider: str, raw_name: str) -> None:
@@ -119,6 +128,84 @@ def normalize_rows(rows: list[dict[str, Any]], aliases: dict[str, tuple[str, ...
         df["code6"] = df["code6"].fillna("").astype(str).str.zfill(6)
         df = df[df["code6"].str.fullmatch(r"\d{6}", na=False)]
     return df.drop_duplicates().reset_index(drop=True)
+
+
+def _to_float(v: Any) -> float | None:
+    if v in (None, "", False):
+        return None
+    if isinstance(v, str):
+        s = v.strip().replace(",", "")
+        if not s:
+            return None
+        if s.endswith("%"):
+            s = s[:-1]
+        try:
+            return float(s)
+        except Exception:
+            return None
+    try:
+        if pd.isna(v):
+            return None
+    except Exception:
+        pass
+    try:
+        return float(v)
+    except Exception:
+        return None
+
+
+def _extract_akshare_metric_row(df: pd.DataFrame, candidates: list[str]) -> pd.Series | None:
+    if "指标" not in df.columns:
+        return None
+    names = df["指标"].astype(str)
+    for cand in candidates:
+        sub = df[names == cand]
+        if not sub.empty:
+            return sub.iloc[0]
+    for cand in candidates:
+        sub = df[names.str.contains(re.escape(cand), case=False, na=False)]
+        if not sub.empty:
+            return sub.iloc[0]
+    return None
+
+
+def fetch_company_metrics_akshare(code6: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+    import akshare as ak
+
+    raw_df = ak.stock_financial_abstract(symbol=code6)
+    if raw_df is None or raw_df.empty:
+        return pd.DataFrame(), pd.DataFrame(columns=DEFAULT_METRIC_COLUMNS)
+
+    period_cols = [c for c in raw_df.columns if re.fullmatch(r"\d{8}", str(c))]
+    if not period_cols:
+        return raw_df, pd.DataFrame(columns=DEFAULT_METRIC_COLUMNS)
+
+    roe_row = _extract_akshare_metric_row(raw_df, ["净资产收益率(ROE)", "净资产收益率", "净资产收益率_平均"])
+    roa_row = _extract_akshare_metric_row(raw_df, ["总资产报酬率(ROA)", "总资产报酬率", "总资产净利率_平均"])
+    roic_row = _extract_akshare_metric_row(raw_df, ["投入资本回报率"])
+    ebitda_row = _extract_akshare_metric_row(raw_df, ["EBITDA"])
+    ev_row = _extract_akshare_metric_row(raw_df, ["EV", "企业价值"])
+
+    rs = parse_code(code6)
+    ts_code = rs.ts_code if rs else code6
+    rows: list[dict[str, Any]] = []
+    for pe in period_cols:
+        rows.append(
+            {
+                "ts_code": ts_code,
+                "code6": code6,
+                "name": None,
+                "end_date": str(pe),
+                "ann_date": None,
+                "roe": _to_float(roe_row.get(pe)) if roe_row is not None else None,
+                "roa": _to_float(roa_row.get(pe)) if roa_row is not None else None,
+                "roic": _to_float(roic_row.get(pe)) if roic_row is not None else None,
+                "ev": _to_float(ev_row.get(pe)) if ev_row is not None else None,
+                "ebitda": _to_float(ebitda_row.get(pe)) if ebitda_row is not None else None,
+            }
+        )
+    tidy_df = pd.DataFrame(rows, columns=DEFAULT_METRIC_COLUMNS)
+    return raw_df, tidy_df
 
 
 class CompanyBasicsProvider:
@@ -226,7 +313,7 @@ def fetch_financial_metrics_dataset(
     token = tushare_token or os.getenv("TUSHARE_TOKEN")
     rows: list[dict[str, Any]] = []
     raw_index_path = paths.raw_dir / "index.csv"
-    provider_name = "tushare" if token else "unavailable"
+    provider_name = "tushare" if token else "akshare"
     error_count = 0
     with raw_index_path.open("w", encoding="utf-8-sig", newline="") as fh:
         writer = csv.writer(fh)
@@ -239,26 +326,51 @@ def fetch_financial_metrics_dataset(
                 continue
             raw_file = f"{code6}.csv"
             raw_path = paths.raw_dir / raw_file
+            company_metrics_path = company_metrics_dir(data_dir, code6, name) / f"{code6}_financial_metrics.csv"
 
+            tidy_df = pd.DataFrame(columns=DEFAULT_METRIC_COLUMNS)
             try:
                 raw_df = provider.fetch_company_metrics(ts_code=ts_code, tushare_token=token)
                 raw_df.to_csv(raw_path, index=False, encoding="utf-8-sig")
                 writer.writerow([code6, ts_code, raw_file, "ok", ""])
+                current_rows: list[dict[str, Any]] = []
                 for row in raw_df.to_dict(orient="records"):
                     item = {col: row.get(col) for col in raw_df.columns}
                     item["code6"] = code6
                     item["name"] = name
                     rows.append(item)
+                    current_rows.append(item)
+                tidy_df = normalize_rows(current_rows, METRIC_FIELD_ALIASES, DEFAULT_METRIC_COLUMNS)
             except Exception as exc:  # noqa: BLE001
                 msg = str(exc)
-                if (not token) and ("TUSHARE_TOKEN" in msg or "token" in msg.lower()):
+                try:
+                    raw_df, tidy_df = fetch_company_metrics_akshare(code6)
+                    raw_df.to_csv(raw_path, index=False, encoding="utf-8-sig")
+                    writer.writerow([code6, ts_code, raw_file, "ok", f"akshare fallback: {msg[:120]}"])
+                    if not tidy_df.empty:
+                        tidy_df["name"] = name
+                        for row in tidy_df.to_dict(orient="records"):
+                            rows.append(row)
+                        provider_name = "mixed" if token else "akshare"
+                    else:
+                        company_metrics_path.write_text(",".join(DEFAULT_METRIC_COLUMNS) + "\n", encoding="utf-8-sig")
+                        continue
+                except Exception as exc2:  # noqa: BLE001
+                    msg = f"{msg} | akshare fallback: {exc2}"
+                    error_count += 1
                     pd.DataFrame(columns=DEFAULT_METRIC_COLUMNS).to_csv(raw_path, index=False, encoding="utf-8-sig")
-                    writer.writerow([code6, ts_code, raw_file, "skipped", "missing TUSHARE_TOKEN"])
+                    writer.writerow([code6, ts_code, raw_file, "error", msg])
+                    company_metrics_path.write_text(",".join(DEFAULT_METRIC_COLUMNS) + "\n", encoding="utf-8-sig")
                     continue
-                error_count += 1
-                pd.DataFrame(columns=DEFAULT_METRIC_COLUMNS).to_csv(raw_path, index=False, encoding="utf-8-sig")
-                writer.writerow([code6, ts_code, raw_file, "error", msg])
-                continue
+
+            if tidy_df.empty:
+                pd.DataFrame(columns=DEFAULT_METRIC_COLUMNS).to_csv(company_metrics_path, index=False, encoding="utf-8-sig")
+            else:
+                tidy_df = tidy_df.copy()
+                tidy_df["code6"] = code6
+                tidy_df["ts_code"] = ts_code
+                tidy_df["name"] = name
+                tidy_df.to_csv(company_metrics_path, index=False, encoding="utf-8-sig")
 
     df = normalize_rows(rows, METRIC_FIELD_ALIASES, DEFAULT_METRIC_COLUMNS)
     if df.empty:

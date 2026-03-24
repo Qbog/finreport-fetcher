@@ -371,7 +371,9 @@ output/贵州茅台_600519/price/600519.xlsx
 
 ## 4) 全局数据集（公司基础信息 / 财报指标）
 
-新增两个全局抓取程序，输出都落在 `output/_global/`，不会写进单家公司目录：
+新增两个全局抓取程序：
+- 全局汇总 CSV / raw 落在 `output/_global/`
+- 其中“财报指标”还会额外把每家公司的指标 CSV 写到各自公司目录下的 `metrics/`
 
 ```bash
 # 1) 抓全部公司基础信息
@@ -394,6 +396,9 @@ output/_global/financial_metrics/
   raw/index.csv
   raw/{code6}.csv
   latest.json
+
+output/{公司名}_{code6}/metrics/
+  {code6}_financial_metrics.csv
 ```
 
 Web 启动时会优先从 `output/_global/company_basics/company_basics.csv` 加载公司总表。

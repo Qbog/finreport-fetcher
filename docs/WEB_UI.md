@@ -36,8 +36,9 @@ python3 -m fincompany_fetcher fetch --out output
 python3 -m finmetrics_fetcher fetch --out output
 ```
 
-同时，Web 分析仍然依赖 `output/{公司名}_{code6}/reports/*.xlsx` 和 `output/{公司名}_{code6}/price/{code6}.csv`。
-这些底层数据仍由现有抓取程序维护：
+Web 分析会优先读取已有的 `output/{公司名}_{code6}/reports/*.xlsx` 和 `output/{公司名}_{code6}/price/{code6}.csv`。
+如果缺少这些底层数据，Web 后端现在会自动调用现有 fetcher 进行补抓。
+当然，你也可以手工预抓：
 
 ```bash
 finfetch fetch --category test --start 2024-01-01 --end 2024-12-31 --out output --no-clean
@@ -84,7 +85,7 @@ http://127.0.0.1:8787
 
 辅助功能：
 
-- **创建公司类别**：从全局公司总表里挑选公司，写回 `config/company_categories.toml`
+- **创建公司类别**：使用前端多选面板从全局公司总表里挑选公司，写回 `config/company_categories.toml`
 - **模板创建**：快速生成一个 `templates/{name}.toml`
 
 ### 右侧：报表浏览区
