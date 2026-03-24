@@ -101,6 +101,10 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   padding: 22px;
 }
 
+.modal-card-narrow {
+  width: min(720px, 100%);
+}
+
 .modal-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

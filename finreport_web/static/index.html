@@ -137,6 +137,53 @@
     </div>
   </div>
 
+  <div id="templateModal" class="modal-backdrop" style="display:none;">
+    <div class="modal-card modal-card-narrow">
+      <div class="section-title">
+        <h3>创建模板</h3>
+        <button id="closeTemplateModalBtn" class="ghost" type="button">关闭</button>
+      </div>
+      <div class="field-grid">
+        <div class="field">
+          <label for="templateModeSelect">模板类别</label>
+          <select id="templateModeSelect">
+            <option value="trend">趋势分析</option>
+            <option value="structure">结构分析</option>
+            <option value="peer">同业分析</option>
+            <option value="merge">合并报表</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="templateLabelInput">模板名称</label>
+          <input id="templateLabelInput" type="text" placeholder="例如：营业收入趋势">
+        </div>
+        <div class="field" id="templateExprField">
+          <label for="templateExprInput">表达式</label>
+          <input id="templateExprInput" type="text" placeholder="例如：is.revenue_total">
+        </div>
+        <div class="field" id="templateStatementField">
+          <label for="templateStatementSelect">报表类型</label>
+          <select id="templateStatementSelect">
+            <option value="利润表">利润表</option>
+            <option value="资产负债表">资产负债表</option>
+            <option value="现金流量表">现金流量表</option>
+          </select>
+        </div>
+        <div class="field" id="templateBarItemField" style="display:none;">
+          <label for="templateBarItemInput">财务字段</label>
+          <input id="templateBarItemInput" type="text" placeholder="例如：is.revenue_total">
+        </div>
+        <div class="field" id="templateLineField" style="display:none;">
+          <label for="templateLineInput">股价字段</label>
+          <input id="templateLineInput" type="text" placeholder="例如：close">
+        </div>
+      </div>
+      <div class="actions top-gap">
+        <button id="saveTemplateModalBtn" class="primary" type="button">保存模板</button>
+      </div>
+    </div>
+  </div>
+
   <script src="/static/app.js"></script>
 </body>
 </html>

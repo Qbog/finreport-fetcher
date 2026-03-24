@@ -41,6 +41,17 @@ const categoryNameInput = document.getElementById("categoryNameInput");
 const companySearchInput = document.getElementById("companySearchInput");
 const companyPickerList = document.getElementById("companyPickerList");
 const selectedCompanyList = document.getElementById("selectedCompanyList");
+const templateModal = document.getElementById("templateModal");
+const templateModeSelect = document.getElementById("templateModeSelect");
+const templateLabelInput = document.getElementById("templateLabelInput");
+const templateExprInput = document.getElementById("templateExprInput");
+const templateStatementSelect = document.getElementById("templateStatementSelect");
+const templateBarItemInput = document.getElementById("templateBarItemInput");
+const templateLineInput = document.getElementById("templateLineInput");
+const templateExprField = document.getElementById("templateExprField");
+const templateStatementField = document.getElementById("templateStatementField");
+const templateBarItemField = document.getElementById("templateBarItemField");
+const templateLineField = document.getElementById("templateLineField");
 
 function setStatus(text) {
   statusText.textContent = text;
@@ -465,24 +476,60 @@ async function createCategory() {
   setStatus(`已创建公司类别：${data.created}`);
 }
 
+function refreshTemplateModal() {
+  const mode = templateModeSelect.value;
+  const isMerge = mode === "merge";
+  templateExprField.style.display = isMerge ? "none" : "block";
+  templateStatementField.style.display = isMerge ? "none" : "block";
+  templateBarItemField.style.display = isMerge ? "block" : "none";
+  templateLineField.style.display = isMerge ? "block" : "none";
+}
+
+function openTemplateModal() {
+  templateModeSelect.value = "trend";
+  templateLabelInput.value = "";
+  templateExprInput.value = "is.revenue_total";
+  templateStatementSelect.value = "利润表";
+  templateBarItemInput.value = "is.revenue_total";
+  templateLineInput.value = "close";
+  refreshTemplateModal();
+  templateModal.style.display = "grid";
+}
+
+function closeTemplateModal() {
+  templateModal.style.display = "none";
+}
+
 async function createTemplate() {
-  const mode = window.prompt("模板类别：trend / structure / peer / merge", "trend");
-  if (!mode) return;
-  const label = window.prompt("模板名称（显示名）");
-  if (!label) return;
+  const mode = templateModeSelect.value;
+  const label = templateLabelInput.value.trim();
+  if (!label) {
+    alert("请先填写模板名称。");
+    return;
+  }
   let payload = { mode, label };
   if (mode === "merge") {
-    const barItem = window.prompt("财务字段（如 is.revenue_total）", "is.revenue_total");
-    const line = window.prompt("股价字段（默认 close）", "close");
-    payload = { ...payload, barItem, line };
+    payload = {
+      ...payload,
+      barItem: templateBarItemInput.value.trim() || "is.revenue_total",
+      line: templateLineInput.value.trim() || "close",
+    };
   } else {
-    const expr = window.prompt("表达式（如 is.revenue_total / bs.total_assets / cf.net_cash_from_ops）", "is.revenue_total");
-    if (!expr) return;
-    payload = { ...payload, expr };
+    const expr = templateExprInput.value.trim();
+    if (!expr) {
+      alert("请先填写表达式。");
+      return;
+    }
+    payload = {
+      ...payload,
+      expr,
+      statement: templateStatementSelect.value,
+    };
   }
   setStatus("正在创建模板...");
   const data = await apiFetch("/api/templates/create", { method: "POST", body: JSON.stringify(payload) });
   renderTemplateGroups(data.templates || []);
+  closeTemplateModal();
   setStatus(`已创建模板：${data.created}`);
 }
 
@@ -529,7 +576,13 @@ function bindEvents() {
   categoryModal.addEventListener("click", (event) => {
     if (event.target === categoryModal) closeCategoryModal();
   });
-  document.getElementById("createTemplateBtn").addEventListener("click", createTemplate);
+  document.getElementById("createTemplateBtn").addEventListener("click", openTemplateModal);
+  document.getElementById("closeTemplateModalBtn").addEventListener("click", closeTemplateModal);
+  document.getElementById("saveTemplateModalBtn").addEventListener("click", createTemplate);
+  templateModeSelect.addEventListener("change", refreshTemplateModal);
+  templateModal.addEventListener("click", (event) => {
+    if (event.target === templateModal) closeTemplateModal();
+  });
   document.getElementById("generateBtn").addEventListener("click", generateReports);
   document.getElementById("selectAllTplBtn").addEventListener("click", () => {
     document.querySelectorAll(".tpl-check").forEach(el => { el.checked = true; });
