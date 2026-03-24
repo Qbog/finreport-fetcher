@@ -5,9 +5,8 @@ SRC_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 DST_DIR="/mnt/hgfs/share_with_vm/a_share_finreport_fetcher"
 
 # Sync project code to the VM shared folder.
-# Requirements:
+# Requirement:
 # - keep user's output data intact (do not wipe output/*.xlsx)
-# - but DO copy output/finreport_fetcher.py shim
 
 rsync -a --delete \
   --exclude '.venv/' \
@@ -23,7 +22,6 @@ rsync -a --delete \
   --exclude 'charts_output/' \
   \
   --include 'output/' \
-  --include 'output/finreport_fetcher.py' \
   --exclude 'output/**' \
   \
   "${SRC_DIR}/" "${DST_DIR}/"

@@ -14,10 +14,6 @@ mkdir -p "$OUT_DIR" "$CHART_DIR"
 # 1) fetch one period (no pdf for speed)
 python3 -m finreport_fetcher fetch --code 600519 --date 2025-02-01 --out "$OUT_DIR" --no-clean
 
-# 1b) also verify running from output/ works without PYTHONPATH (shim)
-mkdir -p output
-( cd output && python3 -m finreport_fetcher version >/dev/null )
-
 # locate xlsx (new layout: _smoke_output/{公司名}_600519/reports/*.xlsx)
 XLSX="$(ls -1 "$OUT_DIR"/*_600519/reports/600519_merged_*.xlsx 2>/dev/null | sort | tail -n 1 || true)"
 if [ -z "$XLSX" ] || [ ! -f "$XLSX" ]; then

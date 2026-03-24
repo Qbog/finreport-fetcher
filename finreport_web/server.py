@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 from finreport_charts.data.finreport_store import expected_xlsx_path, load_price_csv, read_statement_df
 from finreport_charts.templates.config import BarBlock, Template, load_template_dir, template_lookup_names
 from finreport_charts.utils.expr import ExprError, eval_expr, tokenize
-from finshared.global_datasets import load_company_basics_csv, load_financial_metrics_csv
+from finshared.global_datasets import load_company_basics_csv
 from finshared.company_categories import CompanyCategory, CompanyCategoryItem, load_company_categories
 from finreport_fetcher.utils.dates import parse_date, quarter_ends_between
 from finreport_fetcher.utils.paths import safe_dir_component
@@ -81,13 +81,19 @@ class AppContext:
             ]
 
     def load_financial_metrics_summary(self) -> dict[str, Any]:
-        try:
-            df = load_financial_metrics_csv(self.data_dir)
-        except Exception:
+        files = sorted(self.data_dir.glob("*_*/metrics/*_financial_metrics.csv"))
+        if not files:
             return {"rows": 0, "companies": 0}
-        if df.empty:
-            return {"rows": 0, "companies": 0}
-        return {"rows": int(len(df.index)), "companies": int(df["code6"].astype(str).nunique()) if "code6" in df.columns else 0}
+        rows = 0
+        companies = 0
+        for p in files:
+            try:
+                df = pd.read_csv(p)
+                rows += int(len(df.index))
+                companies += 1
+            except Exception:
+                continue
+        return {"rows": rows, "companies": companies}
 
     def load_categories_payload(self) -> list[dict[str, Any]]:
         cats = load_company_categories(self.category_config)

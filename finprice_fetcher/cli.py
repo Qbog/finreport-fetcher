@@ -880,6 +880,114 @@ def fetch(
         raise RuntimeError(f"股价抓取失败 {len(failed)}/{len(targets)}。示例：{ex}{more}")
 
 
+COMMODITY_MAP = {
+    'gold': {'label': '黄金', 'stooq': 'gc.c'},
+    '黄金': {'label': '黄金', 'stooq': 'gc.c'},
+    'silver': {'label': '白银', 'stooq': 'si.c'},
+    '白银': {'label': '白银', 'stooq': 'si.c'},
+    'oil': {'label': '石油', 'stooq': 'cl.c'},
+    '石油': {'label': '石油', 'stooq': 'cl.c'},
+}
+
+
+def _normalize_commodity(s: str) -> tuple[str, dict]:
+    key = (s or '').strip().lower()
+    if s in COMMODITY_MAP:
+        return slugify_commodity(COMMODITY_MAP[s]['label']), COMMODITY_MAP[s]
+    if key in COMMODITY_MAP:
+        return slugify_commodity(COMMODITY_MAP[key]['label']), COMMODITY_MAP[key]
+    raise typer.BadParameter(f"暂不支持的商品：{s}（当前支持：黄金/白银/石油）")
+
+
+def slugify_commodity(label: str) -> str:
+    rev = {'黄金': 'gold', '白银': 'silver', '石油': 'oil'}
+    return rev.get(label, re.sub(r'[^a-zA-Z0-9_\-]+', '_', label).strip('_').lower() or 'commodity')
+
+
+def _fetch_full_history_commodity_stooq(stooq_symbol: str) -> pd.DataFrame:
+    import requests
+    url = f'https://stooq.com/q/d/l/?s={stooq_symbol}&i=d'
+    last_err = None
+    for i in range(4):
+        try:
+            r = requests.get(url, timeout=(10, 20), headers={'User-Agent': 'Mozilla/5.0'})
+            r.raise_for_status()
+            text = r.text.strip()
+            if not text or text == 'No data':
+                raise RuntimeError(f'stooq 返回空数据: {stooq_symbol}')
+            from io import StringIO
+            df = pd.read_csv(StringIO(text))
+            rename = {'Date': 'date', 'Open': 'open', 'High': 'high', 'Low': 'low', 'Close': 'close', 'Volume': 'volume'}
+            out = df.rename(columns=rename)
+            out['date'] = pd.to_datetime(out['date'], errors='coerce').dt.strftime('%Y-%m-%d')
+            for c in ['open', 'high', 'low', 'close', 'volume']:
+                if c in out.columns:
+                    out[c] = pd.to_numeric(out[c], errors='coerce')
+            return out.dropna(subset=['date']).sort_values('date').reset_index(drop=True)
+        except Exception as exc:
+            last_err = exc
+    raise RuntimeError(f'抓取商品历史失败：{last_err}')
+
+
+@app.command('commodity')
+def commodity(
+    name: str = typer.Option(..., '--name', help='商品名：黄金/白银/石油'),
+    start: str | None = typer.Option(None, '--start'),
+    end: str | None = typer.Option(None, '--end'),
+    out: Path = typer.Option(Path('output'), '--out', help='输出根目录'),
+    no_clean: bool = typer.Option(False, '--no-clean'),
+    update_raw: bool = typer.Option(False, '--update-raw'),
+    clear_raw: bool = typer.Option(False, '--clear-raw'),
+):
+    maintenance_only = not start and not end
+    if not maintenance_only and ((start and not end) or (end and not start)):
+        raise typer.BadParameter('--start 与 --end 必须同时提供')
+    if not maintenance_only and not start and not end:
+        raise typer.BadParameter('必须提供 --start/--end；若仅维护 raw，可使用 --update-raw/--clear-raw')
+
+    slug, spec = _normalize_commodity(name)
+    root = out.resolve() / '_global' / 'commodities' / slug
+    price_dir = root / 'price'
+    price_dir.mkdir(parents=True, exist_ok=True)
+    store = RawPriceStore(root)
+
+    if maintenance_only and clear_raw and not update_raw:
+        _clear_old_raw_daily_price(root)
+        log_info(f'商品原始价格维护完成：{spec["label"]}')
+        return
+
+    if update_raw:
+        raw_df = _fetch_full_history_commodity_stooq(spec['stooq'])
+        _save_raw_daily_snapshot(store, 'stooq', raw_df)
+        src = 'stooq'
+    else:
+        cached = _load_cached_raw_daily(store, 'stooq')
+        if cached is not None:
+            raw_df, src = cached, 'stooq'
+        else:
+            raw_df = _fetch_full_history_commodity_stooq(spec['stooq'])
+            raw_df = _save_raw_daily(store, 'stooq', raw_df)
+            src = 'stooq'
+    if clear_raw:
+        _clear_old_raw_daily_price(root)
+    if maintenance_only:
+        log_info(f'商品原始价格维护完成：{spec["label"]}')
+        return
+
+    s = parse_date(start)
+    e = parse_date(end)
+    df = _finalize_price_df(_filter_price_range(raw_df, s, e))
+    out_csv = price_dir / f'{slug}.csv'
+    out_xlsx = price_dir / f'{slug}.xlsx'
+    if no_clean and out_csv.exists():
+        log_info(f'已存在，跳过重生成：{out_csv}')
+        return
+    df.to_csv(out_csv, index=False)
+    with pd.ExcelWriter(out_xlsx, engine='openpyxl') as w:
+        df.to_excel(w, sheet_name='price', index=False)
+    log_info(f'已输出: {out_csv} / {out_xlsx} (provider={src}, rows={len(df)})')
+
+
 def main():
     app()
 

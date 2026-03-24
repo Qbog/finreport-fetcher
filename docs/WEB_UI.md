@@ -32,10 +32,10 @@ cd /mnt/hgfs/share_with_vm/a_share_finreport_fetcher
 python3 -m fincompany_fetcher fetch --out output
 ```
 
-如果要在 Web 中看到全量财报指标汇总，也可以补抓：
+如果要在 Web 中看到各公司的指标摘要，也可以先补抓：
 
 ```bash
-python3 -m finmetrics_fetcher fetch --out output
+python3 -m finmetrics_fetcher fetch --category test --start 2024-01-01 --end 2024-12-31 --out output
 ```
 
 Web 分析会优先读取已有的 `output/{公司名}_{code6}/reports/*.xlsx` 和 `output/{公司名}_{code6}/price/{code6}.csv`。

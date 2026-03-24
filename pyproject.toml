@@ -27,6 +27,7 @@ fincompany = "fincompany_fetcher.cli:app"
 finmetrics = "finmetrics_fetcher.cli:app"
 finchart = "finreport_charts.cli:app"
 finprice = "finprice_fetcher.cli:app"
+finindex = "finindex_fetcher.cli:app"
 finmerge = "finchart_merge.cli:app"
 finweb = "finreport_web.cli:app"
 
@@ -40,7 +41,7 @@ select = ["E", "F", "I"]
 line-length = 100
 
 [tool.setuptools.packages.find]
-include = ["finshared*", "finreport_fetcher*", "fincompany_fetcher*", "finmetrics_fetcher*", "finreport_charts*", "finprice_fetcher*", "finchart_merge*", "finreport_web*"]
+include = ["finshared*", "finreport_fetcher*", "fincompany_fetcher*", "finmetrics_fetcher*", "finindex_fetcher*", "finreport_charts*", "finprice_fetcher*", "finchart_merge*", "finreport_web*"]
 exclude = ["output*", "templates*"]
 
 [tool.setuptools.package-data]

@@ -35,9 +35,9 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -U pip setuptools wheel
 
-# 安装为 editable（会提供 finfetch / fincompany / finmetrics / finchart / finprice / finweb 命令；
+# 安装为 editable（会提供 finfetch / fincompany / finmetrics / finchart / finprice / finindex / finweb 命令；
 # 也支持 python -m finreport_fetcher / python -m fincompany_fetcher /
-# python -m finmetrics_fetcher / python -m finreport_web / python -m finprice_fetcher）
+# python -m finmetrics_fetcher / python -m finreport_web / python -m finprice_fetcher / python -m finindex_fetcher）
 pip install -e .
 
 # 如需 tushare（可选）：
@@ -47,9 +47,7 @@ pip install tushare
 > 如果你不想安装，也可以在项目根目录用：
 > `PYTHONPATH=. python3 -m finreport_fetcher fetch ...`
 >
-> 已兼容一种常见误用：如果你 `cd output` 后运行 `python3 -m finreport_fetcher ...`，
-> 仓库内提供了 `output/finreport_fetcher.py` shim，会自动切回项目根目录执行。
-> （但更推荐在项目根目录运行，或用 `pip install -e .` 安装后用 `finfetch` 命令运行。）
+> 建议始终在项目根目录运行，或先 `pip install -e .` 后再用命令行入口。
 
 > 如使用 tushare，需要设置环境变量 `TUSHARE_TOKEN`，或在运行时传入 `--tushare-token`。
 
@@ -341,7 +339,7 @@ python3 -m finreport_charts run --code 600519 --start 2024-01-01 --end 2024-12-3
 
 ---
 
-## 3) finprice_fetcher（股价抓取）
+## 3) finprice_fetcher（股价/商品价格抓取）
 
 用于给 `combo` 双轴图提供 `{data-dir}/{公司名}_{code6}/price/{code6}.csv`（兼容 `{data-dir}/price/{code6}.csv`）。
 
@@ -384,20 +382,40 @@ python3 -m finprice_fetcher fetch --category test --update-raw --out output
 python3 -m finprice_fetcher fetch --category test --clear-raw --out output
 ```
 
+商品价格（当前内置：黄金/白银/石油）：
+
+```bash
+python3 -m finprice_fetcher commodity --name 黄金 --start 2024-01-01 --end 2024-03-31 --out output
+python3 -m finprice_fetcher commodity --name 石油 --update-raw --out output
+python3 -m finprice_fetcher commodity --name 石油 --clear-raw --out output
+```
+
+输出结构示例：
+
+```text
+output/_global/commodities/oil/
+  price/oil.csv
+  price/oil.xlsx
+  raw/price/stooq/current/daily.pkl
+  raw/price/stooq/current/daily.csv
+  raw/price/stooq/latest.json
+  raw/price/stooq/snapshots/{timestamp}/...
+```
+
 ---
 
 ## 4) 全局数据集（公司基础信息 / 财报指标）
 
 新增两个全局抓取程序：
-- 全局汇总 CSV / raw 落在 `output/_global/`
-- 其中“财报指标”还会额外把每家公司的指标 CSV 写到各自公司目录下的 `metrics/`
+- 公司基础信息仍然落在 `output/_global/`
+- 财报指标则只落在各公司目录下（不再写 `_global/financial_metrics`）
 
 ```bash
 # 1) 抓全部公司基础信息
 python3 -m fincompany_fetcher fetch --out output
 
 # 2) 抓公司财报指标（ROE / ROA / ROIC / EV / EBITDA 等；拿不到就留空）
-python3 -m finmetrics_fetcher fetch --out output
+python3 -m finmetrics_fetcher fetch --category test --start 2024-01-01 --end 2024-12-31 --out output
 ```
 
 输出结构：
@@ -408,19 +426,46 @@ output/_global/company_basics/
   raw/*.csv
   latest.json
 
-output/_global/financial_metrics/
-  financial_metrics.csv
-  raw/index.csv
-  raw/{code6}.csv
-  latest.json
-
 output/{公司名}_{code6}/metrics/
   {code6}_financial_metrics.csv
+  {code6}_financial_metrics_20240331.xlsx
+  {code6}_financial_metrics_20240630.xlsx
+  ...
+
+output/{公司名}_{code6}/raw/metrics/{provider}/
+  current/source.pkl
+  current/source.csv
+  current/metrics.pkl
+  current/metrics.csv
+  latest.json
+  snapshots/{timestamp}/...
 ```
 
 Web 启动时会优先从 `output/_global/company_basics/company_basics.csv` 加载公司总表。
 
 ---
+
+## 4) finindex_fetcher（大盘指数抓取）
+
+支持：上证 / 深证 / 创业板 / 北证（默认全抓，也可用 `--index` 指定）。
+
+```bash
+python3 -m finindex_fetcher fetch --start 2024-01-01 --end 2024-01-31 --out output
+python3 -m finindex_fetcher fetch --index 上证 --update-raw --out output
+python3 -m finindex_fetcher fetch --index 上证 --clear-raw --out output
+```
+
+输出结构示例：
+
+```text
+output/_global/indexes/sh000001/
+  index/sh000001.csv
+  index/sh000001.xlsx
+  raw/index/tencent/current/daily.pkl
+  raw/index/tencent/current/daily.csv
+  raw/index/tencent/latest.json
+  raw/index/tencent/snapshots/{timestamp}/...
+```
 
 ## 5) finreport_web（Web 报表分析台）
 
