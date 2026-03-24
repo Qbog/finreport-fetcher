@@ -65,6 +65,18 @@
         <p class="hint">公司类别只在前台创建，保存后会自动写回 <code>config/company_categories.toml</code>，不再需要手工编辑 TOML。</p>
         <p class="hint">启动时会优先读取 <code>output/_global/company_basics/company_basics.csv</code> 作为公司总表；如果还没有，先运行 <code>python3 -m fincompany_fetcher fetch --out output</code>。</p>
         <p class="hint" id="datasetHint"></p>
+
+        <div class="section-title top-gap">
+          <h3>原始数据维护</h3>
+        </div>
+        <div class="actions">
+          <button id="updateReportRawBtn" class="secondary" type="button">更新财报 raw</button>
+          <button id="clearReportRawBtn" class="ghost" type="button">清理财报 raw</button>
+        </div>
+        <div class="actions top-gap-small">
+          <button id="updatePriceRawBtn" class="secondary" type="button">更新股价 raw</button>
+          <button id="clearPriceRawBtn" class="ghost" type="button">清理股价 raw</button>
+        </div>
       </aside>
 
       <main class="content">

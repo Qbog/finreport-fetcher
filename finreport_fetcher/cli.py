@@ -424,11 +424,16 @@ def fetch(
         raise RuntimeError(f"更新原始数据失败：{last_err}")
 
     def _clear_raw_for_symbol(raw_store: RawReportStore) -> None:
-        all_providers = set(raw_store.available_providers()) | {getattr(p, 'name', str(p)) for p in providers}
+        all_providers = list(raw_store.available_providers())
+        if not all_providers:
+            log_info("未发现可清理的财报原始数据。")
+            return
         for pname in sorted(all_providers):
             removed = raw_store.clear_old_provider_snapshots(pname)
             if removed:
                 log_info(f"已清理 provider={pname} 旧原始快照 {len(removed)} 个")
+            else:
+                log_info(f"provider={pname} 没有旧原始快照可清理。")
 
     def _fetch_for_symbol(rs: ResolvedSymbol) -> list[Path]:
         company_name = rs.name or rs.code6

@@ -533,6 +533,27 @@ async function createTemplate() {
   setStatus(`已创建模板：${data.created}`);
 }
 
+async function manageRaw(kind, action) {
+  const category = categorySelect.value;
+  if (!category) {
+    alert("请先选择公司类别。");
+    return;
+  }
+  const label = `${kind === 'report' ? '财报' : '股价'} raw ${action === 'update' ? '更新' : '清理'}`;
+  setStatus(`正在执行：${label}...`);
+  try {
+    const data = await apiFetch('/api/raw/manage', {
+      method: 'POST',
+      body: JSON.stringify({ kind, action, category }),
+    });
+    setStatus(data.message || `${label} 完成`);
+  } catch (error) {
+    console.error(error);
+    setStatus(`${label} 失败：${error.message}`);
+    alert(error.message);
+  }
+}
+
 async function generateReports() {
   const category = categorySelect.value;
   const start = document.getElementById("startInput").value;
@@ -584,6 +605,10 @@ function bindEvents() {
     if (event.target === templateModal) closeTemplateModal();
   });
   document.getElementById("generateBtn").addEventListener("click", generateReports);
+  document.getElementById("updateReportRawBtn").addEventListener("click", () => manageRaw('report', 'update'));
+  document.getElementById("clearReportRawBtn").addEventListener("click", () => manageRaw('report', 'clear'));
+  document.getElementById("updatePriceRawBtn").addEventListener("click", () => manageRaw('price', 'update'));
+  document.getElementById("clearPriceRawBtn").addEventListener("click", () => manageRaw('price', 'clear'));
   document.getElementById("selectAllTplBtn").addEventListener("click", () => {
     document.querySelectorAll(".tpl-check").forEach(el => { el.checked = true; });
   });

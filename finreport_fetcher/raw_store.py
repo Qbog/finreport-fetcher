@@ -12,27 +12,35 @@ class RawReportStore:
     """Manage cached raw data + downloaded PDFs for a single company.
 
     Layout:
-      {company}/raw/{provider}/current/{table}.pkl|csv
-      {company}/raw/{provider}/snapshots/{timestamp}/{table}.pkl|csv
-      {company}/raw/{provider}/latest.json
+      {company}/raw/report/{provider}/current/{table}.pkl|csv
+      {company}/raw/report/{provider}/snapshots/{timestamp}/{table}.pkl|csv
+      {company}/raw/report/{provider}/latest.json
     """
 
     def __init__(self, company_root: Path) -> None:
         self.company_root = company_root
         self.raw_root = company_root / "raw"
+        self.report_root = self.raw_root / "report"
 
     def _ensure_dir(self, path: Path) -> Path:
         path.mkdir(parents=True, exist_ok=True)
         return path
 
+    def _provider_dir_noensure(self, provider_name: str) -> Path:
+        return self.report_root / provider_name
+
+    def _legacy_provider_dir(self, provider_name: str) -> Path:
+        return self.raw_root / provider_name
+
     def provider_dir(self, provider_name: str) -> Path:
-        return self._ensure_dir(self.raw_root / provider_name)
+        return self._ensure_dir(self._provider_dir_noensure(provider_name))
 
     def provider_current_dir(self, provider_name: str) -> Path:
         return self._ensure_dir(self.provider_dir(provider_name) / "current")
 
-    def provider_snapshots_dir(self, provider_name: str) -> Path:
-        return self._ensure_dir(self.provider_dir(provider_name) / "snapshots")
+    def provider_snapshots_dir(self, provider_name: str, *, ensure: bool = True) -> Path:
+        p = self.provider_dir(provider_name) / "snapshots" if ensure else self._provider_dir_noensure(provider_name) / "snapshots"
+        return self._ensure_dir(p) if ensure else p
 
     def provider_latest_meta_path(self, provider_name: str) -> Path:
         return self.provider_dir(provider_name) / "latest.json"
@@ -69,7 +77,7 @@ class RawReportStore:
 
     def load_provider_table(self, provider_name: str, table_key: str) -> pd.DataFrame | None:
         path = self.provider_table_path(provider_name, table_key)
-        legacy_path = self.provider_dir(provider_name) / f"{table_key}.pkl"
+        legacy_path = self._legacy_provider_dir(provider_name) / f"{table_key}.pkl"
         for p in [path, legacy_path]:
             if not p.exists():
                 continue
@@ -126,15 +134,26 @@ class RawReportStore:
 
     def load_provider_metadata(self, provider_name: str) -> dict | None:
         p = self.provider_latest_meta_path(provider_name)
-        if not p.exists():
-            return None
-        try:
-            return json.loads(p.read_text(encoding="utf-8"))
-        except Exception:
-            return None
+        legacy = self._legacy_provider_dir(provider_name) / "latest.json"
+        for cand in [p, legacy]:
+            if not cand.exists():
+                continue
+            try:
+                return json.loads(cand.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+        return None
+
+    def available_providers(self) -> list[str]:
+        names: set[str] = set()
+        if self.report_root.exists():
+            names |= {p.name for p in self.report_root.iterdir() if p.is_dir()}
+        if self.raw_root.exists():
+            names |= {p.name for p in self.raw_root.iterdir() if p.is_dir() and p.name not in {"price", "pdf", "report"}}
+        return sorted(names)
 
     def list_provider_snapshots(self, provider_name: str) -> list[str]:
-        root = self.provider_snapshots_dir(provider_name)
+        root = self.provider_snapshots_dir(provider_name, ensure=False)
         if not root.exists():
             return []
         return sorted([p.name for p in root.iterdir() if p.is_dir()])
@@ -147,7 +166,7 @@ class RawReportStore:
             if sid == latest:
                 continue
             try:
-                snap = self.provider_snapshot_dir(provider_name, sid)
+                snap = self.provider_snapshots_dir(provider_name, ensure=False) / sid
                 for p in snap.rglob("*"):
                     if p.is_file():
                         p.unlink()

@@ -80,7 +80,9 @@ pip install tushare
 
 ### 原始报表缓存与 PDF 复用
 
-- 所有抓取的数据源（tushare / akshare_ths / akshare）都会把原始宽表以 Pandas pickle 格式保存到 `output/{公司名}_{code6}/raw/{provider}/`。
+- 所有抓取的数据源（tushare / akshare_ths / akshare）都会把原始宽表保存到 `output/{公司名}_{code6}/raw/report/{provider}/`。
+  - `current/` 下同时保存 **pkl + csv**，其中 csv 用于人工查看。
+  - `snapshots/{timestamp}/` 会保留每次手动更新的历史 raw 快照。
   - 其中 **tushare raw 缓存会按“单公司全历史”抓取**：即从上市以来到当前可取到的所有期末数据，不再只缓存某一个报告期切片。
   - 下一次请求同一家公司的同一报告期时会优先直接从缓存里解析，不再访问远端 API；缺失/更新则会自动补齐并覆盖缓存文件。
   - 原始缓存包含三张表（资产负债/利润/现金流）以及对应的 meta 信息，方便后续数据复核。
@@ -90,7 +92,9 @@ pip install tushare
 ### 清理策略
 
 - 默认：每次执行会先清理本次公司的 `reports/` 目录中的 `[{code6}_*.xlsx`, `~${code6}_*.xlsx`]`，但不会删除 `raw/` 缓存或 `raw/pdf/` 中的 PDF，与其他公司目录无关。
-- `--no-clean`：禁用报表清理，用于图表程序或补数场景；PDF/raw 缓存始终保留，不因该参数而被清空。
+- `--no-clean`：禁用报表清理；若目标 Excel 已经存在，则直接提示“已存在，跳过重生成”，不会重复导出。
+- `--update-raw`：更新一版新的全历史 raw，并保留旧快照。
+- `--clear-raw`：清理旧 raw 快照，仅保留最新一版；若没有 raw，会只提示不会先联网抓取。
 
 ### 使用示例
 
@@ -361,10 +365,23 @@ finprice fetch --code 600519 \
 输出：
 
 ```
-output/贵州茅台_600519/raw/price/akshare/daily.pkl
-output/贵州茅台_600519/raw/price/akshare/daily.json
+output/贵州茅台_600519/raw/price/akshare/current/daily.pkl
+output/贵州茅台_600519/raw/price/akshare/current/daily.csv
+output/贵州茅台_600519/raw/price/akshare/latest.json
+output/贵州茅台_600519/raw/price/akshare/snapshots/{timestamp}/daily.pkl
+output/贵州茅台_600519/raw/price/akshare/snapshots/{timestamp}/daily.csv
 output/贵州茅台_600519/price/600519.csv
 output/贵州茅台_600519/price/600519.xlsx
+```
+
+原始数据维护：
+
+```bash
+# 更新全历史股价 raw（保留旧快照）
+python3 -m finprice_fetcher fetch --category test --update-raw --out output
+
+# 清理旧股价 raw，只保留最新一版
+python3 -m finprice_fetcher fetch --category test --clear-raw --out output
 ```
 
 ---
@@ -413,7 +430,7 @@ Web 启动时会优先从 `output/_global/company_basics/company_basics.csv` 加
 - 直接读取财报与股价原始数据，在 Web 端生成图表与 Excel
 - 支持 **趋势分析 / 结构分析 / 同业分析 / 合并报表（财务 + 股价）**
 - 支持“创建公司类别”“模板创建”
-- 直接编辑并保存 `config/company_categories.toml`
+- 支持在前端触发：更新财报 raw / 清理财报 raw / 更新股价 raw / 清理股价 raw
 
 启动示例：
 

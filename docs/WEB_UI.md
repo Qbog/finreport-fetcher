@@ -16,8 +16,10 @@
   - 同业分析
   - 合并报表（财务数据 + 股价）
 - 支持：
-  - 创建公司类别（前台操作后自动写回 `config/company_categories.toml`）
-  - 模板创建
+  - 创建公司类别（前端多选面板，保存后自动写回 `config/company_categories.toml`）
+  - 模板创建（前端表单面板）
+  - 更新财报 raw / 清理财报 raw
+  - 更新股价 raw / 清理股价 raw
 
 ---
 
@@ -38,6 +40,12 @@ python3 -m finmetrics_fetcher fetch --out output
 
 Web 分析会优先读取已有的 `output/{公司名}_{code6}/reports/*.xlsx` 和 `output/{公司名}_{code6}/price/{code6}.csv`。
 如果缺少这些底层数据，Web 后端现在会自动调用现有 fetcher 进行补抓。
+你也可以直接在页面左侧点击：
+- 更新财报 raw
+- 清理财报 raw
+- 更新股价 raw
+- 清理股价 raw
+
 当然，你也可以手工预抓：
 
 ```bash
@@ -86,7 +94,8 @@ http://127.0.0.1:8787
 辅助功能：
 
 - **创建公司类别**：使用前端多选面板从全局公司总表里挑选公司，写回 `config/company_categories.toml`
-- **模板创建**：快速生成一个 `templates/{name}.toml`
+- **模板创建**：使用前端表单面板快速生成一个 `templates/{name}.toml`
+- **原始数据维护按钮**：对当前公司类别执行更新/清理 raw（财报与股价分开）
 
 ### 右侧：报表浏览区
 

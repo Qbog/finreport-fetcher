@@ -559,10 +559,16 @@ def _update_raw_daily_price(c: CommonOpts, company_root: Path) -> tuple[pd.DataF
 
 def _clear_old_raw_daily_price(company_root: Path) -> None:
     store = RawPriceStore(company_root)
-    for pname in store.available_providers():
+    providers = store.available_providers()
+    if not providers:
+        log_info("未发现可清理的股价原始数据。")
+        return
+    for pname in providers:
         removed = store.clear_old_snapshots(pname)
         if removed:
             log_info(f"已清理股价 provider={pname} 旧原始快照 {len(removed)} 个")
+        else:
+            log_info(f"股价 provider={pname} 没有旧原始快照可清理。")
 
 
 def _fetch_price_akshare(code6: str, start: date, end: date, frequency: str) -> pd.DataFrame:
@@ -810,6 +816,11 @@ def fetch(
         out_path = out_dir2 / f"{c.rs.code6}{suffix}.csv"
 
         try:
+            if maintenance_only and clear_raw and not update_raw:
+                _clear_old_raw_daily_price(company_root)
+                log_info(f"原始股价维护完成：{c.rs.name or c.rs.code6}({c.rs.code6})")
+                continue
+
             if update_raw:
                 raw_daily, src = _update_raw_daily_price(c, company_root)
             else:

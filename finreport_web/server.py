@@ -299,6 +299,25 @@ class AppContext:
         if not cand.exists():
             raise FileNotFoundError(f"自动补抓后仍缺少股价 CSV：{cand}")
 
+    def manage_raw(self, payload: dict[str, Any]) -> dict[str, Any]:
+        category_key = str(payload.get("category") or "").strip() or None
+        kind = str(payload.get("kind") or "").strip().lower()
+        action = str(payload.get("action") or "").strip().lower()
+        if not category_key:
+            raise ValueError("公司类别不能为空")
+        if kind not in {"report", "price"}:
+            raise ValueError("kind 仅支持 report/price")
+        if action not in {"update", "clear"}:
+            raise ValueError("action 仅支持 update/clear")
+
+        args = [sys.executable, "-m", "finreport_fetcher" if kind == "report" else "finprice_fetcher", "fetch", "--category", category_key, "--category-config", str(self.category_config), "--out", str(self.data_dir)]
+        args.append("--update-raw" if action == "update" else "--clear-raw")
+        rc, out, err = self._run_fetcher(args)
+        if rc != 0:
+            raise RuntimeError((err or out).strip()[-2000:])
+        label = f"{'财报' if kind == 'report' else '股价'} raw{'更新' if action == 'update' else '清理'}完成"
+        return {"ok": True, "message": f"{label}：{category_key}"}
+
     def generate_reports(self, payload: dict[str, Any]) -> dict[str, Any]:
         category_key = str(payload.get("category") or "").strip() or None
         start = str(payload.get("start") or "").strip()
@@ -539,6 +558,8 @@ def create_handler():
                 return self._write_json(self.server.ctx.create_category(payload))
             if path == "/api/templates/create":
                 return self._write_json(self.server.ctx.create_template(payload))
+            if path == "/api/raw/manage":
+                return self._write_json(self.server.ctx.manage_raw(payload))
             raise JsonHttpError(404, f"未找到路径：{path}")
 
     return Handler
