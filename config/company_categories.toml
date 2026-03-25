@@ -64,3 +64,16 @@ items = [
   { name = "中新赛克", code = "002912" },
   { name = "电科网安", code = "002268" },
 ]
+
+[categories.gold]
+alias = "黄金"
+items = [
+  { name = "山东黄金", code = "" },
+  { name = "赤峰黄金", code = "" },
+  { name = "中金黄金", code = "" },
+  { name = "紫金矿业", code = "" },
+  { name = "西部黄金", code = "" },
+  { name = "湖南黄金", code = "" },
+  { name = "招金黄金", code = "" },
+  { name = "晓程科技", code = "" },
+]
