@@ -18,7 +18,8 @@ import typer
 from rich.console import Console
 from rich.prompt import IntPrompt
 
-from finshared.company_categories import resolve_company_category, default_company_categories_path
+from finshared.company_categories import default_company_categories_path, resolve_company_category_symbols
+from finshared.global_series import global_series_value_on_or_before, load_global_series_csv, parse_global_series_ident, resolve_global_series_csv
 from finreport_fetcher.utils.dates import parse_date, quarter_ends_between
 from finreport_fetcher.utils.paths import safe_dir_component
 from finshared.symbols import (
@@ -531,38 +532,14 @@ def _resolve_chart_targets(
 
     if category:
         cfg_path = category_config or default_company_categories_path()
-        cat = resolve_company_category(category, cfg_path)
-
-        try:
-            df_map = load_a_share_name_map()
-        except Exception:
-            df_map = None
-
-        targets: list[ResolvedSymbol] = []
-        seen: set[str] = set()
-        for item in cat.items:
-            rs0 = parse_code(item.code6)
-            if not rs0 or rs0.code6 in seen:
-                continue
-            seen.add(rs0.code6)
-            name0 = None
-            if df_map is not None:
-                try:
-                    m = df_map["code"].astype(str).str.zfill(6) == rs0.code6
-                    if m.any():
-                        name0 = str(df_map[m].iloc[0]["name"])
-                except Exception:
-                    pass
-            targets.append(
-                ResolvedSymbol(code6=rs0.code6, ts_code=rs0.ts_code, market=rs0.market, name=name0 or item.name)
-            )
-        if not targets:
-            raise typer.BadParameter(f"分类 {category} 未配置任何公司")
-        if cat.alias:
-            log_info(f"使用分类: {cat.name}（{cat.alias}）→ {len(targets)} 家公司")
+        resolved = resolve_company_category_symbols(category, cfg_path)
+        for msg in resolved.warnings:
+            log_warn(msg)
+        if resolved.category.alias:
+            log_info(f"使用分类: {resolved.category.name}（{resolved.category.alias}）→ {len(resolved.symbols)} 家公司")
         else:
-            log_info(f"使用分类: {cat.name} → {len(targets)} 家公司")
-        return targets
+            log_info(f"使用分类: {resolved.category.name} → {len(resolved.symbols)} 家公司")
+        return resolved.symbols
 
     return [_resolve_symbol(code=code, name=name)]
 
@@ -572,6 +549,8 @@ class ExpressionEvaluator:
         self.opts = opts
         self._map_cache: dict[tuple[Path, str], dict[str, float]] = {}
         self._fetch_tried: set[date] = set()
+        self._stock_price_df: pd.DataFrame | None = None
+        self._global_series_cache: dict[tuple[str, str], pd.DataFrame] = {}
 
     def _xlsx_for_period(self, pe: date) -> Path:
         xlsx = expected_xlsx_path(
@@ -609,6 +588,43 @@ class ExpressionEvaluator:
             self._map_cache[key] = _value_map_for_statement(xlsx, statement)
         return self._map_cache[key]
 
+    def _load_stock_price_df(self) -> pd.DataFrame:
+        if self._stock_price_df is not None:
+            return self._stock_price_df
+        price_csv = _maybe_fetch_price_missing(self.opts, start=self.opts.start, end=min(self.opts.end, date.today()), frequency="daily")
+        if not price_csv.exists():
+            return pd.DataFrame(columns=["date"])
+        df = load_price_csv(price_csv)
+        if df is None or df.empty:
+            return pd.DataFrame(columns=["date"])
+        self._stock_price_df = df
+        return df
+
+    def _stock_price_value_on_or_before(self, when: date, field: str) -> float | None:
+        df = self._load_stock_price_df()
+        if df.empty or field not in df.columns:
+            return None
+        sub = df[df["date"] <= when]
+        if sub.empty:
+            return None
+        val = sub.iloc[-1][field]
+        if pd.isna(val):
+            return None
+        return float(val)
+
+    def _global_series_value_on_or_before(self, kind: str, symbol: str, when: date, field: str) -> float | None:
+        key = (kind, symbol)
+        if key not in self._global_series_cache:
+            path = resolve_global_series_csv(self.opts.data_dir, kind, symbol)
+            if path is None or not path.exists():
+                self._global_series_cache[key] = pd.DataFrame(columns=["date"])
+            else:
+                try:
+                    self._global_series_cache[key] = load_global_series_csv(path)
+                except Exception:
+                    self._global_series_cache[key] = pd.DataFrame(columns=["date"])
+        return global_series_value_on_or_before(self._global_series_cache[key], when, field)
+
     def _resolve_ident_value(self, ident: str, *, current_pe: date, default_statement: str) -> float | None:
         ident_s = (ident or '').strip()
         if not ident_s:
@@ -640,12 +656,20 @@ class ExpressionEvaluator:
         for _ in range(prev_n):
             target_pe = _prev_quarter_end(target_pe)
 
+        if base.startswith(("px.", "price.")):
+            field = base.split(".", 1)[1]
+            return self._stock_price_value_on_or_before(target_pe, field)
+
+        parsed_global = parse_global_series_ident(base)
+        if parsed_global is not None:
+            kind, symbol, field = parsed_global
+            return self._global_series_value_on_or_before(kind, symbol, target_pe, field)
+
         values_map = self._values_map_for(target_pe, statement)
         v0 = values_map.get(base)
         if v0 is not None:
             return float(v0)
 
-        # fallback: allow key-like string not in vm, or CN subject
         xlsx = self._xlsx_for_period(target_pe)
         if not xlsx.exists():
             return None

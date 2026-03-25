@@ -2,6 +2,9 @@
 
 本目录用于 `finreport_charts run` 的模板文件：**一个模板一个 `.toml` 文件**。
 
+模板文件名统一使用：`{english}#{中文}.toml`。
+例如：`income_trend#收入趋势.toml`。
+
 ## 1) 模板字段要求（当前规则）
 
 - 必须有：
@@ -21,6 +24,7 @@
   - `name`：英文主名（推荐用于脚本）
   - `alias`：中文显示名（也可直接 `--template 中文名` 使用）
   - `names`：额外别名列表（可同时放英文/中文同义名）
+  - 文件名使用 `{english}#{中文}.toml`，但运行时仍可只传英文名或中文名
 
 > 说明：不再使用 `transform=ttm/ytd/q/raw` 这类配置；现在 **只按 expr 取值**。
 
@@ -33,6 +37,15 @@
 - `is.xxx.prev_in_year`：同年上一季度（Q1 视为 0.0）
 
 ## 3) 内置模板（按“财报分析”分类）
+
+### 外部价格 / 商品 / 指数标识
+
+除了公司股价 `px.close`，模板表达式现在还支持：
+
+- 指数：`idx.sh000001.close` / `idx.sz399001.close` / `idx.sz399006.close` / `idx.bj899050.close`
+- 商品：`com.gold.close` / `com.silver.close` / `com.oil.close`
+
+这些标识表示“取当前日期/报告期末及之前最近一个可用值”。
 
 ### 趋势分析
 - `income_trend.toml`：收入趋势（营业总收入，单季）

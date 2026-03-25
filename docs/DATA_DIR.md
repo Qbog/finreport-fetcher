@@ -63,8 +63,13 @@ output/比亚迪_002594/reports/002594_merged_20200331.xlsx
 
 ```
 {data-dir}/{公司名}_{code6}/raw/price/{provider}/
-  daily.pkl
-  daily.json
+  current/
+    daily.pkl
+    daily.csv
+  snapshots/{timestamp}/
+    daily.pkl
+    daily.csv
+  latest.json
 
 {data-dir}/{公司名}_{code6}/price/
   {code6}.csv
@@ -72,10 +77,13 @@ output/比亚迪_002594/reports/002594_merged_20200331.xlsx
 ```
 
 说明：
-- `raw/price/{provider}/daily.pkl` 保存整家公司全历史日线原始数据
+- `raw/price/{provider}/current/daily.pkl` 保存整家公司全历史日线原始数据
+- 手动更新会写 `snapshots/{timestamp}/daily.pkl`
 - `price/{code6}.csv/.xlsx` 为从 raw 中按时间范围裁切/聚合后的使用输出
 
 CSV 列：`date, close`（combo 图读取 CSV；实际也会尽量保留 open/high/low/volume/amount 等列）。
+
+更多 raw 生命周期规则见：[`RAW_LIFECYCLE.md`](RAW_LIFECYCLE.md)
 
 ---
 

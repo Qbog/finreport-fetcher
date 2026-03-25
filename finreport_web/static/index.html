@@ -77,6 +77,14 @@
           <button id="updatePriceRawBtn" class="secondary" type="button">更新股价 raw</button>
           <button id="clearPriceRawBtn" class="ghost" type="button">清理股价 raw</button>
         </div>
+        <div class="raw-log-panel top-gap-small">
+          <div class="section-title compact">
+            <h4>raw 实时日志</h4>
+            <span id="rawTaskBadge" class="raw-task-badge">空闲</span>
+          </div>
+          <div id="rawTaskMeta" class="hint">点击上面的更新/清理按钮后，这里会显示实时日志。</div>
+          <pre id="rawTaskLog" class="raw-task-log">尚未开始任务。</pre>
+        </div>
       </aside>
 
       <main class="content">
@@ -187,7 +195,7 @@
         </div>
         <div class="field" id="templateLineField" style="display:none;">
           <label for="templateLineInput">股价字段</label>
-          <input id="templateLineInput" type="text" placeholder="例如：close">
+          <input id="templateLineInput" type="text" placeholder="例如：px.close / idx.sh000001.close / com.gold.close">
         </div>
       </div>
       <div class="actions top-gap">

@@ -16,7 +16,9 @@
 
 6) Web 报表分析台 → [WEB_UI.md](WEB_UI.md)
 
-7) 测试与 CI → [TESTING.md](TESTING.md)
+7) Raw 数据生命周期 → [RAW_LIFECYCLE.md](RAW_LIFECYCLE.md)
+
+8) 测试与 CI → [TESTING.md](TESTING.md)
 
 ---
 

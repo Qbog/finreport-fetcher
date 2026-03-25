@@ -207,7 +207,11 @@ class AkshareThsProvider:
         for key, df in tables.items():
             if df is None or df.empty:
                 continue
-            raw_store.save_provider_table(self.name, key, df)
+            subset = [c for c in ["报告期"] if c in df.columns]
+            if subset:
+                raw_store.update_provider_table(self.name, key, df, subset=subset)
+            else:
+                raw_store.save_provider_table(self.name, key, df)
 
     def refresh_raw_history(self, ts_code: str, statement_type: str, raw_store: RawReportStore) -> str:
         import akshare as ak
@@ -216,14 +220,17 @@ class AkshareThsProvider:
         bs_raw = ak.stock_financial_debt_ths(symbol=code6, indicator="按报告期")
         is_raw = ak.stock_financial_benefit_ths(symbol=code6, indicator="按报告期")
         cf_raw = ak.stock_financial_cash_ths(symbol=code6, indicator="按报告期")
+        self._persist_raw_tables(raw_store, code6, {"bs": bs_raw, "is": is_raw, "cf": cf_raw})
+        merged = self._load_raw_tables(raw_store) or {"bs": bs_raw, "is": is_raw, "cf": cf_raw}
         return raw_store.save_provider_snapshot(
             self.name,
-            {"bs": bs_raw, "is": is_raw, "cf": cf_raw},
+            merged,
             metadata={
                 "scope": "full_history",
                 "ts_code": ts_code,
                 "statement_type": statement_type,
                 "provider": self.name,
+                "update_mode": "merge_full_source",
             },
         )
 
@@ -355,9 +362,22 @@ class AkshareThsProvider:
                 )
                 if cached:
                     return cached
-                meta = raw_store.load_provider_metadata(self.name) or {}
-                if meta.get("scope") == "full_history":
-                    raise RuntimeError(f"原始数据中没有 {period_end.strftime('%Y-%m-%d')} 日期的财报")
+                try:
+                    self.refresh_raw_history(ts_code, statement_type, raw_store)
+                    tables = self._load_raw_tables(raw_store)
+                    if tables:
+                        cached = self._build_bundle_from_raw(
+                            ts_code=ts_code,
+                            code6=code6,
+                            period_end=period_end,
+                            statement_type=statement_type,
+                            tables=tables,
+                        )
+                        if cached:
+                            cached.meta["raw_update_mode"] = "merge_full_source"
+                            return cached
+                except Exception:
+                    pass
 
         # 按报告期：通常为累计(YTD)口径，更适配我们后续的 TTM/单季差分转换
         bs_raw = ak.stock_financial_debt_ths(symbol=code6, indicator="按报告期")

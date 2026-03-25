@@ -19,7 +19,7 @@ from .providers.registry import ProviderConfig, build_providers
 from .utils.dates import candidate_quarter_ends_before, parse_date, quarter_ends_between
 from .utils.paths import safe_dir_component
 from .utils.company_category import detect_company_category
-from finshared.company_categories import resolve_company_category, default_company_categories_path
+from finshared.company_categories import default_company_categories_path, resolve_company_category_symbols
 from .utils.symbols import ResolvedSymbol, fuzzy_match_name, load_a_share_name_map, parse_code
 
 app = typer.Typer(add_completion=False)
@@ -350,55 +350,16 @@ def fetch(
 
     def _resolve_category_targets() -> list[ResolvedSymbol]:
         cfg_path = category_config or default_company_categories_path()
-        cat = resolve_company_category(category, cfg_path)
+        resolved = resolve_company_category_symbols(category, cfg_path)
+        for msg in resolved.warnings:
+            log_warn(msg)
 
-        df_map = None
-        try:
-            df_map = load_a_share_name_map()
-        except Exception:
-            df_map = None
-
-        seen: set[str] = set()
-        targets: list[ResolvedSymbol] = []
-        for it in cat.items:
-            code6 = str(it.code6).zfill(6)
-            if code6 in seen:
-                continue
-            seen.add(code6)
-
-            rs0 = parse_code(code6)
-            if not rs0:
-                raise typer.BadParameter(f"无法解析公司代码: {code6}")
-
-            name0 = None
-            if df_map is not None:
-                try:
-                    m = df_map["code"].astype(str).str.zfill(6) == rs0.code6
-                    if m.any():
-                        name0 = str(df_map[m].iloc[0]["name"])
-                except Exception:
-                    pass
-            if not name0:
-                name0 = it.name
-
-            targets.append(
-                ResolvedSymbol(
-                    code6=rs0.code6,
-                    ts_code=rs0.ts_code,
-                    market=rs0.market,
-                    name=name0,
-                )
-            )
-
-        if not targets:
-            raise typer.BadParameter(f"分类 {category} 未配置任何公司")
-
-        if cat.alias:
-            log_info(f"使用分类: {cat.name}（{cat.alias}），公司数: {len(targets)}")
+        if resolved.category.alias:
+            log_info(f"使用分类: {resolved.category.name}（{resolved.category.alias}），公司数: {len(resolved.symbols)}")
         else:
-            log_info(f"使用分类: {cat.name}，公司数: {len(targets)}")
+            log_info(f"使用分类: {resolved.category.name}，公司数: {len(resolved.symbols)}")
 
-        return targets
+        return resolved.symbols
 
     maintenance_only = not date_ and not (start and end)
 

@@ -13,6 +13,8 @@ const state = {
   mergeTemplateIndex: 0,
   mergeCompanyIndex: 0,
   categoryBuilderSelection: [],
+  rawTask: null,
+  rawTaskPollTimer: null,
 };
 
 const sectionLabelMap = {
@@ -52,9 +54,45 @@ const templateExprField = document.getElementById("templateExprField");
 const templateStatementField = document.getElementById("templateStatementField");
 const templateBarItemField = document.getElementById("templateBarItemField");
 const templateLineField = document.getElementById("templateLineField");
+const rawTaskBadge = document.getElementById("rawTaskBadge");
+const rawTaskMeta = document.getElementById("rawTaskMeta");
+const rawTaskLog = document.getElementById("rawTaskLog");
 
 function setStatus(text) {
   statusText.textContent = text;
+}
+
+function renderRawTask(task) {
+  state.rawTask = task || null;
+  if (!task) {
+    rawTaskBadge.textContent = "空闲";
+    rawTaskBadge.dataset.status = "idle";
+    rawTaskMeta.textContent = "点击上面的更新/清理按钮后，这里会显示实时日志。";
+    rawTaskLog.textContent = "尚未开始任务。";
+    return;
+  }
+  rawTaskBadge.textContent = task.status === "running" ? "运行中" : (task.status === "success" ? "完成" : "失败");
+  rawTaskBadge.dataset.status = task.status || "idle";
+  rawTaskMeta.textContent = `${task.label} · ${task.category} · ${task.startedAt || ""}${task.finishedAt ? ` → ${task.finishedAt}` : ""}`;
+  rawTaskLog.textContent = task.logText || "任务已启动，等待日志输出...";
+  rawTaskLog.scrollTop = rawTaskLog.scrollHeight;
+}
+
+async function pollRawTask(taskId) {
+  if (!taskId) return;
+  if (state.rawTaskPollTimer) {
+    clearTimeout(state.rawTaskPollTimer);
+    state.rawTaskPollTimer = null;
+  }
+  try {
+    const data = await apiFetch(`/api/raw/tasks/${taskId}`);
+    renderRawTask(data.task || null);
+    if (data.task?.status === "running") {
+      state.rawTaskPollTimer = setTimeout(() => pollRawTask(taskId), 1000);
+    }
+  } catch (error) {
+    console.error(error);
+  }
 }
 
 function setDefaultDates() {
@@ -390,6 +428,11 @@ async function loadBootstrap() {
   renderCategories(data.categories || []);
   renderTemplateGroups(data.templates || []);
   datasetHint.textContent = `公司总表：${(data.companyBasics || []).length} 家；财报指标：${data.metricSummary?.rows || 0} 行 / ${data.metricSummary?.companies || 0} 家。`;
+  const latestTask = (data.rawTasks || [])[0] || null;
+  renderRawTask(latestTask);
+  if (latestTask?.status === "running" && latestTask.taskId) {
+    pollRawTask(latestTask.taskId);
+  }
   setStatus("配置已加载，等待开始分析。");
 }
 
@@ -491,7 +534,7 @@ function openTemplateModal() {
   templateExprInput.value = "is.revenue_total";
   templateStatementSelect.value = "利润表";
   templateBarItemInput.value = "is.revenue_total";
-  templateLineInput.value = "close";
+  templateLineInput.value = "px.close";
   refreshTemplateModal();
   templateModal.style.display = "grid";
 }
@@ -512,7 +555,7 @@ async function createTemplate() {
     payload = {
       ...payload,
       barItem: templateBarItemInput.value.trim() || "is.revenue_total",
-      line: templateLineInput.value.trim() || "close",
+      line: templateLineInput.value.trim() || "px.close",
     };
   } else {
     const expr = templateExprInput.value.trim();
@@ -546,7 +589,11 @@ async function manageRaw(kind, action) {
       method: 'POST',
       body: JSON.stringify({ kind, action, category }),
     });
-    setStatus(data.message || `${label} 完成`);
+    renderRawTask(data.task || null);
+    if (data.task?.taskId) {
+      pollRawTask(data.task.taskId);
+    }
+    setStatus(data.message || `${label} 已启动`);
   } catch (error) {
     console.error(error);
     setStatus(`${label} 失败：${error.message}`);

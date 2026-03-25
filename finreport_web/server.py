@@ -6,8 +6,10 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import traceback
-from dataclasses import dataclass
+import uuid
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -21,10 +23,11 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from finreport_charts.data.finreport_store import expected_xlsx_path, load_price_csv, read_statement_df
-from finreport_charts.templates.config import BarBlock, Template, load_template_dir, template_lookup_names
+from finreport_charts.templates.config import BarBlock, Template, load_template_dir, template_filename, template_lookup_names
 from finreport_charts.utils.expr import ExprError, eval_expr, tokenize
 from finshared.global_datasets import load_company_basics_csv
-from finshared.company_categories import CompanyCategory, CompanyCategoryItem, load_company_categories
+from finshared.company_categories import CompanyCategory, CompanyCategoryItem, load_company_categories, resolve_company_category_symbols
+from finshared.global_series import global_series_value_on_or_before, load_global_series_csv, parse_global_series_ident, resolve_global_series_csv
 from finreport_fetcher.utils.dates import parse_date, quarter_ends_between
 from finreport_fetcher.utils.paths import safe_dir_component
 from finshared.symbols import ResolvedSymbol, load_a_share_name_map, parse_code
@@ -43,11 +46,30 @@ class TemplateView:
 
 
 @dataclass
+class RawTask:
+    task_id: str
+    label: str
+    category: str
+    kind: str
+    action: str
+    args: list[str]
+    status: str = "running"
+    started_at: str = field(default_factory=lambda: datetime.now().isoformat(timespec="seconds"))
+    finished_at: str | None = None
+    returncode: int | None = None
+    logs: list[str] = field(default_factory=list)
+
+
+@dataclass
 class AppContext:
     repo_root: Path
     data_dir: Path
     templates_dir: Path
     category_config: Path
+
+    def __post_init__(self) -> None:
+        self._raw_tasks: dict[str, RawTask] = {}
+        self._raw_tasks_lock = threading.Lock()
 
     @property
     def static_dir(self) -> Path:
@@ -132,10 +154,100 @@ class AppContext:
                 {"key": t.key, "label": t.label, "names": t.names, "mode": t.mode, "type": t.type}
                 for t in self.list_financial_templates()
             ],
+            "rawTasks": self.list_raw_tasks(limit=5),
             "configText": config_text,
             "dataDir": str(self.data_dir),
             "templatesDir": str(self.templates_dir),
         }
+
+    def _raw_task_payload(self, task: RawTask) -> dict[str, Any]:
+        return {
+            "taskId": task.task_id,
+            "label": task.label,
+            "category": task.category,
+            "kind": task.kind,
+            "action": task.action,
+            "status": task.status,
+            "startedAt": task.started_at,
+            "finishedAt": task.finished_at,
+            "returncode": task.returncode,
+            "logText": "\n".join(task.logs[-400:]),
+            "logLines": task.logs[-400:],
+        }
+
+    def list_raw_tasks(self, *, limit: int = 20) -> list[dict[str, Any]]:
+        with self._raw_tasks_lock:
+            tasks = list(self._raw_tasks.values())
+        tasks.sort(key=lambda t: t.started_at, reverse=True)
+        return [self._raw_task_payload(t) for t in tasks[:limit]]
+
+    def get_raw_task(self, task_id: str) -> dict[str, Any]:
+        with self._raw_tasks_lock:
+            task = self._raw_tasks.get(task_id)
+        if task is None:
+            raise ValueError(f"未找到 raw 任务：{task_id}")
+        return self._raw_task_payload(task)
+
+    def _append_raw_task_log(self, task_id: str, line: str) -> None:
+        text = str(line or "").rstrip("\n")
+        if not text:
+            return
+        with self._raw_tasks_lock:
+            task = self._raw_tasks.get(task_id)
+            if task is None:
+                return
+            task.logs.append(text)
+            if len(task.logs) > 800:
+                task.logs[:] = task.logs[-800:]
+
+    def _build_exec_env(self) -> dict[str, str]:
+        env = os.environ.copy()
+        py_path = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = str(self.repo_root) + (os.pathsep + py_path if py_path else "")
+        return env
+
+    def _run_raw_task(self, task_id: str) -> None:
+        with self._raw_tasks_lock:
+            task = self._raw_tasks.get(task_id)
+        if task is None:
+            return
+        try:
+            proc = subprocess.Popen(
+                task.args,
+                cwd=str(self.repo_root),
+                env=self._build_exec_env(),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+            assert proc.stdout is not None
+            for line in proc.stdout:
+                self._append_raw_task_log(task_id, line)
+            proc.wait()
+            with self._raw_tasks_lock:
+                cur = self._raw_tasks.get(task_id)
+                if cur is not None:
+                    cur.returncode = proc.returncode
+                    cur.status = "success" if proc.returncode == 0 else "failed"
+                    cur.finished_at = datetime.now().isoformat(timespec="seconds")
+                    if proc.returncode == 0 and not cur.logs:
+                        cur.logs.append("任务完成，没有额外日志输出。")
+        except Exception as exc:  # noqa: BLE001
+            with self._raw_tasks_lock:
+                cur = self._raw_tasks.get(task_id)
+                if cur is not None:
+                    cur.status = "failed"
+                    cur.finished_at = datetime.now().isoformat(timespec="seconds")
+                    cur.logs.append(f"任务异常：{exc}")
+
+    def _start_raw_task(self, *, label: str, category: str, kind: str, action: str, args: list[str]) -> dict[str, Any]:
+        task = RawTask(task_id=uuid.uuid4().hex[:12], label=label, category=category, kind=kind, action=action, args=args)
+        with self._raw_tasks_lock:
+            self._raw_tasks[task.task_id] = task
+        thread = threading.Thread(target=self._run_raw_task, args=(task.task_id,), daemon=True)
+        thread.start()
+        return self._raw_task_payload(task)
 
     def save_category_config(self, text: str) -> dict[str, Any]:
         self.category_config.parent.mkdir(parents=True, exist_ok=True)
@@ -184,16 +296,16 @@ class AppContext:
         if mode != "merge" and not expr:
             raise ValueError("expr 不能为空")
         if mode == "merge":
-            content = build_combo_template_text(key=key, alias=alias, bar_item=str(payload.get("barItem") or expr or "is.revenue_total"), line=str(payload.get("line") or "close"))
+            content = build_combo_template_text(key=key, alias=alias, bar_item=str(payload.get("barItem") or expr or "is.revenue_total"), line=str(payload.get("line") or "px.close"))
         else:
             statement = str(payload.get("statement") or guess_statement_from_expr(expr) or "利润表")
             content = build_bar_template_text(key=key, alias=alias, mode=mode, expr=expr, statement=statement)
-        path = self.templates_dir / f"{key}.toml"
+        path = self.templates_dir / template_filename(key, alias)
         path.write_text(content, encoding="utf-8")
         return {"ok": True, "templates": [
             {"key": t.key, "label": t.label, "names": t.names, "mode": t.mode, "type": t.type}
             for t in self.list_financial_templates()
-        ], "created": key}
+        ], "created": key, "filename": path.name}
 
     def _load_template_map(self) -> dict[str, Template]:
         return load_template_dir(self.templates_dir)
@@ -230,25 +342,17 @@ class AppContext:
     def _category_symbols(self, category_key: str | None) -> list[ResolvedSymbol]:
         if not category_key:
             return []
-        cats = load_company_categories(self.category_config)
-        cat = cats.get(category_key)
-        if not cat:
+        try:
+            resolved = resolve_company_category_symbols(category_key, self.category_config)
+        except Exception:
             return []
-        out: list[ResolvedSymbol] = []
-        for it in cat.items:
-            rs = parse_code(it.code6)
-            if rs:
-                out.append(ResolvedSymbol(code6=rs.code6, ts_code=rs.ts_code, market=rs.market, name=it.name))
-        return out
+        return resolved.symbols
 
     def _run_fetcher(self, args: list[str]) -> tuple[int, str, str]:
-        env = os.environ.copy()
-        py_path = env.get("PYTHONPATH", "")
-        env["PYTHONPATH"] = str(self.repo_root) + (os.pathsep + py_path if py_path else "")
         proc = subprocess.run(
             args,
             cwd=str(self.repo_root),
-            env=env,
+            env=self._build_exec_env(),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -318,11 +422,9 @@ class AppContext:
 
         args = [sys.executable, "-m", "finreport_fetcher" if kind == "report" else "finprice_fetcher", "fetch", "--category", category_key, "--category-config", str(self.category_config), "--out", str(self.data_dir)]
         args.append("--update-raw" if action == "update" else "--clear-raw")
-        rc, out, err = self._run_fetcher(args)
-        if rc != 0:
-            raise RuntimeError((err or out).strip()[-2000:])
-        label = f"{'财报' if kind == 'report' else '股价'} raw{'更新' if action == 'update' else '清理'}完成"
-        return {"ok": True, "message": f"{label}：{category_key}"}
+        label = f"{'财报' if kind == 'report' else '股价'} raw{'更新' if action == 'update' else '清理'}"
+        task = self._start_raw_task(label=label, category=category_key, kind=kind, action=action, args=args)
+        return {"ok": True, "message": f"已启动：{label}（{category_key}）", "task": task}
 
     def generate_reports(self, payload: dict[str, Any]) -> dict[str, Any]:
         category_key = str(payload.get("category") or "").strip() or None
@@ -544,6 +646,11 @@ def create_handler():
             if path == "/api/categories":
                 text = self.server.ctx.category_config.read_text(encoding="utf-8") if self.server.ctx.category_config.exists() else ""
                 return self._write_json({"ok": True, "text": text, "categories": self.server.ctx.load_categories_payload()})
+            if path == "/api/raw/tasks":
+                return self._write_json({"ok": True, "tasks": self.server.ctx.list_raw_tasks(limit=10)})
+            if path.startswith("/api/raw/tasks/"):
+                task_id = path.removeprefix("/api/raw/tasks/").strip()
+                return self._write_json({"ok": True, "task": self.server.ctx.get_raw_task(task_id)})
             if path.startswith("/files/"):
                 repo_path = self._resolve_safe_repo_path(path.removeprefix("/files/"))
                 return self._serve_file(repo_path)
@@ -593,8 +700,10 @@ def render_categories_toml(categories: dict[str, CompanyCategory]) -> str:
             lines.append(f'alias = "{cat.alias}"')
         lines.append("items = [")
         for item in cat.items:
-            if item.name:
+            if item.name and item.code6:
                 lines.append(f'  {{ name = "{item.name}", code = "{item.code6}" }},')
+            elif item.name:
+                lines.append(f'  {{ name = "{item.name}" }},')
             else:
                 lines.append(f'  {{ code = "{item.code6}" }},')
         lines.append("]")
@@ -720,6 +829,7 @@ class CompanyDataResolver:
         self.rs = rs
         self._sheet_cache: dict[tuple[date, str], pd.DataFrame] = {}
         self._price_cache: pd.DataFrame | None = None
+        self._global_series_cache: dict[tuple[str, str], pd.DataFrame] = {}
 
     def xlsx_for(self, pe: date) -> Path:
         xlsx = expected_xlsx_path(self.ctx.data_dir, self.rs.code6, "merged", pe, name=self.rs.name)
@@ -784,6 +894,16 @@ class CompanyDataResolver:
                 return 0.0
         for _ in range(prev_n):
             target_pe = prev_quarter_end(target_pe)
+
+        if base.startswith(("px.", "price.")):
+            field = base.split(".", 1)[1]
+            return self._price_value_on_or_before(target_pe, field)
+
+        parsed_global = parse_global_series_ident(base)
+        if parsed_global is not None:
+            kind, symbol, field = parsed_global
+            return self._global_series_value_on_or_before(kind, symbol, target_pe, field)
+
         m = self._value_map(target_pe, statement)
         if base in m:
             return float(m[base])
@@ -826,19 +946,31 @@ class CompanyDataResolver:
         self._price_cache = load_price_csv(candidates[0])
         return self._price_cache
 
-    def price_series(self, periods: list[date], field: str = "close") -> list[float | None]:
+    def _price_value_on_or_before(self, when: date, field: str) -> float | None:
         df = self.load_price()
-        if field != "close" and field not in df.columns:
-            raise ValueError(f"股价字段不存在：{field}")
-        out: list[float | None] = []
-        for pe in periods:
-            sub = df[df["date"] <= pe]
-            if sub.empty:
-                out.append(None)
-                continue
-            val = sub.iloc[-1][field if field in sub.columns else "close"]
-            out.append(None if pd.isna(val) else float(val))
-        return out
+        if field not in df.columns:
+            return None
+        sub = df[df["date"] <= when]
+        if sub.empty:
+            return None
+        val = sub.iloc[-1][field]
+        return None if pd.isna(val) else float(val)
+
+    def _global_series_value_on_or_before(self, kind: str, symbol: str, when: date, field: str) -> float | None:
+        key = (kind, symbol)
+        if key not in self._global_series_cache:
+            path = resolve_global_series_csv(self.ctx.data_dir, kind, symbol)
+            if path is None or not path.exists():
+                self._global_series_cache[key] = pd.DataFrame(columns=["date"])
+            else:
+                try:
+                    self._global_series_cache[key] = load_global_series_csv(path)
+                except Exception:
+                    self._global_series_cache[key] = pd.DataFrame(columns=["date"])
+        return global_series_value_on_or_before(self._global_series_cache[key], when, field)
+
+    def price_series(self, periods: list[date], field: str = "close") -> list[float | None]:
+        return [self._price_value_on_or_before(pe, field) for pe in periods]
 
 
 def save_plot_with_excel(fig, df: pd.DataFrame, *, out_dir: Path, stem: str, repo_root: Path, title: str, mode: str, company: str | None = None) -> dict[str, Any]:
@@ -940,20 +1072,26 @@ def build_peer_chart(ctx: AppContext, tpl: Template, companies: list[ResolvedSym
 def build_merge_chart(ctx: AppContext, tpl: Template, rs: ResolvedSymbol, periods: list[date], out_dir: Path) -> dict[str, Any] | None:
     resolver = CompanyDataResolver(ctx, rs)
     bar_item = str(tpl.bar_item or "").strip()
-    line_field = str(tpl.line or "close").strip() or "close"
+    line_expr = str(tpl.line or "px.close").strip() or "px.close"
     if not bar_item:
         raise RuntimeError("合并模板缺少 bar_item")
     labels = [pe.strftime("%Y-%m-%d") for pe in periods]
     fin_values = [resolver.eval_expr(bar_item, current_pe=pe, default_statement=guess_statement_from_expr(bar_item)) for pe in periods]
-    px_values = resolver.price_series(periods, field=line_field)
-    df = pd.DataFrame({"period": labels, "financial": fin_values, line_field: px_values})
+    if "." not in line_expr and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", line_expr):
+        line_values = resolver.price_series(periods, field=line_expr)
+        line_label = line_expr
+    else:
+        line_default_statement = guess_statement_from_expr(line_expr)
+        line_values = [resolver.eval_expr(line_expr, current_pe=pe, default_statement=line_default_statement) for pe in periods]
+        line_label = line_expr.split(".")[-1] if "." in line_expr else line_expr
+    df = pd.DataFrame({"period": labels, "financial": fin_values, line_label: line_values})
     fig, ax1 = plt.subplots(figsize=(10, 4.8))
     x_vals = df["period"].tolist()
     ax1.bar(x_vals, df["financial"].tolist(), color="#4E79A7", alpha=0.8, label="financial")
     ax1.set_ylabel(tpl.y_label or "财务数值")
     ax2 = ax1.twinx()
-    ax2.plot(x_vals, df[line_field].tolist(), color="#E15759", marker="o", label=line_field)
-    ax2.set_ylabel(line_field)
+    ax2.plot(x_vals, df[line_label].tolist(), color="#E15759", marker="o", label=line_label)
+    ax2.set_ylabel(line_label)
     ax1.set_title(f"{rs.name or rs.code6} · {tpl.alias or tpl.name}")
     ax1.tick_params(axis="x", rotation=30)
     ax1.grid(axis="y", alpha=0.25)

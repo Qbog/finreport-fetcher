@@ -4,6 +4,9 @@
 
 推荐：**一个模板一个 TOML 文件**，放在仓库根目录 `templates/`。
 
+模板文件名统一使用：`{english}#{中文}.toml`。
+例如：`net_profit_q#归母净利润.toml`。
+
 ---
 
 ## 5.1 模板基本结构
@@ -49,6 +52,14 @@ expr = "is.net_profit_parent - is.net_profit_parent.prev_in_year"
 - `.YYYY.MM.DD`：指定报告期末（例如 `bs.cash.2024.12.31`）
 - `.prev`：上一季度（可链式：`.prev.prev`）
 - `.prev_in_year`：同年上一季度（Q1 视为 0.0；适合把累计值差分为单季）
+
+也支持外部序列标识：
+
+- 公司股价：`px.close`
+- 指数：`idx.sh000001.close` / `idx.sz399001.close` / `idx.sz399006.close` / `idx.bj899050.close`
+- 商品：`com.gold.close` / `com.silver.close` / `com.oil.close`
+
+外部序列默认取“当前日期 / 当前报告期末及之前最近一个可用值”。
 
 ---
 
@@ -109,11 +120,11 @@ color = "#7bdff2"
 
 仓库自带示例：
 
-- `templates/net_profit_q.toml`：归母净利润趋势（bar trend）
-- `templates/revenue_total_trend.toml`：营业总收入趋势（bar trend）
-- `templates/bs_key_items_structure.toml`：资产负债表关键科目结构分析（bar structure）
-- `templates/balance_sheet_analysis.toml`：资产负债表分析（bar structure，按期输出）
-- `templates/net_profit_peer.toml`：净利润同业分析示例（bar peer）
+- `templates/net_profit_q#归母净利润.toml`：归母净利润趋势（bar trend）
+- `templates/revenue_total_trend#营业总收入.toml`：营业总收入趋势（bar trend）
+- `templates/bs_key_items_structure#资产负债表关键科目结构分析.toml`：资产负债表关键科目结构分析（bar structure）
+- `templates/balance_sheet_analysis#资产负债表分析.toml`：资产负债表分析（bar structure，按期输出）
+- `templates/net_profit_peer#净利润同业分析.toml`：净利润同业分析示例（bar peer）
 
 运行示例：
 

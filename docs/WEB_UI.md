@@ -20,6 +20,7 @@
   - 模板创建（前端表单面板）
   - 更新财报 raw / 清理财报 raw
   - 更新股价 raw / 清理股价 raw
+  - raw 更新/清理的实时日志面板
 
 ---
 
@@ -94,8 +95,9 @@ http://127.0.0.1:8787
 辅助功能：
 
 - **创建公司类别**：使用前端多选面板从全局公司总表里挑选公司，写回 `config/company_categories.toml`
-- **模板创建**：使用前端表单面板快速生成一个 `templates/{name}.toml`
+- **模板创建**：使用前端表单面板快速生成一个 `templates/{english}#{中文}.toml`
 - **原始数据维护按钮**：对当前公司类别执行更新/清理 raw（财报与股价分开）
+- **raw 实时日志面板**：按钮触发后会实时显示后台子进程日志，完成/失败状态也会保留
 
 ### 右侧：报表浏览区
 
@@ -161,6 +163,15 @@ MVP 里模板创建采用“最少输入”模式：
 - 输入表达式（或 bar_item + line）
 - 自动生成模板文件
 
+模板文件命名规则：`{english}#{中文}.toml`。
+
+Web 创建 merge 模板时，`line` 字段默认使用 `px.close`；也可以写：
+
+- `idx.sh000001.close`
+- `idx.sz399001.close`
+- `com.gold.close`
+- `com.oil.close`
+
 复杂模板仍建议直接编辑 `templates/*.toml`。
 
 ---
@@ -187,3 +198,4 @@ output/_global/web_runs/{时间戳}/
 - Web 不再调用旧的 `finreport_charts run`，而是自己读取底层数据生成图表
 - 财报指标全局 CSV 目前主要用于启动信息展示和后续扩展；MVP 图表仍主要基于现有财报 Excel / 股价 CSV
 - 如果某家公司缺少底层财报/股价数据，对应图会在错误区显示缺失原因
+- raw 生命周期、增量更新和目录规范，统一见：[`docs/RAW_LIFECYCLE.md`](RAW_LIFECYCLE.md)

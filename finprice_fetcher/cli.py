@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from enum import IntEnum
 from pathlib import Path
 import re
@@ -14,7 +14,7 @@ import pandas as pd
 import typer
 from rich.console import Console
 
-from finshared.company_categories import resolve_company_category
+from finshared.company_categories import resolve_company_category_symbols
 from finreport_fetcher.utils.dates import parse_date
 from finreport_fetcher.utils.paths import safe_dir_component
 from finshared.symbols import ResolvedSymbol, fuzzy_match_name, load_a_share_name_map, parse_code
@@ -125,28 +125,10 @@ def _resolve_targets(
     if category:
         if code or name:
             raise typer.BadParameter("使用 --category 时不能同时传 --code/--name")
-        cat = resolve_company_category(category, category_config)
-
-        # 名称优先：配置文件里的 name；否则用 A 股映射表补齐
-        df_map = None
-        try:
-            df_map = load_a_share_name_map()
-        except Exception:
-            df_map = None
-
-        out: list[ResolvedSymbol] = []
-        for it in cat.items:
-            rs0 = parse_code(it.code6)
-            nm = it.name
-            if (not nm) and (df_map is not None):
-                try:
-                    m = df_map["code"].astype(str).str.zfill(6) == rs0.code6
-                    if m.any():
-                        nm = str(df_map[m].iloc[0]["name"])
-                except Exception:
-                    pass
-            out.append(ResolvedSymbol(code6=rs0.code6, ts_code=rs0.ts_code, market=rs0.market, name=nm))
-        return out
+        resolved = resolve_company_category_symbols(category, category_config)
+        for msg in resolved.warnings:
+            log_warn(msg)
+        return resolved.symbols
 
     # single symbol
     return [_resolve_symbol(code=code, name=name)]
@@ -454,6 +436,18 @@ def _fetch_full_history_tushare(ts_code: str, token: str) -> pd.DataFrame:
     return _fetch_price_tushare(ts_code, date(1990, 1, 1), date.today(), "daily", token)
 
 
+def _fetch_incremental_daily(provider_name: str, c: CommonOpts, start: date, end: date) -> pd.DataFrame:
+    if start > end:
+        return pd.DataFrame(columns=["date", "close"])
+    if provider_name == "tushare":
+        if not c.tushare_token:
+            raise RuntimeError("未提供 TUSHARE_TOKEN，无法抓取 tushare 增量股价 raw")
+        return _fetch_price_tushare(c.rs.ts_code, start, end, "daily", c.tushare_token)
+    if provider_name == "akshare":
+        return _fetch_price_akshare(c.rs.code6, start, end, "daily")
+    raise RuntimeError(f"不支持的 raw 价格 provider: {provider_name}")
+
+
 def _load_cached_raw_daily(store: RawPriceStore, provider_name: str) -> pd.DataFrame | None:
     df = store.load_daily_prices(provider_name)
     if df is None:
@@ -462,62 +456,95 @@ def _load_cached_raw_daily(store: RawPriceStore, provider_name: str) -> pd.DataF
     return df2 if not df2.empty else None
 
 
-def _save_raw_daily(store: RawPriceStore, provider_name: str, df: pd.DataFrame) -> pd.DataFrame:
+def _merge_raw_daily(old_df: pd.DataFrame | None, new_df: pd.DataFrame | None) -> pd.DataFrame:
+    frames = []
+    if old_df is not None and not old_df.empty:
+        frames.append(old_df)
+    if new_df is not None and not new_df.empty:
+        frames.append(new_df)
+    if not frames:
+        return pd.DataFrame(columns=["date", "close"])
+    return _coerce_price_df(pd.concat(frames, ignore_index=True))
+
+
+def _save_raw_daily(store: RawPriceStore, provider_name: str, df: pd.DataFrame, *, metadata: dict | None = None) -> pd.DataFrame:
     out = _coerce_price_df(df)
-    store.save_daily_prices(
-        provider_name,
-        out,
-        metadata={
-            "scope": "full_history_daily",
-            "note": "首次无缓存时抓取整家公司全历史日线原始数据，后续频率/区间输出均从 raw 提取。",
-        },
-    )
+    meta = {
+        "scope": "full_history_daily",
+        "note": "首次无缓存时抓取整家公司全历史日线原始数据，后续更新优先按日期增量合并。",
+    }
+    meta.update(metadata or {})
+    store.save_daily_prices(provider_name, out, metadata=meta)
     return out
 
 
-def _save_raw_daily_snapshot(store: RawPriceStore, provider_name: str, df: pd.DataFrame) -> pd.DataFrame:
+def _save_raw_daily_snapshot(store: RawPriceStore, provider_name: str, df: pd.DataFrame, *, metadata: dict | None = None) -> pd.DataFrame:
     out = _coerce_price_df(df)
-    store.save_daily_snapshot(
-        provider_name,
-        out,
-        metadata={
-            "scope": "full_history_daily",
-            "note": "手动更新的全历史股价原始数据快照。",
-        },
-    )
+    meta = {
+        "scope": "full_history_daily",
+        "note": "手动更新的全历史股价原始数据快照。",
+    }
+    meta.update(metadata or {})
+    store.save_daily_snapshot(provider_name, out, metadata=meta)
     return out
+
+
+def _bootstrap_raw_daily(store: RawPriceStore, provider_name: str, c: CommonOpts, *, snapshot: bool) -> pd.DataFrame:
+    if provider_name == "tushare":
+        if not c.tushare_token:
+            raise RuntimeError("未提供 TUSHARE_TOKEN，无法抓取 tushare 全历史股价 raw")
+        raw_df = _fetch_full_history_tushare(c.rs.ts_code, c.tushare_token)
+    elif provider_name == "akshare":
+        raw_df = _fetch_full_history_akshare(c.rs.code6)
+    else:
+        raise RuntimeError(f"不支持的 raw 价格 provider: {provider_name}")
+    meta = {"update_mode": "bootstrap_full"}
+    return _save_raw_daily_snapshot(store, provider_name, raw_df, metadata=meta) if snapshot else _save_raw_daily(store, provider_name, raw_df, metadata=meta)
+
+
+def _ensure_provider_raw_daily(c: CommonOpts, store: RawPriceStore, provider_name: str, *, snapshot: bool, ensure_upto: date | None = None) -> pd.DataFrame:
+    cached = _load_cached_raw_daily(store, provider_name)
+    meta = store.load_daily_metadata(provider_name) or {}
+    if cached is None or meta.get("scope") != "full_history_daily":
+        return _bootstrap_raw_daily(store, provider_name, c, snapshot=snapshot)
+
+    upto = min(ensure_upto or date.today(), date.today())
+    if cached.empty:
+        return _bootstrap_raw_daily(store, provider_name, c, snapshot=snapshot)
+
+    dates = pd.to_datetime(cached["date"], errors="coerce").dropna()
+    if dates.empty:
+        return _bootstrap_raw_daily(store, provider_name, c, snapshot=snapshot)
+
+    max_date = dates.max().date()
+    if max_date >= upto:
+        if snapshot:
+            return _save_raw_daily_snapshot(store, provider_name, cached, metadata={"update_mode": "noop", "added_rows": 0})
+        return cached
+
+    inc_df = _fetch_incremental_daily(provider_name, c, max_date + timedelta(days=1), upto)
+    merged = _merge_raw_daily(cached, inc_df)
+    meta2 = {
+        "update_mode": "incremental_append",
+        "added_rows": max(int(len(merged.index)) - int(len(cached.index)), 0),
+        "from_date": (max_date + timedelta(days=1)).strftime("%Y-%m-%d"),
+        "to_date": upto.strftime("%Y-%m-%d"),
+    }
+    return _save_raw_daily_snapshot(store, provider_name, merged, metadata=meta2) if snapshot else _save_raw_daily(store, provider_name, merged, metadata=meta2)
 
 
 def _ensure_raw_daily_price(c: CommonOpts, company_root: Path) -> tuple[pd.DataFrame, str]:
     store = RawPriceStore(company_root)
 
-    def _load(provider_name: str) -> pd.DataFrame | None:
-        return _load_cached_raw_daily(store, provider_name)
-
-    def _fetch_and_save(provider_name: str, *, snapshot: bool = False) -> pd.DataFrame:
-        if provider_name == "tushare":
-            if not c.tushare_token:
-                raise RuntimeError("未提供 TUSHARE_TOKEN，无法抓取 tushare 全历史股价 raw")
-            raw_df = _fetch_full_history_tushare(c.rs.ts_code, c.tushare_token)
-        elif provider_name == "akshare":
-            raw_df = _fetch_full_history_akshare(c.rs.code6)
-        else:
-            raise RuntimeError(f"不支持的 raw 价格 provider: {provider_name}")
-        return _save_raw_daily_snapshot(store, provider_name, raw_df) if snapshot else _save_raw_daily(store, provider_name, raw_df)
-
     if c.provider in {"akshare", "tushare"}:
-        cached = _load(c.provider)
-        if cached is not None:
-            return cached, c.provider
-        return _fetch_and_save(c.provider), c.provider
+        return _ensure_provider_raw_daily(c, store, c.provider, snapshot=False, ensure_upto=min(c.end, date.today())), c.provider
 
-    # auto: 优先使用已存在缓存；无缓存时再按优先级抓取全历史。
     preferred = ["tushare", "akshare"] if c.tushare_token else ["akshare"]
     cached_candidates = preferred + [p for p in store.available_providers() if p not in preferred]
     for provider_name in cached_candidates:
-        cached = _load(provider_name)
+        cached = _load_cached_raw_daily(store, provider_name)
         if cached is not None:
-            return cached, provider_name
+            return _ensure_provider_raw_daily(c, store, provider_name, snapshot=False, ensure_upto=min(c.end, date.today())), provider_name
 
     last_err: Exception | None = None
     fetch_candidates = preferred + ["akshare"]
@@ -527,7 +554,7 @@ def _ensure_raw_daily_price(c: CommonOpts, company_root: Path) -> tuple[pd.DataF
             continue
         seen.add(provider_name)
         try:
-            return _fetch_and_save(provider_name), provider_name
+            return _ensure_provider_raw_daily(c, store, provider_name, snapshot=False, ensure_upto=min(c.end, date.today())), provider_name
         except Exception as ex:
             last_err = ex
             if provider_name == "tushare":
@@ -545,16 +572,12 @@ def _update_raw_daily_price(c: CommonOpts, company_root: Path) -> tuple[pd.DataF
         try:
             if provider_name == "tushare" and not c.tushare_token:
                 continue
-            if provider_name == "tushare":
-                raw_df = _fetch_full_history_tushare(c.rs.ts_code, c.tushare_token)
-            else:
-                raw_df = _fetch_full_history_akshare(c.rs.code6)
-            df2 = _save_raw_daily_snapshot(store, provider_name, raw_df)
+            df2 = _ensure_provider_raw_daily(c, store, provider_name, snapshot=True, ensure_upto=date.today())
             return df2, provider_name
         except Exception as ex:
             last_err = ex
             continue
-    raise RuntimeError(f"更新全历史股价 raw 失败：{last_err}")
+    raise RuntimeError(f"更新股价 raw 失败：{last_err}")
 
 
 def _clear_old_raw_daily_price(company_root: Path) -> None:
@@ -956,17 +979,26 @@ def commodity(
         log_info(f'商品原始价格维护完成：{spec["label"]}')
         return
 
+    cached = _load_cached_raw_daily(store, 'stooq')
     if update_raw:
-        raw_df = _fetch_full_history_commodity_stooq(spec['stooq'])
-        _save_raw_daily_snapshot(store, 'stooq', raw_df)
+        fresh = _fetch_full_history_commodity_stooq(spec['stooq'])
+        raw_df = _merge_raw_daily(cached, fresh)
+        _save_raw_daily_snapshot(store, 'stooq', raw_df, metadata={"update_mode": "merge_full_source" if cached is not None else "bootstrap_full"})
         src = 'stooq'
     else:
-        cached = _load_cached_raw_daily(store, 'stooq')
         if cached is not None:
             raw_df, src = cached, 'stooq'
+            if end:
+                end_d = parse_date(end)
+                cached_dates = pd.to_datetime(raw_df['date'], errors='coerce').dropna() if not raw_df.empty else pd.Series(dtype='datetime64[ns]')
+                cached_max = cached_dates.max().date() if not cached_dates.empty else None
+                if cached_max is None or cached_max < min(end_d, date.today()):
+                    fresh = _fetch_full_history_commodity_stooq(spec['stooq'])
+                    raw_df = _merge_raw_daily(raw_df, fresh)
+                    raw_df = _save_raw_daily(store, 'stooq', raw_df, metadata={"update_mode": "merge_full_source"})
         else:
             raw_df = _fetch_full_history_commodity_stooq(spec['stooq'])
-            raw_df = _save_raw_daily(store, 'stooq', raw_df)
+            raw_df = _save_raw_daily(store, 'stooq', raw_df, metadata={"update_mode": "bootstrap_full"})
             src = 'stooq'
     if clear_raw:
         _clear_old_raw_daily_price(root)

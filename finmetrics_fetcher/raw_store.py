@@ -70,6 +70,15 @@ class RawMetricsStore:
         self.latest_meta_path(provider_name).write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
         return snapshot_id
 
+    def load_source(self, provider_name: str) -> pd.DataFrame | None:
+        p = self._current_path(provider_name, "source", "pkl")
+        if not p.exists():
+            return None
+        try:
+            return pd.read_pickle(p)
+        except Exception:
+            return None
+
     def load_metrics(self, provider_name: str) -> pd.DataFrame | None:
         p = self._current_path(provider_name, "metrics", "pkl")
         if not p.exists():

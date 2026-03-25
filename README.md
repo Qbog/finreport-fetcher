@@ -18,6 +18,7 @@
 - 快速开始：[`docs/QUICKSTART.md`](docs/QUICKSTART.md)
 - 模板说明：[`docs/TEMPLATE_GUIDE.md`](docs/TEMPLATE_GUIDE.md)
 - Web 报表分析台：[`docs/WEB_UI.md`](docs/WEB_UI.md)
+- Raw 数据生命周期：[`docs/RAW_LIFECYCLE.md`](docs/RAW_LIFECYCLE.md)
 - Price 折线图（mode=price）：[`docs/price_line.md`](docs/price_line.md)
 - 图表合并（merge，双轴 PNG）：[`docs/merge.md`](docs/merge.md)
 - 回归测试：[`docs/TESTING.md`](docs/TESTING.md)
@@ -81,8 +82,8 @@ pip install tushare
 - 所有抓取的数据源（tushare / akshare_ths / akshare）都会把原始宽表保存到 `output/{公司名}_{code6}/raw/report/{provider}/`。
   - `current/` 下同时保存 **pkl + csv**，其中 csv 用于人工查看。
   - `snapshots/{timestamp}/` 会保留每次手动更新的历史 raw 快照。
-  - 其中 **tushare raw 缓存会按“单公司全历史”抓取**：即从上市以来到当前可取到的所有期末数据，不再只缓存某一个报告期切片。
-  - 下一次请求同一家公司的同一报告期时会优先直接从缓存里解析，不再访问远端 API；缺失/更新则会自动补齐并覆盖缓存文件。
+  - 第一次无缓存时，会按“单公司全历史”抓取，不再只缓存某一个报告期切片。
+  - 后续请求若遇到 raw 中没有的新报告期，会优先做增量补齐并与旧 raw 合并；其中 tushare 是按单期 `end_date` 增量补齐，akshare / akshare_ths 当前采用“重新取源 + 本地 merge 去重”的兼容策略。
   - 原始缓存包含三张表（资产负债/利润/现金流）以及对应的 meta 信息，方便后续数据复核。
 - PDF 也迁移到原始目录：`output/.../raw/pdf/{code6}_{period}.pdf`，成功下载后不再删除。
   - 程序会先检查该 PDF 是否存在、而不是每次都重新抓取；如文件缺失才会再次调用巨潮公告下载。
@@ -91,7 +92,7 @@ pip install tushare
 
 - 默认：每次执行会先清理本次公司的 `reports/` 目录中的 `[{code6}_*.xlsx`, `~${code6}_*.xlsx`]`，但不会删除 `raw/` 缓存或 `raw/pdf/` 中的 PDF，与其他公司目录无关。
 - `--no-clean`：禁用报表清理；若目标 Excel 已经存在，则直接提示“已存在，跳过重生成”，不会重复导出。
-- `--update-raw`：更新一版新的全历史 raw，并保留旧快照。
+- `--update-raw`：更新 raw，并保留旧快照；已有 raw 时优先按新增日期/新增报告期增量合并。
 - `--clear-raw`：清理旧 raw 快照，仅保留最新一版；若没有 raw，会只提示不会先联网抓取。
 
 ### 使用示例
@@ -280,8 +281,8 @@ python3 -m finreport_charts run \
 ### 模板化（TOML，推荐：单模板单文件）
 
 - 模板目录：`templates/`（仓库根目录）
-- 每个模板一个文件：`templates/<template_name>.toml`
-- 输出文件名：优先使用 `alias`，否则用文件名（stem）
+- 每个模板一个文件：`templates/{english}#{中文}.toml`
+- 运行时仍支持用英文 `name`、中文 `alias` 或 `names` 里的别名来选模板
 
 运行全部模板：
 
@@ -344,8 +345,8 @@ python3 -m finreport_charts run --code 600519 --start 2024-01-01 --end 2024-12-3
 用于给 `combo` 双轴图提供 `{data-dir}/{公司名}_{code6}/price/{code6}.csv`（兼容 `{data-dir}/price/{code6}.csv`）。
 
 行为说明：
-- **第一次无缓存时**：先抓整家公司“全历史日线原始数据”，保存到 `output/{公司名}_{code6}/raw/price/{provider}/daily.pkl`
-- **后续再抓股价**：直接从 raw 中按 `--start/--end` 裁切，并按 `daily/weekly/monthly/Nd` 聚合输出，不再重复访问远端
+- **第一次无缓存时**：先抓整家公司“全历史日线原始数据”，保存到 `output/{公司名}_{code6}/raw/price/{provider}/current/daily.pkl`
+- **后续再抓股价**：优先按新增日期做增量补齐，然后从 raw 中按 `--start/--end` 裁切，并按 `daily/weekly/monthly/Nd` 聚合输出
 
 示例（日频）：
 
@@ -461,10 +462,10 @@ python3 -m finindex_fetcher fetch --index 上证 --clear-raw --out output
 output/_global/indexes/sh000001/
   index/sh000001.csv
   index/sh000001.xlsx
-  raw/index/tencent/current/daily.pkl
-  raw/index/tencent/current/daily.csv
-  raw/index/tencent/latest.json
-  raw/index/tencent/snapshots/{timestamp}/...
+  raw/tencent/current/daily.pkl
+  raw/tencent/current/daily.csv
+  raw/tencent/latest.json
+  raw/tencent/snapshots/{timestamp}/...
 ```
 
 ## 5) finreport_web（Web 报表分析台）
@@ -476,6 +477,7 @@ output/_global/indexes/sh000001/
 - 支持 **趋势分析 / 结构分析 / 同业分析 / 合并报表（财务 + 股价）**
 - 支持“创建公司类别”“模板创建”
 - 支持在前端触发：更新财报 raw / 清理财报 raw / 更新股价 raw / 清理股价 raw
+- Web 左侧带 raw 更新/清理的实时日志面板
 
 启动示例：
 

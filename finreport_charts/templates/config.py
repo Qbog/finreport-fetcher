@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import re
 from typing import Any
 
 
@@ -101,6 +102,22 @@ def _normalize_lookup_name(s: str | None) -> str:
     return str(s or "").strip().lower()
 
 
+def safe_template_filename_component(text: str, *, allow_cjk: bool = False) -> str:
+    s = str(text or "").strip()
+    if not s:
+        return "item"
+    pattern = r"[^0-9A-Za-z_\-]+" if not allow_cjk else r"[^0-9A-Za-z_\-\u4e00-\u9fff]+"
+    s = re.sub(pattern, "_", s)
+    s = re.sub(r"_+", "_", s).strip("_")
+    return s or "item"
+
+
+def template_filename(name: str, alias: str | None = None) -> str:
+    en = safe_template_filename_component(name, allow_cjk=False)
+    zh = safe_template_filename_component(alias or "", allow_cjk=True)
+    return f"{en}#{zh}.toml" if zh else f"{en}.toml"
+
+
 def template_lookup_names(tpl: Template) -> list[str]:
     out: list[str] = []
     seen: set[str] = set()
@@ -119,12 +136,16 @@ def find_template_file(dir_path: Path, spec: str) -> Path | None:
     want = _normalize_lookup_name(spec)
     if not want:
         return None
+    want_stem = want[:-5] if want.endswith(".toml") else want
     for p in sorted(dir_path.glob("*.toml")):
         tpl = load_template_file(p)
         keys = {_normalize_lookup_name(x) for x in template_lookup_names(tpl)}
         file_stem = _normalize_lookup_name(p.stem)
         file_name = _normalize_lookup_name(p.name)
-        if want in keys or want == file_stem or want == file_name:
+        file_stem_base = file_stem.split("#", 1)[0]
+        if want in keys or want_stem in keys:
+            return p
+        if want == file_stem or want == file_name or want_stem == file_stem or want_stem == file_stem_base:
             return p
         if not want.endswith(".toml") and f"{want}.toml" == file_name:
             return p

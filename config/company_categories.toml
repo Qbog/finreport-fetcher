@@ -1,7 +1,7 @@
 # 公司分类配置（用于批量抓取/出图）
 # 说明：categories.<分类名> 为一个分类块
 # - alias: 显示名（可选）
-# - items: 公司列表（name 可选；code 支持 6 位代码或带市场后缀）
+# - items: 公司列表（name / code 二选一即可；都填也可以。code 支持 6 位代码或带市场后缀）
 
 # 网络安全软件开发
 [categories.net_security]

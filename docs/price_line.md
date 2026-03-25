@@ -36,6 +36,9 @@ expr = "px.close"
   - 约定：`px_1d.*` 等价于日频。
 - 也可混合财报表达式（按日期映射到“最近季末值”）：
   - `is.net_profit`, `bs.cash`, `cf.net_cash_flow_from_operating` ...
+- 也可引用外部序列：
+  - 指数：`idx.sh000001.close`, `idx.sz399001.close`
+  - 商品：`com.gold.close`, `com.oil.close`
 
 ## CLI 关键开关
 - 默认每家公司独立 y 轴（更饱满）

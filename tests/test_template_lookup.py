@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from finreport_charts.templates.config import find_template_file, load_template_file, template_lookup_names
+from finreport_charts.templates.config import find_template_file, load_template_file, template_filename, template_lookup_names
 
 
 def test_template_lookup_supports_english_and_chinese_names(tmp_path: Path):
-    tpl_path = tmp_path / "income_trend.toml"
+    tpl_path = tmp_path / template_filename("income_trend", "收入趋势")
     tpl_path.write_text(
         """
 name = "income_trend"
@@ -34,3 +34,4 @@ expr = "is.revenue_total"
     assert find_template_file(tmp_path, "营业总收入趋势") == tpl_path
     assert find_template_file(tmp_path, "income") == tpl_path
     assert find_template_file(tmp_path, "income_trend.toml") == tpl_path
+    assert find_template_file(tmp_path, tpl_path.name) == tpl_path

@@ -32,7 +32,7 @@ def test_price_raw_cache_fetches_full_history_once_and_reuses_cache(tmp_path: Pa
     opts = CommonOpts(
         rs=ResolvedSymbol(code6="600519", ts_code="600519.SH", market="SH", name="贵州茅台"),
         start=date(2024, 1, 1),
-        end=date(2025, 1, 31),
+        end=date(2025, 1, 2),
         out_dir=tmp_path,
         provider="akshare",
         frequency="daily",
@@ -70,7 +70,7 @@ def test_price_raw_cache_auto_mode_prefers_existing_cache(tmp_path: Path, monkey
     opts = CommonOpts(
         rs=ResolvedSymbol(code6="600519", ts_code="600519.SH", market="SH", name="贵州茅台"),
         start=date(2024, 1, 1),
-        end=date(2025, 1, 31),
+        end=date(2025, 1, 2),
         out_dir=tmp_path,
         provider="auto",
         frequency="weekly",

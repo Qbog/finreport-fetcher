@@ -159,8 +159,81 @@ class TushareProvider:
         raw_store.update_provider_table(self.name, "is", inc_df, subset=subset)
         raw_store.update_provider_table(self.name, "cf", cf_df, subset=subset)
 
+    def _fetch_one_period_tables(self, ts_code: str, period_end: date, statement_type: str) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        pro = self._pro()
+        end_date = self._period(period_end)
+        comp_type = self._comp_type(statement_type)
+        bs = pd.DataFrame(pro.balancesheet(ts_code=ts_code, end_date=end_date, comp_type=comp_type))
+        inc = pd.DataFrame(pro.income(ts_code=ts_code, end_date=end_date, comp_type=comp_type))
+        cf = pd.DataFrame(pro.cashflow(ts_code=ts_code, end_date=end_date, comp_type=comp_type))
+        if bs.empty or inc.empty or cf.empty:
+            raise RuntimeError(f"tushare 增量抓取失败：{period_end.strftime('%Y-%m-%d')} 存在空表")
+        return bs, inc, cf
+
+    def _load_merged_tables(self, raw_store: RawReportStore) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame] | None:
+        bs = raw_store.load_provider_table(self.name, "bs")
+        inc = raw_store.load_provider_table(self.name, "is")
+        cf = raw_store.load_provider_table(self.name, "cf")
+        if bs is None or inc is None or cf is None:
+            return None
+        return bs, inc, cf
+
     def refresh_raw_history(self, ts_code: str, statement_type: str, raw_store: RawReportStore) -> str:
-        bs_df, inc_df, cf_df = self._fetch_full_history_tables(ts_code, statement_type)
+        existing = self._load_merged_tables(raw_store)
+        if existing is None:
+            bs_df, inc_df, cf_df = self._fetch_full_history_tables(ts_code, statement_type)
+            return raw_store.save_provider_snapshot(
+                self.name,
+                {"bs": bs_df, "is": inc_df, "cf": cf_df},
+                metadata={
+                    "scope": "full_history",
+                    "ts_code": ts_code,
+                    "statement_type": statement_type,
+                    "provider": self.name,
+                    "update_mode": "bootstrap_full",
+                },
+            )
+
+        bs_old, inc_old, cf_old = existing
+        end_dates = []
+        for df in [bs_old, inc_old, cf_old]:
+            if "end_date" not in df.columns:
+                continue
+            end_dates.extend(df["end_date"].astype(str).str.replace(r"[^0-9]", "", regex=True).tolist())
+        end_dates = [x for x in end_dates if len(x) == 8]
+        if not end_dates:
+            bs_df, inc_df, cf_df = self._fetch_full_history_tables(ts_code, statement_type)
+            return raw_store.save_provider_snapshot(
+                self.name,
+                {"bs": bs_df, "is": inc_df, "cf": cf_df},
+                metadata={
+                    "scope": "full_history",
+                    "ts_code": ts_code,
+                    "statement_type": statement_type,
+                    "provider": self.name,
+                    "update_mode": "rebuild_full",
+                },
+            )
+
+        last_period = max(end_dates)
+        last_date = date(int(last_period[:4]), int(last_period[4:6]), int(last_period[6:8]))
+        from ..utils.dates import quarter_ends_between
+
+        needed = quarter_ends_between(last_date, date.today())
+        needed = [pe for pe in needed if pe > last_date]
+        added_periods: list[str] = []
+        for pe in needed:
+            try:
+                bs_new, inc_new, cf_new = self._fetch_one_period_tables(ts_code, pe, statement_type)
+            except Exception:
+                continue
+            self._persist_raw_tables(raw_store, bs_new, inc_new, cf_new)
+            added_periods.append(pe.strftime("%Y%m%d"))
+
+        merged = self._load_merged_tables(raw_store)
+        if merged is None:
+            raise RuntimeError("tushare 原始财报更新后未能读取缓存")
+        bs_df, inc_df, cf_df = merged
         return raw_store.save_provider_snapshot(
             self.name,
             {"bs": bs_df, "is": inc_df, "cf": cf_df},
@@ -169,6 +242,8 @@ class TushareProvider:
                 "ts_code": ts_code,
                 "statement_type": statement_type,
                 "provider": self.name,
+                "update_mode": "incremental_append" if added_periods else "noop",
+                "added_periods": added_periods,
             },
         )
 
@@ -210,9 +285,23 @@ class TushareProvider:
                 if cached:
                     cached.meta["raw_scope"] = "full_history"
                     return cached
-                meta = raw_store.load_provider_metadata(self.name) or {}
-                if meta.get("scope") == "full_history":
-                    raise RuntimeError(f"原始数据中没有 {period_end.strftime('%Y-%m-%d')} 日期的财报")
+                try:
+                    bs_new, inc_new, cf_new = self._fetch_one_period_tables(ts_code, period_end, statement_type)
+                    self._persist_raw_tables(raw_store, bs_new, inc_new, cf_new)
+                    merged = self._load_raw_tables(raw_store)
+                    if merged:
+                        cached = self._build_bundle_from_raw(
+                            ts_code=ts_code,
+                            period_end=period_end,
+                            statement_type=statement_type,
+                            tables=merged,
+                        )
+                        if cached:
+                            cached.meta["raw_scope"] = "full_history"
+                            cached.meta["raw_update_mode"] = "incremental_period_merge"
+                            return cached
+                except Exception:
+                    pass
 
             # raw 缓存缺失/不完整时，拉取整家公司全历史宽表后再回填缓存。
             self.refresh_raw_history(ts_code, statement_type, raw_store)

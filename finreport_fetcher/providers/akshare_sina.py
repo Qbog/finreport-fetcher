@@ -223,21 +223,28 @@ class AkshareSinaProvider:
         for key, df in tables.items():
             if df is None or df.empty:
                 continue
-            raw_store.save_provider_table(self.name, key, df)
+            subset = [c for c in ["报告日", "类型"] if c in df.columns]
+            if subset:
+                raw_store.update_provider_table(self.name, key, df, subset=subset)
+            else:
+                raw_store.save_provider_table(self.name, key, df)
 
     def refresh_raw_history(self, ts_code: str, statement_type: str, raw_store: RawReportStore) -> str:
         code6 = self._to_code6(ts_code)
         bs_raw = self._fetch_one(code6, "资产负债表")
         is_raw = self._fetch_one(code6, "利润表")
         cf_raw = self._fetch_one(code6, "现金流量表")
+        self._persist_raw_tables(raw_store, code6, {"bs": bs_raw, "is": is_raw, "cf": cf_raw})
+        merged = self._load_raw_tables(raw_store) or {"bs": bs_raw, "is": is_raw, "cf": cf_raw}
         return raw_store.save_provider_snapshot(
             self.name,
-            {"bs": bs_raw, "is": is_raw, "cf": cf_raw},
+            merged,
             metadata={
                 "scope": "full_history",
                 "ts_code": ts_code,
                 "statement_type": statement_type,
                 "provider": self.name,
+                "update_mode": "merge_full_source",
             },
         )
 
@@ -311,9 +318,22 @@ class AkshareSinaProvider:
                 )
                 if cached:
                     return cached
-                meta = raw_store.load_provider_metadata(self.name) or {}
-                if meta.get("scope") == "full_history":
-                    raise RuntimeError(f"原始数据中没有 {period_end.strftime('%Y-%m-%d')} 日期的财报")
+                try:
+                    self.refresh_raw_history(ts_code, statement_type, raw_store)
+                    cached_tables = self._load_raw_tables(raw_store)
+                    if cached_tables:
+                        cached = self._build_bundle_from_raw(
+                            ts_code=ts_code,
+                            code6=code6,
+                            period_end=period_end,
+                            statement_type=statement_type,
+                            tables=cached_tables,
+                        )
+                        if cached:
+                            cached.meta["raw_update_mode"] = "merge_full_source"
+                            return cached
+                except Exception:
+                    pass
 
         bs_raw = self._fetch_one(code6, "资产负债表")
         is_raw = self._fetch_one(code6, "利润表")

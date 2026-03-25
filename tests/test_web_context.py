@@ -79,4 +79,5 @@ line = "close"
 
     tpl_result = ctx.create_template({"mode": "peer", "label": "归母净利润同业", "expr": "is.net_profit_parent"})
     assert tpl_result["ok"] is True
+    assert tpl_result["filename"].startswith("item#归母净利润同业")
     assert any(x["key"] == "item" for x in tpl_result["templates"])
