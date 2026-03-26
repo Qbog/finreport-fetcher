@@ -155,6 +155,7 @@ _CN_TO_EN_EXACT = {
     "商誉": "Goodwill",
     "经营现金流量净额": "Net operating cashflow",
     "总资产报酬率(ROA)": "Return on assets (ROA)",
+    "总资产报酬率": "Return on assets",
     "企业价值(EV)": "Enterprise value (EV)",
     "息税前利润(EBIT)": "EBIT",
     "基本每股收益": "Basic EPS",
@@ -254,9 +255,10 @@ _CN_TO_KEY_EXACT = {
     "净资产收益率_平均_扣除非经常损益": "metrics.average_roe_excluding_non_recurring_items",
     "摊薄净资产收益率_扣除非经常损益": "metrics.diluted_roe_excluding_non_recurring_items",
     "息税前利润率": "metrics.ebit_margin",
-    "总资产报酬率": "metrics.roa",
+    "总资产报酬率(ROA)": "metrics.return_on_assets_roa",
+    "总资产报酬率": "metrics.return_on_assets",
     "总资本回报率": "metrics.return_on_total_capital",
-    "投入资本回报率": "metrics.roic",
+    "投入资本回报率": "metrics.return_on_invested_capital",
     "息前税后总资产报酬率_平均": "metrics.average_after_tax_roa",
     "毛利率": "metrics.gross_margin",
     "销售净利率": "metrics.net_margin",
@@ -472,9 +474,7 @@ def _row_from_tushare_field(field: str, value: object) -> dict[str, object]:
 
 
 def _row_from_akshare_metric_name(name: str, value: object, section_name: str | None) -> dict[str, object]:
-    spec = _known_spec(name)
-    if spec is not None:
-        return _row_from_known(spec, value)
+    # 对 akshare 财务摘要：尽量保留原始中文指标名，只做 exact 映射与稳定 key。
     if section_name and section_name in _AKSHARE_SECTION_MAP:
         section_key, section_cn, section_en = _AKSHARE_SECTION_MAP[section_name]
     else:
