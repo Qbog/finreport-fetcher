@@ -13,11 +13,9 @@
   - `x_label`、`y_label`：坐标轴名称（bar/line/combo 使用）
 - `type = "bar"` / `type = "line"` 时还必须有：
   - `mode`：`trend`（趋势分析）、`structure`（结构分析，旧 compare）、或 `peer`（同业分析）
-  - 当 `mode = "peer"`：需要指定同业公司列表：
-    - 模板内：`peers = ["600519", "601318", ...]`
-    - 或命令行：`--peer 600519 --peer 601318 ...`（可重复；支持代码或简称）
+  - 当 `mode = "peer"`：同业公司列表只在命令行里指定：`--peer 600519 --peer 601318 ...`（可重复；支持代码或简称）
   - peer 模式横轴默认显示公司简称（若无法解析简称，则回退显示 6 位代码）
-- 每根柱都用一个配置块表示：`[[bars]]`
+- 每个序列都用一个配置块表示：`[[series]]`（旧的 `[[bars]]` 仅兼容，不再推荐）
   - `name`：显示名称
   - `expr`：取数/计算表达式（推荐用 key，如 `is.admin_expense + is.sell_expense`）
 - 模板名支持多种写法：
@@ -34,7 +32,9 @@
 
 - `is.xxx.2024.12.31`：指定报告期末（YYYY.MM.DD）
 - `is.xxx.prev`：上一季度（可链式：`.prev.prev`）
-- `is.xxx.prev_in_year`：同年上一季度（Q1 视为 0.0）
+- `is.xxx.prev_in_year`：同年上一季度。例：Q3 → 当年 Q2；Q1 → `0.0`。主要用于把累计值差分为单季值。
+- `is.xxx.prev_year`：上一年同一季度
+- `is.xxx.prev_year.q1/q2/q3/q4`：上一年指定季度
 
 ## 3) 内置模板（按“财报分析”分类）
 
@@ -66,7 +66,7 @@
 - `profit_peer.toml`：利润对比
 - `roe_peer.toml`：ROE 对比（近似）
 - `asset_scale_peer.toml`：资产规模对比
-- `net_profit_peer.toml`：净利润同业分析示例（旧模板，仍可用）
+- `net_profit_peer.toml`：净利润同业分析示例
 
 ## 4) 最小示例（bar trend：单季 = 当期累计 - 同年上期累计）
 
@@ -81,9 +81,7 @@ title = "归母净利润（单季）趋势"
 x_label = "报告期"
 y_label = "金额"
 
-statement = "利润表"
-
-[[bars]]
+[[series]]
 name = "归母净利润"
 expr = "is.net_profit_parent - is.net_profit_parent.prev_in_year"
 ```

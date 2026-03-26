@@ -11,8 +11,7 @@ title = "净资产趋势"
 x_label = "报告期"
 y_label = "金额"
 
-statement = "资产负债表"
 
-[[bars]]
+[[series]]
 name = "归母净资产"
 expr = "bs.total_equity_parent"

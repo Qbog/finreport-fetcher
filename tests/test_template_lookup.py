@@ -19,7 +19,7 @@ title = "营业总收入趋势"
 x_label = "报告期"
 y_label = "金额"
 
-[[bars]]
+[[series]]
 name = "营业总收入"
 expr = "is.revenue_total"
 """.strip(),

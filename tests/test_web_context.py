@@ -40,7 +40,7 @@ alias = "收入趋势"
 type = "bar"
 mode = "trend"
 
-[[bars]]
+[[series]]
 name = "营业总收入"
 expr = "is.revenue_total"
 """.strip(),
@@ -53,8 +53,12 @@ alias = "收入+股价"
 
 type = "combo"
 mode = "merge"
-bar_item = "is.revenue_total"
-line = "close"
+
+[[series]]
+expr = "income_trend"
+
+[[series]]
+expr = "price_close_trend"
 """.strip(),
         encoding="utf-8",
     )

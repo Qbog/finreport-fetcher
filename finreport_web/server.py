@@ -296,10 +296,22 @@ class AppContext:
         if mode != "merge" and not expr:
             raise ValueError("expr 不能为空")
         if mode == "merge":
-            content = build_combo_template_text(key=key, alias=alias, bar_item=str(payload.get("barItem") or expr or "is.revenue_total"), line=str(payload.get("line") or "px.close"))
+            refs_raw = payload.get('refs') or []
+            refs: list[str] = []
+            if isinstance(refs_raw, list):
+                refs.extend([str(x).strip() for x in refs_raw if str(x).strip()])
+            if expr:
+                refs.extend([x.strip() for x in re.split(r'[\n,]+', expr) if x.strip()])
+            if not refs:
+                for x in [payload.get('barItem'), payload.get('line')]:
+                    s = str(x or '').strip()
+                    if s:
+                        refs.append(s)
+            if not refs:
+                raise ValueError('merge 模板至少需要一个引用模板名')
+            content = build_combo_template_text(key=key, alias=alias, refs=refs)
         else:
-            statement = str(payload.get("statement") or guess_statement_from_expr(expr) or "利润表")
-            content = build_bar_template_text(key=key, alias=alias, mode=mode, expr=expr, statement=statement)
+            content = build_bar_template_text(key=key, alias=alias, mode=mode, expr=expr)
         path = self.templates_dir / template_filename(key, alias)
         path.write_text(content, encoding="utf-8")
         return {"ok": True, "templates": [
@@ -722,7 +734,7 @@ def guess_statement_from_expr(expr: str) -> str:
     return "利润表"
 
 
-def build_bar_template_text(*, key: str, alias: str, mode: str, expr: str, statement: str) -> str:
+def build_bar_template_text(*, key: str, alias: str, mode: str, expr: str) -> str:
     title = alias + ("趋势" if mode == "trend" else "分析")
     return f'''name = "{key}"
 alias = "{alias}"
@@ -734,28 +746,32 @@ title = "{title}"
 x_label = "{'报告期' if mode == 'trend' else '科目'}"
 y_label = "数值"
 
-statement = "{statement}"
-
-[[bars]]
+[[series]]
 name = "{alias}"
 expr = "{expr}"
 '''
 
 
-def build_combo_template_text(*, key: str, alias: str, bar_item: str, line: str) -> str:
-    return f'''name = "{key}"
-alias = "{alias}"
-
-type = "combo"
-mode = "merge"
-
-title = "{alias}（财务 + 股价）"
-x_label = "报告期"
-y_label = "财务数值"
-
-bar_item = "{bar_item}"
-line = "{line}"
-'''
+def build_combo_template_text(*, key: str, alias: str, refs: list[str]) -> str:
+    lines = [
+        f'name = "{key}"',
+        f'alias = "{alias}"',
+        '',
+        'type = "combo"',
+        'mode = "merge"',
+        '',
+        f'title = "{alias}（统一合并）"',
+        'x_label = "报告期"',
+        'y_label = "数值"',
+        '',
+    ]
+    for ref in refs:
+        lines.extend([
+            '[[series]]',
+            f'expr = "{ref}"',
+            '',
+        ])
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def flatten_bars(blocks: list[BarBlock] | None) -> list[dict[str, Any]]:
@@ -805,6 +821,23 @@ def prev_in_year_quarter_end(pe: date) -> date | None:
     if mmdd == "1231":
         return date(pe0.year, 9, 30)
     return None
+
+
+def quarter_end_for_q(year: int, q: int) -> date:
+    if q == 1:
+        return date(year, 3, 31)
+    if q == 2:
+        return date(year, 6, 30)
+    if q == 3:
+        return date(year, 9, 30)
+    return date(year, 12, 31)
+
+
+def prev_year_same_quarter_end(pe: date) -> date:
+    pe0 = latest_quarter_end_on_or_before(pe)
+    mmdd = pe0.strftime("%m%d")
+    q = {"0331": 1, "0630": 2, "0930": 3, "1231": 4}.get(mmdd, 4)
+    return quarter_end_for_q(pe0.year - 1, q)
 
 
 def split_id_date(s: str) -> tuple[str, date | None]:
@@ -882,7 +915,16 @@ class CompanyDataResolver:
         if not ident_s:
             return None
         prev_in_year = False
-        if ident_s.endswith(".prev_in_year"):
+        prev_year_same_q = False
+        prev_year_fixed_q: int | None = None
+        m_prev_year_q = re.search(r"\.prev_year\.q([1-4])$", ident_s)
+        if m_prev_year_q:
+            prev_year_fixed_q = int(m_prev_year_q.group(1))
+            ident_s = ident_s[: m_prev_year_q.start()]
+        elif ident_s.endswith(".prev_year"):
+            prev_year_same_q = True
+            ident_s = ident_s[: -len(".prev_year")]
+        elif ident_s.endswith(".prev_in_year"):
             prev_in_year = True
             ident_s = ident_s[: -len(".prev_in_year")]
         prev_n = 0
@@ -896,10 +938,16 @@ class CompanyDataResolver:
             base = "metrics." + base.split(".", 1)[1]
         statement = statement_from_key(base, default_statement)
         target_pe = latest_quarter_end_on_or_before(specified_date) if specified_date else current_pe
-        if prev_in_year:
-            target_pe = prev_in_year_quarter_end(target_pe) or target_pe
-            if prev_in_year_quarter_end(current_pe) is None and specified_date is None:
+        if prev_year_fixed_q is not None:
+            pe0 = latest_quarter_end_on_or_before(target_pe)
+            target_pe = quarter_end_for_q(pe0.year - 1, prev_year_fixed_q)
+        elif prev_year_same_q:
+            target_pe = prev_year_same_quarter_end(target_pe)
+        elif prev_in_year:
+            prev_pe = prev_in_year_quarter_end(target_pe)
+            if prev_pe is None:
                 return 0.0
+            target_pe = prev_pe
         for _ in range(prev_n):
             target_pe = prev_quarter_end(target_pe)
 
@@ -1003,7 +1051,7 @@ def save_plot_with_excel(fig, df: pd.DataFrame, *, out_dir: Path, stem: str, rep
 
 def build_trend_chart(ctx: AppContext, tpl: Template, rs: ResolvedSymbol, periods: list[date], out_dir: Path) -> dict[str, Any] | None:
     resolver = CompanyDataResolver(ctx, rs)
-    bars = flatten_bars(tpl.bars)
+    bars = flatten_bars(tpl.series)
     if not bars:
         raise RuntimeError("趋势模板缺少 bars")
     labels = [pe.strftime("%Y-%m-%d") for pe in periods]
@@ -1011,7 +1059,7 @@ def build_trend_chart(ctx: AppContext, tpl: Template, rs: ResolvedSymbol, period
     for bar in bars:
         values = []
         for pe in periods:
-            values.append(resolver.eval_expr(bar["expr"], current_pe=pe, default_statement=str(bar.get("statement") or tpl.statement or "利润表")))
+            values.append(resolver.eval_expr(bar["expr"], current_pe=pe, default_statement=str(bar.get("statement") or guess_statement_from_expr(str(bar["expr"])))))
         data[bar["name"]] = values
     df = pd.DataFrame(data)
     fig, ax = plt.subplots(figsize=(10, 4.8))
@@ -1029,12 +1077,12 @@ def build_trend_chart(ctx: AppContext, tpl: Template, rs: ResolvedSymbol, period
 
 def build_structure_chart(ctx: AppContext, tpl: Template, rs: ResolvedSymbol, pe: date, out_dir: Path) -> dict[str, Any] | None:
     resolver = CompanyDataResolver(ctx, rs)
-    bars = flatten_bars(tpl.bars)
+    bars = flatten_bars(tpl.series)
     if not bars:
         raise RuntimeError("结构模板缺少 bars")
     rows = []
     for bar in bars:
-        rows.append({"item": bar["name"], "value": resolver.eval_expr(bar["expr"], current_pe=pe, default_statement=str(bar.get("statement") or tpl.statement or "利润表"))})
+        rows.append({"item": bar["name"], "value": resolver.eval_expr(bar["expr"], current_pe=pe, default_statement=str(bar.get("statement") or guess_statement_from_expr(str(bar["expr"]))))})
     df = pd.DataFrame(rows)
     fig, ax = plt.subplots(figsize=(10, 4.8))
     ax.bar(df["item"].tolist(), df["value"].tolist(), color="#4E79A7")
@@ -1047,7 +1095,7 @@ def build_structure_chart(ctx: AppContext, tpl: Template, rs: ResolvedSymbol, pe
 
 
 def build_peer_chart(ctx: AppContext, tpl: Template, companies: list[ResolvedSymbol], pe: date, out_dir: Path) -> dict[str, Any] | None:
-    bars = flatten_bars(tpl.bars)
+    bars = flatten_bars(tpl.series)
     if not bars:
         raise RuntimeError("同业模板缺少 bars")
     rows: list[dict[str, Any]] = []
@@ -1055,7 +1103,7 @@ def build_peer_chart(ctx: AppContext, tpl: Template, companies: list[ResolvedSym
         resolver = CompanyDataResolver(ctx, comp)
         row = {"company": comp.name or comp.code6}
         for bar in bars:
-            row[bar["name"]] = resolver.eval_expr(bar["expr"], current_pe=pe, default_statement=str(bar.get("statement") or tpl.statement or "利润表"))
+            row[bar["name"]] = resolver.eval_expr(bar["expr"], current_pe=pe, default_statement=str(bar.get("statement") or guess_statement_from_expr(str(bar["expr"]))))
         rows.append(row)
     df = pd.DataFrame(rows)
     fig, ax = plt.subplots(figsize=(10, 4.8))
@@ -1079,31 +1127,85 @@ def build_peer_chart(ctx: AppContext, tpl: Template, companies: list[ResolvedSym
 
 def build_merge_chart(ctx: AppContext, tpl: Template, rs: ResolvedSymbol, periods: list[date], out_dir: Path) -> dict[str, Any] | None:
     resolver = CompanyDataResolver(ctx, rs)
-    bar_item = str(tpl.bar_item or "").strip()
-    line_expr = str(tpl.line or "px.close").strip() or "px.close"
-    if not bar_item:
-        raise RuntimeError("合并模板缺少 bar_item")
-    labels = [pe.strftime("%Y-%m-%d") for pe in periods]
-    fin_values = [resolver.eval_expr(bar_item, current_pe=pe, default_statement=guess_statement_from_expr(bar_item)) for pe in periods]
-    if "." not in line_expr and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", line_expr):
-        line_values = resolver.price_series(periods, field=line_expr)
-        line_label = line_expr
+    loaded = ctx._load_template_map()
+
+    def _lookup_template(spec: str) -> Template | None:
+        key = str(spec or '').strip().lower()
+        if not key:
+            return None
+        for t in loaded.values():
+            if t.name.strip().lower() == key:
+                return t
+            for nm in template_lookup_names(t):
+                if nm.strip().lower() == key:
+                    return t
+        return None
+
+    merge_defs: list[dict[str, Any]] = []
+    blocks = flatten_bars(tpl.series)
+    if blocks:
+        for blk in blocks:
+            ref_tpl = _lookup_template(str(blk['expr']))
+            if ref_tpl is None:
+                raise RuntimeError(f"merge 模式引用模板不存在: {blk['expr']}")
+            ref_type = str(getattr(ref_tpl, 'type', '')).strip().lower()
+            ref_mode = normalize_mode(getattr(ref_tpl, 'mode', None), type_=ref_type)
+            if ref_type not in {'bar', 'line'} or ref_mode not in {'trend', 'price'}:
+                raise RuntimeError(f"merge 仅支持引用 trend/price 的 bar/line 模板: {blk['expr']}")
+            ref_blocks = flatten_bars(ref_tpl.series)
+            if not ref_blocks:
+                raise RuntimeError(f"被引用模板缺少 [[series]]: {blk['expr']}")
+            prefix = str(blk.get('name') or '').strip()
+            for item in ref_blocks:
+                nm = str(item['name'])
+                if prefix:
+                    nm = f"{prefix}/{nm}"
+                merge_defs.append({
+                    'name': nm,
+                    'expr': str(item['expr']),
+                    'kind': ref_type,
+                    'color': item.get('color'),
+                })
     else:
-        line_default_statement = guess_statement_from_expr(line_expr)
-        line_values = [resolver.eval_expr(line_expr, current_pe=pe, default_statement=line_default_statement) for pe in periods]
-        line_label = line_expr.split(".")[-1] if "." in line_expr else line_expr
-    df = pd.DataFrame({"period": labels, "financial": fin_values, line_label: line_values})
+        # legacy fallback
+        bar_item = str(tpl.bar_item or '').strip() or 'is.revenue_total'
+        line_expr = str(tpl.line or 'px.close').strip() or 'px.close'
+        merge_defs = [
+            {'name': 'financial', 'expr': bar_item, 'kind': 'bar', 'color': '#4E79A7'},
+            {'name': line_expr.split('.')[-1] if '.' in line_expr else line_expr, 'expr': line_expr, 'kind': 'line', 'color': '#E15759'},
+        ]
+
+    labels = [pe.strftime('%Y-%m-%d') for pe in periods]
+    rows = []
+    for pe in periods:
+        row = {'period': pe.strftime('%Y-%m-%d')}
+        for item in merge_defs:
+            row[item['name']] = resolver.eval_expr(str(item['expr']), current_pe=pe, default_statement=guess_statement_from_expr(str(item['expr'])))
+        rows.append(row)
+    df = pd.DataFrame(rows)
     fig, ax1 = plt.subplots(figsize=(10, 4.8))
-    x_vals = df["period"].tolist()
-    ax1.bar(x_vals, df["financial"].tolist(), color="#4E79A7", alpha=0.8, label="financial")
-    ax1.set_ylabel(tpl.y_label or "财务数值")
+    x_pos = list(range(len(df.index)))
+    bar_defs = [x for x in merge_defs if x['kind'] == 'bar']
+    line_defs = [x for x in merge_defs if x['kind'] == 'line']
+    if bar_defs:
+        width = 0.8 / max(len(bar_defs), 1)
+        start = -width * (len(bar_defs) - 1) / 2
+        for idx, item in enumerate(bar_defs):
+            pos = [x + start + idx * width for x in x_pos]
+            ax1.bar(pos, pd.to_numeric(df[item['name']], errors='coerce').tolist(), width=width, color=item.get('color') or None, alpha=0.82, label=item['name'])
+    ax1.set_ylabel(tpl.y_label or '数值')
     ax2 = ax1.twinx()
-    ax2.plot(x_vals, df[line_label].tolist(), color="#E15759", marker="o", label=line_label)
-    ax2.set_ylabel(line_label)
+    for item in line_defs:
+        ax2.plot(x_pos, pd.to_numeric(df[item['name']], errors='coerce').tolist(), color=item.get('color') or None, marker='o', label=item['name'])
+    ax1.set_xticks(x_pos, labels)
     ax1.set_title(f"{rs.name or rs.code6} · {tpl.alias or tpl.name}")
-    ax1.tick_params(axis="x", rotation=30)
-    ax1.grid(axis="y", alpha=0.25)
-    return save_plot_with_excel(fig, df, out_dir=out_dir, stem=f"{tpl.name}_{rs.code6}", repo_root=ctx.repo_root, title=str(tpl.alias or tpl.name), mode="merge", company=rs.name or rs.code6)
+    ax1.tick_params(axis='x', rotation=30)
+    ax1.grid(axis='y', alpha=0.25)
+    h1, l1 = ax1.get_legend_handles_labels()
+    h2, l2 = ax2.get_legend_handles_labels()
+    if h1 or h2:
+        ax1.legend(h1 + h2, l1 + l2, loc='best')
+    return save_plot_with_excel(fig, df, out_dir=out_dir, stem=f"{tpl.name}_{rs.code6}", repo_root=ctx.repo_root, title=str(tpl.alias or tpl.name), mode='merge', company=rs.name or rs.code6)
 
 
 def serve_app(*, host: str, port: int, data_dir: Path, templates_dir: Path, category_config: Path) -> None:

@@ -11,8 +11,7 @@ title = "净利润趋势（单季归母）"
 x_label = "报告期"
 y_label = "金额"
 
-statement = "利润表"
 
-[[bars]]
+[[series]]
 name = "归母净利润"
 expr = "is.net_profit_parent - is.net_profit_parent.prev_in_year"

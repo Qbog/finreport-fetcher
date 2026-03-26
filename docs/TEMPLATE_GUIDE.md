@@ -24,9 +24,7 @@ title = "归母净利润（单季）趋势"
 x_label = "报告期"
 y_label = "金额"
 
-statement = "利润表"  # 默认取数报表：资产负债表/利润表/现金流量表
-
-[[bars]]
+[[series]]
 name = "归母净利润"
 expr = "is.net_profit_parent - is.net_profit_parent.prev_in_year"
 ```
@@ -51,7 +49,9 @@ expr = "is.net_profit_parent - is.net_profit_parent.prev_in_year"
 
 - `.YYYY.MM.DD`：指定报告期末（例如 `bs.cash.2024.12.31`）
 - `.prev`：上一季度（可链式：`.prev.prev`）
-- `.prev_in_year`：同年上一季度（Q1 视为 0.0；适合把累计值差分为单季）
+- `.prev_in_year`：同年上一季度。例：Q3 → 取当年 Q2，Q2 → 取当年 Q1；若当前是 Q1，则返回 `0.0`。这个后缀主要用于把“年内累计值”差分成“单季度值”。
+- `.prev_year`：上一年同一季度。例：2024Q3 → 2023Q3
+- `.prev_year.q1` / `.prev_year.q2` / `.prev_year.q3` / `.prev_year.q4`：上一年指定季度。例：2024Q4 的 `is.revenue_total.prev_year.q1` → 2023Q1
 
 也支持外部序列标识：
 
@@ -73,30 +73,28 @@ expr = "is.net_profit_parent - is.net_profit_parent.prev_in_year"
     - CLI：`--as-of 2024-12-31`
     - 或模板：`period_end = "2024-12-31"`
 - `mode=peer`（同业分析）：输出 **1 张**同业对比图（横轴=公司）
-  - 同业公司列表：
-    - 模板里配置 `peers = ["600519", "601318", ...]`
-    - 或命令行传入 `--peer 600519 --peer 601318 ...`（可重复；支持代码或简称）
+  - 同业公司列表只在命令行里传：`--peer 600519 --peer 601318 ...`（可重复；支持代码或简称）
   - 横轴公司显示：默认显示公司简称（若无法解析简称，则回退显示 6 位代码）
   - 期末选择同上（`--as-of` / `period_end`；不传则取 end 对应最近季末）
 
-> `structure` / `peer` 模式必须显式配置 `[[bars]]`（不会自动枚举所有科目）。
+> `structure` / `peer` / `merge` 模式必须显式配置 `[[series]]`（不会自动枚举所有科目）。
 
 ---
 
-## 5.4 bars 颜色与嵌套（分组）
+## 5.4 series 颜色与嵌套（分组）
 
-`[[bars]]` 支持 `color`，并支持分组子项 `[[bars.children]]`：
+`[[series]]` 支持 `color`，并支持分组子项 `[[series.children]]`：
 
 ```toml
-[[bars]]
+[[series]]
 name = "资产"
 color = "#7bdff2"
 
-  [[bars.children]]
+  [[series.children]]
   name = "货币资金"
   expr = "bs.cash"
 
-  [[bars.children]]
+  [[series.children]]
   name = "应收账款"
   expr = "bs.accounts_receivable"
 ```

@@ -522,10 +522,12 @@ async function createCategory() {
 function refreshTemplateModal() {
   const mode = templateModeSelect.value;
   const isMerge = mode === "merge";
-  templateExprField.style.display = isMerge ? "none" : "block";
-  templateStatementField.style.display = isMerge ? "none" : "block";
-  templateBarItemField.style.display = isMerge ? "block" : "none";
-  templateLineField.style.display = isMerge ? "block" : "none";
+  templateExprField.style.display = "block";
+  templateStatementField.style.display = "none";
+  templateBarItemField.style.display = "none";
+  templateLineField.style.display = "none";
+  const exprLabel = document.querySelector('label[for="templateExprInput"]');
+  if (exprLabel) exprLabel.textContent = isMerge ? "引用模板（每行或逗号分隔一个模板名）" : "表达式";
 }
 
 function openTemplateModal() {
@@ -533,8 +535,8 @@ function openTemplateModal() {
   templateLabelInput.value = "";
   templateExprInput.value = "is.revenue_total";
   templateStatementSelect.value = "利润表";
-  templateBarItemInput.value = "is.revenue_total";
-  templateLineInput.value = "px.close";
+  templateBarItemInput.value = "income_trend";
+  templateLineInput.value = "price_close_trend";
   refreshTemplateModal();
   templateModal.style.display = "grid";
 }
@@ -552,10 +554,14 @@ async function createTemplate() {
   }
   let payload = { mode, label };
   if (mode === "merge") {
+    const expr = templateExprInput.value.trim();
+    if (!expr) {
+      alert("请先填写要合并的模板名。\n可按行或逗号分隔多个模板。");
+      return;
+    }
     payload = {
       ...payload,
-      barItem: templateBarItemInput.value.trim() || "is.revenue_total",
-      line: templateLineInput.value.trim() || "px.close",
+      expr,
     };
   } else {
     const expr = templateExprInput.value.trim();
@@ -566,7 +572,6 @@ async function createTemplate() {
     payload = {
       ...payload,
       expr,
-      statement: templateStatementSelect.value,
     };
   }
   setStatus("正在创建模板...");

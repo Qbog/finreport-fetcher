@@ -7,14 +7,12 @@ names = ["公司对比-ROE对比", "净资产收益率对比"]
 type = "bar"
 mode = "peer"
 
-peers = ["688561", "300454", "002212", "601360"]
 
 title = "ROE对比（单季归母净利润 / 归母净资产，近似）"
 x_label = "公司"
 y_label = "百分比"
 
-statement = "利润表"
 
-[[bars]]
+[[series]]
 name = "ROE"
 expr = "(is.net_profit_parent - is.net_profit_parent.prev_in_year) / bs.total_equity_parent * 100"

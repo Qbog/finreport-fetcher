@@ -179,9 +179,9 @@
         </div>
         <div class="field" id="templateExprField">
           <label for="templateExprInput">表达式</label>
-          <input id="templateExprInput" type="text" placeholder="例如：is.revenue_total / metrics.roe / index.上证.close">
+          <input id="templateExprInput" type="text" placeholder="普通模板例如：is.revenue_total；合并模板例如：income_trend, price_close_trend">
         </div>
-        <div class="field" id="templateStatementField">
+        <div class="field" id="templateStatementField" style="display:none;">
           <label for="templateStatementSelect">报表类型</label>
           <select id="templateStatementSelect">
             <option value="利润表">利润表</option>
@@ -191,12 +191,12 @@
           </select>
         </div>
         <div class="field" id="templateBarItemField" style="display:none;">
-          <label for="templateBarItemInput">财务字段</label>
-          <input id="templateBarItemInput" type="text" placeholder="例如：is.revenue_total">
+          <label for="templateBarItemInput">旧版财务字段（兼容）</label>
+          <input id="templateBarItemInput" type="text" placeholder="例如：income_trend">
         </div>
         <div class="field" id="templateLineField" style="display:none;">
-          <label for="templateLineInput">股价字段</label>
-          <input id="templateLineInput" type="text" placeholder="例如：px.close / idx.sh000001.close / index.上证.close / commodity.黄金.close">
+          <label for="templateLineInput">旧版折线字段（兼容）</label>
+          <input id="templateLineInput" type="text" placeholder="例如：price_close_trend">
         </div>
       </div>
       <div class="actions top-gap">

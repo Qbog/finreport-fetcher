@@ -12,15 +12,13 @@ mode = "peer"
 
 # peers：同业公司列表（可写 code6 或公司简称；会尽量解析为 A 股 code6）
 # 建议先写 code6，避免歧义。
-peers = ["600519", "601318", "600036"]
 
 title = "净利润同业分析"
 
 x_label = "公司"
 y_label = "金额"
 
-statement = "利润表"
 
-[[bars]]
+[[series]]
 name = "归母净利润"
 expr = "is.net_profit_parent"

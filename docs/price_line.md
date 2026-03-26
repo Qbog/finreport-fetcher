@@ -22,7 +22,7 @@ title = "股价-收盘"
 x_label = "日期"
 y_label = "价格"
 
-# 推荐写法：[[series]]（[[bars]] 也兼容）
+# 推荐写法：[[series]]（旧的 [[bars]] 仅兼容，不再推荐）
 [[series]]
 name = "close"
 expr = "px.close"

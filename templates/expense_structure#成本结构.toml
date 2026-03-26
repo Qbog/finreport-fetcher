@@ -11,19 +11,18 @@ title = "成本结构（三费，单季）"
 x_label = "科目"
 y_label = "金额"
 
-statement = "利润表"
 
-[[bars]]
+[[series]]
 name = "销售费用"
 expr = "is.selling_expense - is.selling_expense.prev_in_year"
 color = "#E15759"
 
-[[bars]]
+[[series]]
 name = "管理费用"
 expr = "is.admin_expense - is.admin_expense.prev_in_year"
 color = "#4E79A7"
 
-[[bars]]
+[[series]]
 name = "研发费用"
 expr = "is.rnd_expense - is.rnd_expense.prev_in_year"
 color = "#59A14F"

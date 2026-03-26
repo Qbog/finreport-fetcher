@@ -13,56 +13,55 @@ title = "资产负债表分析（资产 vs 负债）"
 x_label = "科目"
 y_label = "金额"
 
-statement = "资产负债表"
 
-[[bars]]
+[[series]]
 name = "资产"
 color = "#4E79A7"
 
-  [[bars.children]]
+  [[series.children]]
   name = "货币资金"
   expr = "bs.cash"
 
-  [[bars.children]]
+  [[series.children]]
   name = "应收账款"
   expr = "bs.accounts_receivable"
 
-  [[bars.children]]
+  [[series.children]]
   name = "预付账款"
   expr = "bs.prepayments"
 
-  [[bars.children]]
+  [[series.children]]
   name = "存货"
   expr = "bs.inventories"
 
-  [[bars.children]]
+  [[series.children]]
   name = "固定资产"
   expr = "bs.fixed_assets"
 
-  [[bars.children]]
+  [[series.children]]
   name = "无形资产"
   expr = "bs.intangible_assets"
 
-[[bars]]
+[[series]]
 name = "负债"
 color = "#E15759"
 
-  [[bars.children]]
+  [[series.children]]
   name = "短期借款"
   expr = "bs.short_term_borrowings"
 
-  [[bars.children]]
+  [[series.children]]
   name = "应付账款"
   expr = "bs.accounts_payable"
 
-  [[bars.children]]
+  [[series.children]]
   name = "预收款项"
   expr = "bs.advance_receipts"
 
-  [[bars.children]]
+  [[series.children]]
   name = "应付职工薪酬"
   expr = "bs.payroll_payable"
 
-  [[bars.children]]
+  [[series.children]]
   name = "非流动负债合计"
   expr = "bs.total_non_current_liabilities"

@@ -16,6 +16,6 @@ title = "股价（收盘）走势"
 x_label = "日期"
 y_label = "价格"
 
-[[bars]]
+[[series]]
 name = "收盘价"
 expr = "px.close"

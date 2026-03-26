@@ -11,76 +11,75 @@ title = "负债结构分析"
 x_label = "科目"
 y_label = "金额"
 
-statement = "资产负债表"
 
-[[bars]]
+[[series]]
 name = "流动负债"
 color = "#E15759"
 
-  [[bars.children]]
+  [[series.children]]
   name = "短期借款"
   expr = "bs.short_term_borrowings"
 
-  [[bars.children]]
+  [[series.children]]
   name = "应付票据"
   expr = "bs.notes_payable"
 
-  [[bars.children]]
+  [[series.children]]
   name = "应付账款"
   expr = "bs.accounts_payable"
 
-  [[bars.children]]
+  [[series.children]]
   name = "合同负债"
   expr = "bs.contract_liabilities"
 
-  [[bars.children]]
+  [[series.children]]
   name = "应付职工薪酬"
   expr = "bs.payroll_payable"
 
-  [[bars.children]]
+  [[series.children]]
   name = "应交税费"
   expr = "bs.taxes_payable"
 
-  [[bars.children]]
+  [[series.children]]
   name = "其他应付款"
   expr = "bs.other_payables"
 
-  [[bars.children]]
+  [[series.children]]
   name = "一年内到期的非流动负债"
   expr = "bs.ncl_due_within_one_year"
 
-  [[bars.children]]
+  [[series.children]]
   name = "流动负债合计"
   expr = "bs.total_current_liabilities"
 
-[[bars]]
+[[series]]
 name = "非流动负债"
 color = "#F28E2B"
 
-  [[bars.children]]
+  [[series.children]]
   name = "长期借款"
   expr = "bs.long_term_borrowings"
 
-  [[bars.children]]
+  [[series.children]]
   name = "应付债券"
   expr = "bs.bonds_payable"
 
-  [[bars.children]]
+  [[series.children]]
   name = "预计负债"
   expr = "bs.provisions"
 
-  [[bars.children]]
+  [[series.children]]
   name = "递延收益"
   expr = "bs.deferred_income"
 
-  [[bars.children]]
+  [[series.children]]
   name = "递延所得税负债"
   expr = "bs.deferred_tax_liabilities"
 
-  [[bars.children]]
+  [[series.children]]
   name = "非流动负债合计"
   expr = "bs.total_non_current_liabilities"
 
-  [[bars.children]]
+  [[series.children]]
   name = "负债合计"
   expr = "bs.total_liabilities"

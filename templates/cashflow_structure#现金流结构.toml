@@ -11,19 +11,18 @@ title = "现金流结构（单季）"
 x_label = "科目"
 y_label = "金额"
 
-statement = "现金流量表"
 
-[[bars]]
+[[series]]
 name = "经营现金流"
 expr = "cf.net_cash_from_ops - cf.net_cash_from_ops.prev_in_year"
 color = "#59A14F"
 
-[[bars]]
+[[series]]
 name = "投资现金流"
 expr = "cf.net_cash_from_investing - cf.net_cash_from_investing.prev_in_year"
 color = "#F28E2B"
 
-[[bars]]
+[[series]]
 name = "融资现金流"
 expr = "cf.net_cash_from_financing - cf.net_cash_from_financing.prev_in_year"
 color = "#E15759"

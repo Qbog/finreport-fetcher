@@ -17,8 +17,7 @@ y_label = "金额"
 
 mode = "trend"
 
-statement = "利润表"
 
-[[bars]]
+[[series]]
 name = "归母净利润"
 expr = "is.net_profit_parent"

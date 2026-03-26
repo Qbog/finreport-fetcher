@@ -45,7 +45,7 @@ from .data.finreport_store import (
     read_sheet_provider,
     read_statement_df,
 )
-from .templates.config import find_template_file, load_template_dir, load_template_file
+from .templates.config import find_template_file, load_template_dir, load_template_file, template_lookup_names
 from .utils.expr import ExprError, eval_expr, tokenize
 from .utils.files import safe_slug
 from .utils.numfmt import UnitScale, choose_unit_scale, fmt_tick
@@ -213,6 +213,23 @@ def _prev_in_year_quarter_end(pe: date) -> date | None:
     return None
 
 
+def _quarter_end_for_q(year: int, q: int) -> date:
+    if q == 1:
+        return date(year, 3, 31)
+    if q == 2:
+        return date(year, 6, 30)
+    if q == 3:
+        return date(year, 9, 30)
+    return date(year, 12, 31)
+
+
+def _prev_year_same_quarter_end(pe: date) -> date:
+    pe0 = _latest_quarter_end_on_or_before(pe)
+    mmdd = pe0.strftime('%m%d')
+    q = {'0331': 1, '0630': 2, '0930': 3, '1231': 4}.get(mmdd, 4)
+    return _quarter_end_for_q(pe0.year - 1, q)
+
+
 def _split_id_date(s: str) -> tuple[str, date | None]:
     m = _ID_DATE_SUFFIX.match(s)
     if not m:
@@ -233,6 +250,17 @@ def _statement_from_key(key0: str, default_statement: str) -> str:
     if k2.startswith(('metrics.', 'metric.', 'mt.')):
         return '财报指标'
     return default_statement
+
+
+def _guess_statement_from_expr(expr: str) -> str:
+    ss = str(expr or '').strip().lower()
+    if ss.startswith('bs.'):
+        return '资产负债表'
+    if ss.startswith('cf.'):
+        return '现金流量表'
+    if ss.startswith(('metrics.', 'metric.', 'mt.')):
+        return '财报指标'
+    return '利润表'
 
 
 def _value_map_for_statement(xlsx: Path, statement: str) -> dict[str, float]:
@@ -633,7 +661,16 @@ class ExpressionEvaluator:
             return None
 
         prev_in_year = False
-        if ident_s.endswith('.prev_in_year'):
+        prev_year_same_q = False
+        prev_year_fixed_q: int | None = None
+        m_prev_year_q = re.search(r'\.prev_year\.q([1-4])$', ident_s)
+        if m_prev_year_q:
+            prev_year_fixed_q = int(m_prev_year_q.group(1))
+            ident_s = ident_s[: m_prev_year_q.start()]
+        elif ident_s.endswith('.prev_year'):
+            prev_year_same_q = True
+            ident_s = ident_s[: -len('.prev_year')]
+        elif ident_s.endswith('.prev_in_year'):
             prev_in_year = True
             ident_s = ident_s[: -len('.prev_in_year')]
 
@@ -653,7 +690,12 @@ class ExpressionEvaluator:
         if specified_date:
             target_pe = _latest_quarter_end_on_or_before(specified_date)
 
-        if prev_in_year:
+        if prev_year_fixed_q is not None:
+            pe0 = _latest_quarter_end_on_or_before(target_pe)
+            target_pe = _quarter_end_for_q(pe0.year - 1, prev_year_fixed_q)
+        elif prev_year_same_q:
+            target_pe = _prev_year_same_quarter_end(target_pe)
+        elif prev_in_year:
             prev_pe = _prev_in_year_quarter_end(target_pe)
             if prev_pe is None:
                 return 0.0
@@ -781,7 +823,7 @@ def run(
     模板要求（你的约束）：
     - 必须有：type(类型)、title(标题)、x_label/y_label（坐标轴显示名，bar/combo 使用）
     - bar 需要 mode：trend（趋势分析）/ structure（结构分析，旧 compare）/ peer（同业分析）
-    - bar 的每根柱都通过 [[bars]] 配置块描述，支持 expr 表达式（key + +-*/()）
+    - bar 的每根柱都通过 [[series]] 配置块描述，支持 expr 表达式（key + +-*/()）
 
     运行规则：
     - 不传 --template 或传入 '*'：运行 --templates 目录下全部模板
@@ -868,6 +910,7 @@ def run(
         return [pe for pe in periods if pe.strftime('%m%d') in pe_filter]
 
     # 1) load templates
+    all_templates = load_template_dir(templates)
     selected: dict[str, object] = {}
 
     def _resolve_tpl_path(s0: str) -> Path:
@@ -890,6 +933,21 @@ def run(
 
         raise FileNotFoundError(f"未找到模板文件: {s0}（已尝试: {', '.join(str(x) for x in cands)}）")
 
+    def _lookup_template_ref(spec: str):
+        key = str(spec or '').strip().lower()
+        if not key:
+            return None
+        for tpl in all_templates.values():
+            if tpl.name.strip().lower() == key:
+                return tpl
+            for nm in template_lookup_names(tpl):
+                if nm.strip().lower() == key:
+                    return tpl
+        pp = find_template_file(templates, spec)
+        if pp is not None:
+            return load_template_file(pp)
+        return None
+
     # '*' means all templates
     if template and any(t.strip() == "*" for t in template):
         template = []
@@ -900,7 +958,7 @@ def run(
             tpl = load_template_file(p)
             selected[tpl.name] = tpl
     else:
-        selected = load_template_dir(templates)
+        selected = dict(all_templates)
 
     if not selected:
         raise RuntimeError("未加载到任何模板")
@@ -956,8 +1014,8 @@ def run(
             # ---- bar / line ----
             if t_type in {"bar", "line"}:
                 mode = (getattr(tpl, "mode", None) or "trend").strip().lower().replace("compare", "structure")
-                bars = getattr(tpl, "bars", None)
-                statement_default = getattr(tpl, "statement", None) or "利润表"
+                bars = getattr(tpl, "series", None)
+                statement_default = "利润表"
 
                 def _flatten_bar_blocks(
                     blocks,
@@ -966,12 +1024,7 @@ def run(
                     parent_statement: str | None = None,
                     parent_color: str | None = None,
                 ):
-                    """Flatten nested bars into leaf blocks.
-
-                    - group blocks (no expr, has children) act as containers
-                    - statement/color inherit from parent when missing
-                    - leaf display name includes group prefix: e.g. "资产/货币资金"
-                    """
+                    """Flatten nested series into leaf blocks."""
 
                     out = []
                     for b in blocks or []:
@@ -982,16 +1035,30 @@ def run(
 
                         name_full = f"{prefix}/{b_name}" if prefix else b_name
 
-                        # leaf
                         if b_expr:
                             out.append({"name": name_full, "expr": str(b_expr).strip(), "statement": b_stmt, "color": b_color})
 
-                        # children
                         kids = getattr(b, "children", None)
                         if kids:
-                            # group prefix uses current node name_full
                             out.extend(_flatten_bar_blocks(kids, prefix=name_full, parent_statement=b_stmt, parent_color=b_color))
 
+                    return out
+
+                def _resolve_merge_refs(ref_tpl):
+                    ref_blocks = _flatten_bar_blocks(getattr(ref_tpl, 'series', None))
+                    if not ref_blocks:
+                        raise RuntimeError(f"merge 引用模板缺少 [[series]]: {getattr(ref_tpl, 'name', '<unknown>')}")
+                    out = []
+                    for blk in ref_blocks:
+                        out.append({
+                            'name': str(blk['name']),
+                            'expr': str(blk['expr']),
+                            'statement': str(blk.get('statement') or _guess_statement_from_expr(str(blk['expr']))),
+                            'color': blk.get('color'),
+                            'kind': str(getattr(ref_tpl, 'type', 'line')).strip().lower(),
+                            'template': str(getattr(ref_tpl, 'name', '')),
+                            'label': str(getattr(ref_tpl, 'alias', None) or getattr(ref_tpl, 'name', '')),
+                        })
                     return out
 
                 chart_kind = "bar" if t_type == "bar" else "line"
@@ -1007,7 +1074,7 @@ def run(
                     raise RuntimeError(f"{chart_kind} 模板 mode 仅支持 {sorted(allowed_modes)}: {k}")
 
                 if not bars and mode in {"trend", "price"}:
-                    raise RuntimeError(f"{mode} {chart_kind} 模板必须提供 [[bars]]: {k}")
+                    raise RuntimeError(f"{mode} {chart_kind} 模板必须提供 [[series]]: {k}")
 
                 # ---- price (daily) ----
                 if mode == "price":
@@ -1016,7 +1083,7 @@ def run(
 
                     bars_flat = _flatten_bar_blocks(bars)
                     if not bars_flat:
-                        raise RuntimeError(f"价格 line 模板缺少可用 bars（叶子节点需提供 expr）: {k}")
+                        raise RuntimeError(f"价格 line 模板缺少可用 series（叶子节点需提供 expr）: {k}")
 
                     # 1) ensure price data
                     check_end = min(c.end, date.today())
@@ -1244,7 +1311,7 @@ def run(
                     for b in bars or []:
                         if getattr(b, 'transform', None):
                             b_n = str(getattr(b, 'name', None) or getattr(b, 'expr', '')).strip() or 'value'
-                            log_debug(f"提示：bars.transform 已弃用，将被忽略：{b_n}")
+                            log_debug(f"提示：series.transform 已弃用，将被忽略：{b_n}")
 
                     still = _maybe_fetch_missing(c)
                     if strict and still:
@@ -1252,7 +1319,7 @@ def run(
 
                     bars_flat = _flatten_bar_blocks(bars)
                     if not bars_flat:
-                        raise RuntimeError(f"趋势 {chart_kind} 模板缺少可用 bars（叶子节点需提供 expr）: {k}")
+                        raise RuntimeError(f"趋势 {chart_kind} 模板缺少可用 series（叶子节点需提供 expr）: {k}")
 
                     # build output df (one row per period)
                     rows: list[dict[str, object]] = []
@@ -1361,20 +1428,17 @@ def run(
                     continue
 
                 if mode == "peer":
-                    # Peer list: merge template peers + CLI peers
-                    peer_defs: list[str] = []
-                    peer_defs.extend([str(x) for x in (getattr(tpl, "peers", None) or [])])
-                    peer_defs.extend([str(x) for x in (peer or [])])
+                    peer_defs: list[str] = [str(x) for x in (peer or []) if str(x).strip()]
 
                     if not peer_defs:
-                        raise RuntimeError(f"peer 模式需要 peers：可在模板中配置 peers=[]，或命令行传入 --peer（可重复）: {k}")
+                        raise RuntimeError(f"peer 模式需要在命令行传入公司列表：使用 --peer（可重复）: {k}")
 
                     if not bars:
-                        raise RuntimeError(f"peer 模式必须在模板中显式配置 [[bars]]: {k}")
+                        raise RuntimeError(f"peer 模式必须在模板中显式配置 [[series]]: {k}")
 
                     bars_flat = _flatten_bar_blocks(bars)
                     if not bars_flat:
-                        raise RuntimeError(f"peer 模式缺少可用 bars（叶子节点需提供 expr）: {k}")
+                        raise RuntimeError(f"peer 模式缺少可用 series（叶子节点需提供 expr）: {k}")
 
                     company_evals: list[tuple[str, str, ExpressionEvaluator]] = []
                     company_evals.append((c.rs.name or c.rs.code6, c.rs.code6, main_eval))
@@ -1509,11 +1573,11 @@ def run(
 
                 # 结构分析：完全由模板 bars 控制（不自动枚举“全部科目”）
                 if not bars:
-                    raise RuntimeError(f"structure 模式必须在模板中显式配置 [[bars]]: {k}")
+                    raise RuntimeError(f"structure 模式必须在模板中显式配置 [[series]]: {k}")
 
                 bars_flat = _flatten_bar_blocks(bars)
                 if not bars_flat:
-                    raise RuntimeError(f"structure 模式缺少可用 bars（叶子节点需提供 expr）: {k}")
+                    raise RuntimeError(f"structure 模式缺少可用 series（叶子节点需提供 expr）: {k}")
 
                 # ---- single-period structure ----
                 if getattr(tpl, "period_end", None) or as_of:
@@ -1750,84 +1814,126 @@ def run(
                 log_info(f"完成 pie 模板: {k}")
                 continue
 
-            # ---- combo ----
+            # ---- combo / merge ----
             if t_type == "combo":
-                statement = getattr(tpl, "statement", None) or "利润表"
-                bar_item = getattr(tpl, "bar_item", None) or "营业总收入"
-
                 if getattr(tpl, "transform", None):
-                    log_debug("提示：combo.transform 已弃用，将被忽略（按 bar_item 表达式原值取数）")
+                    log_debug("提示：combo.transform 已弃用，将被忽略")
 
                 still = _maybe_fetch_missing(c)
                 if strict and still:
                     raise RuntimeError(f"缺失财报 {len(still)} 期（strict 模式退出）：{still}")
 
-                price_csv = _default_price_csv_path(c)
-                if not price_csv.exists():
-                    raise RuntimeError(f"未找到股价 CSV: {price_csv}")
-
-                df_price = load_price_csv(price_csv)
                 periods = _filter_periods(quarter_ends_between(c.start, min(c.end, date.today())))
+                if not periods:
+                    continue
+
+                merge_series = []
+                tpl_series = _flatten_bar_blocks(getattr(tpl, 'series', None))
+                if tpl_series:
+                    for ref in tpl_series:
+                        ref_spec = str(ref['expr']).strip()
+                        ref_tpl = _lookup_template_ref(ref_spec)
+                        if ref_tpl is None:
+                            raise RuntimeError(f"merge 模式引用模板不存在: {ref_spec}")
+                        if str(getattr(ref_tpl, 'name', '')) == str(getattr(tpl, 'name', '')):
+                            raise RuntimeError(f"merge 模式不能引用自己: {ref_spec}")
+                        ref_type = str(getattr(ref_tpl, 'type', '')).strip().lower()
+                        ref_mode = str(getattr(ref_tpl, 'mode', '') or '').strip().lower().replace('compare', 'structure')
+                        if ref_type not in {'bar', 'line'} or ref_mode not in {'trend', 'price'}:
+                            raise RuntimeError(f"merge 仅支持引用 trend/price 的 bar/line 模板: {ref_spec}")
+                        resolved = _resolve_merge_refs(ref_tpl)
+                        prefix = str(ref.get('name') or '').strip()
+                        for item in resolved:
+                            if prefix:
+                                item = dict(item)
+                                item['name'] = f"{prefix}/{item['name']}"
+                            merge_series.append(item)
+                else:
+                    # legacy compatibility: bar_item + line
+                    bar_item = getattr(tpl, 'bar_item', None) or 'is.revenue_total'
+                    line_expr = getattr(tpl, 'line', None) or 'px.close'
+                    merge_series = [
+                        {'name': y_label or 'financial', 'expr': str(bar_item), 'statement': _guess_statement_from_expr(str(bar_item)), 'color': '#4E79A7', 'kind': 'bar'},
+                        {'name': str(line_expr).split('.')[-1], 'expr': str(line_expr), 'statement': _guess_statement_from_expr(str(line_expr)), 'color': '#F28E2B', 'kind': 'line'},
+                    ]
+
+                if not merge_series:
+                    raise RuntimeError(f"merge 模式缺少可用 [[series]]: {k}")
 
                 rows = []
                 for pe in periods:
-                    amount = main_eval.eval(str(bar_item), current_pe=pe, default_statement=statement)
-                    px = price_on_or_before(df_price, pe)
-                    rows.append({"period_end": pe.strftime("%Y-%m-%d"), "amount": amount, "close": px})
+                    row = {'period_end': pe.strftime('%Y-%m-%d')}
+                    any_val = False
+                    for item in merge_series:
+                        v = main_eval.eval(str(item['expr']), current_pe=pe, default_statement=str(item.get('statement') or _guess_statement_from_expr(str(item['expr']))))
+                        row[str(item['name'])] = v
+                        if v is not None:
+                            any_val = True
+                    if any_val or pad_x:
+                        rows.append(row)
 
-                df = pd.DataFrame(rows).sort_values("period_end")
-                if pad_x:
-                    df["amount"] = pd.to_numeric(df["amount"], errors="coerce")
-                    df["close"] = pd.to_numeric(df["close"], errors="coerce")
-                else:
-                    df = df.dropna(subset=["amount", "close"])
-
-                if df.empty or (not pd.to_numeric(df["amount"], errors="coerce").notna().any()):
+                if not rows:
                     if not collect_only:
-                        log_warn(f"提示：{k} 在该区间内没有可用数据（可能缺少财报或股价数据）。")
+                        log_warn(f"提示：{k} 在该区间内没有可用数据。")
                     continue
 
-                # 以实际有数据的报告期作为输出文件名范围（避免 end 对应期末未披露导致误导）
-                used_periods = [parse_date(str(x)) for x in df["period_end"].tolist()]
+                df = pd.DataFrame(rows).sort_values('period_end')
+                bar_defs = [x for x in merge_series if str(x.get('kind')) == 'bar' and x['name'] in df.columns]
+                line_defs = [x for x in merge_series if str(x.get('kind')) == 'line' and x['name'] in df.columns]
+                value_cols = [x['name'] for x in merge_series if x['name'] in df.columns]
+                if not value_cols:
+                    continue
+                if (not pad_x):
+                    df = df.dropna(subset=value_cols, how='all')
+                if df.empty:
+                    continue
+
+                used_periods = [parse_date(str(x)) for x in df['period_end'].tolist()]
                 actual_s = used_periods[0]
                 actual_e = used_periods[-1]
-                if (not pad_x) and actual_e < c.end:
-                    log_warn(f"提示：end={c.end} 对应最新报告期数据不可用，实际截至 {actual_e}。")
 
                 if collect_only and stats_map is not None:
                     stats = stats_map.setdefault(k, AxisStatsCollector())
-                    _collect_axis_stats(stats, df, value_cols=["amount"], point_col="period_end")
+                    focus_cols = [x['name'] for x in bar_defs] or [x['name'] for x in line_defs]
+                    _collect_axis_stats(stats, df, value_cols=focus_cols, point_col='period_end')
                     continue
 
                 title = f"{c.rs.name or c.rs.code6} | {title0}"
-
                 out_png = c.out_dir / f"{fname_base}_{c.rs.code6}_{actual_s.strftime('%Y%m%d')}_{actual_e.strftime('%Y%m%d')}.png"
                 out_xlsx = c.out_dir / f"{fname_base}_{c.rs.code6}_{actual_s.strftime('%Y%m%d')}_{actual_e.strftime('%Y%m%d')}.xlsx"
 
-                render_combo_png(
-                    df,
-                    title=title,
-                    x_col="period_end",
-                    bar_col="amount",
-                    line_col="close",
-                    out_png=out_png,
-                    bar_label=y_label,
-                    line_label="收盘价",
-                    x_label=x_label,
-                    **axis_png_extra,
-                )
-                write_combo_excel(
-                    df,
-                    title=title,
-                    x_col="period_end",
-                    bar_col="amount",
-                    line_col="close",
-                    out_xlsx=out_xlsx,
-                    bar_label=y_label,
-                    line_label="收盘价",
-                    x_label=x_label,
-                    **axis_xlsx_extra,
-                )
+                import matplotlib.pyplot as plt
+                fig, ax1 = plt.subplots(figsize=axis_png_extra.get('figsize', (10, 4.8)) if axis_png_extra else (10, 4.8))
+                x_pos = list(range(len(df.index)))
+                x_labels = df['period_end'].tolist()
+                if bar_defs:
+                    width = 0.8 / max(len(bar_defs), 1)
+                    start = -width * (len(bar_defs) - 1) / 2
+                    for idx, item in enumerate(bar_defs):
+                        pos = [x + start + idx * width for x in x_pos]
+                        ax1.bar(pos, pd.to_numeric(df[item['name']], errors='coerce').tolist(), width=width, label=item['name'], color=item.get('color') or None, alpha=0.82)
+                    ax1.set_ylabel(y_label or '数值')
+                ax2 = ax1.twinx()
+                has_line = False
+                for item in line_defs:
+                    ax2.plot(x_pos, pd.to_numeric(df[item['name']], errors='coerce').tolist(), marker='o', label=item['name'], color=item.get('color') or None)
+                    has_line = True
+                if has_line:
+                    ax2.set_ylabel('折线')
+                ax1.set_xticks(x_pos, x_labels)
+                ax1.tick_params(axis='x', rotation=30)
+                ax1.set_xlabel(x_label or '报告期')
+                ax1.set_title(title)
+                ax1.grid(axis='y', alpha=0.25)
+                h1, l1 = ax1.get_legend_handles_labels()
+                h2, l2 = ax2.get_legend_handles_labels()
+                if h1 or h2:
+                    ax1.legend(h1 + h2, l1 + l2, loc='best')
+                fig.tight_layout()
+                fig.savefig(out_png, bbox_inches='tight', dpi=160)
+                plt.close(fig)
+                with pd.ExcelWriter(out_xlsx, engine='openpyxl') as writer:
+                    df.to_excel(writer, index=False, sheet_name='data')
 
                 if not collect_only:
                     log_info(f"已生成: {out_png}")

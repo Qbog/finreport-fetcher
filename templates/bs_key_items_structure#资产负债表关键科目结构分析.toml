@@ -12,32 +12,31 @@ title = "资产负债表关键科目结构分析"
 x_label = "科目"
 y_label = "金额"
 
-statement = "资产负债表"
 
-[[bars]]
+[[series]]
 name = "货币资金"
 expr = "bs.cash"
 
-[[bars]]
+[[series]]
 name = "应收账款"
 expr = "bs.accounts_receivable"
 
-[[bars]]
+[[series]]
 name = "预付款项"
 expr = "bs.prepayments"
 
-[[bars]]
+[[series]]
 name = "固定资产"
 expr = "bs.fixed_assets"
 
-[[bars]]
+[[series]]
 name = "应付账款"
 expr = "bs.accounts_payable"
 
-[[bars]]
+[[series]]
 name = "应付职工薪酬"
 expr = "bs.payroll_payable"
 
-[[bars]]
+[[series]]
 name = "归属于母公司所有者权益合计"
 expr = "bs.total_equity_parent"

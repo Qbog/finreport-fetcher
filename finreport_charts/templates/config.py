@@ -45,19 +45,17 @@ class Template:
     # Price-specific (mode=price)
     frequency: str | None = None  # daily|weekly|monthly|{N}d (e.g. 5d)
 
-    # Bar-specific
-    mode: str | None = None  # trend|structure|peer (legacy: compare)
-    statement: str | None = None
+    # Generic series-based templates
+    mode: str | None = None  # trend|structure|peer|merge (legacy: compare)
     period_end: str | None = None  # for structure/peer
-    peers: list[str] | None = None  # for peer mode
-    bars: list[BarBlock] | None = None
+    series: list[BarBlock] | None = None
 
     # Pie-specific
     section: str | None = None
     items: list[str] | None = None
     top_n: int | None = None
 
-    # Combo-specific
+    # Legacy combo compatibility
     bar_item: str | None = None
     transform: str | None = None  # DEPRECATED: legacy transform（run 模式会忽略）
     line: str | None = None
@@ -190,11 +188,11 @@ def _parse_bar_blocks(data: dict[str, Any]) -> list[BarBlock] | None:
             transform=transform,
         )
 
-    # New style: [[series]] (preferred for line) or [[bars]] (legacy/common)
-    bars = data.get("series") if isinstance(data.get("series"), list) else data.get("bars")
-    if isinstance(bars, list):
+    # New style: [[series]] (preferred) or [[bars]] (legacy compatibility)
+    blocks = data.get("series") if isinstance(data.get("series"), list) else data.get("bars")
+    if isinstance(blocks, list):
         out: list[BarBlock] = []
-        for b in bars:
+        for b in blocks:
             if not isinstance(b, dict):
                 continue
             bb = _parse_one(b)
@@ -214,7 +212,7 @@ def load_template_file(path: Path) -> Template:
     """Load a single-template TOML file.
 
     支持格式：
-    - 顶层键（推荐）：type/title/x_label/y_label/mode/[[bars]]...
+    - 顶层键（推荐）：type/title/x_label/y_label/mode/[[series]]...
     - 或 [template] 表
 
     name 默认取文件名 stem，也可在 TOML 里显式指定 name。
@@ -248,10 +246,8 @@ def load_template_file(path: Path) -> Template:
         y_label=_as_str(data.get("y_label")),
         frequency=_as_str(data.get("frequency")),
         mode=_as_str(data.get("mode")),
-        statement=_as_str(data.get("statement")),
         period_end=_as_str(data.get("period_end")),
-        peers=data.get("peers") if isinstance(data.get("peers"), list) else None,
-        bars=_parse_bar_blocks(data),
+        series=_parse_bar_blocks(data),
         section=_as_str(data.get("section")),
         items=data.get("items") if isinstance(data.get("items"), list) else None,
         top_n=data.get("top_n"),

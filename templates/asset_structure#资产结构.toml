@@ -11,88 +11,87 @@ title = "资产结构分析"
 x_label = "科目"
 y_label = "金额"
 
-statement = "资产负债表"
 
-[[bars]]
+[[series]]
 name = "流动资产"
 color = "#4E79A7"
 
-  [[bars.children]]
+  [[series.children]]
   name = "货币资金"
   expr = "bs.cash"
 
-  [[bars.children]]
+  [[series.children]]
   name = "应收票据"
   expr = "bs.notes_receivable"
 
-  [[bars.children]]
+  [[series.children]]
   name = "应收账款"
   expr = "bs.accounts_receivable"
 
-  [[bars.children]]
+  [[series.children]]
   name = "应收款项融资"
   expr = "bs.receivables_financing"
 
-  [[bars.children]]
+  [[series.children]]
   name = "预付款项"
   expr = "bs.prepayments"
 
-  [[bars.children]]
+  [[series.children]]
   name = "其他应收款"
   expr = "bs.other_receivables"
 
-  [[bars.children]]
+  [[series.children]]
   name = "存货"
   expr = "bs.inventories"
 
-  [[bars.children]]
+  [[series.children]]
   name = "合同资产"
   expr = "bs.contract_assets"
 
-  [[bars.children]]
+  [[series.children]]
   name = "流动资产合计"
   expr = "bs.total_current_assets"
 
-[[bars]]
+[[series]]
 name = "非流动资产"
 color = "#76B7B2"
 
-  [[bars.children]]
+  [[series.children]]
   name = "长期股权投资"
   expr = "bs.long_term_equity_investment"
 
-  [[bars.children]]
+  [[series.children]]
   name = "投资性房地产"
   expr = "bs.investment_property"
 
-  [[bars.children]]
+  [[series.children]]
   name = "固定资产"
   expr = "bs.fixed_assets"
 
-  [[bars.children]]
+  [[series.children]]
   name = "在建工程"
   expr = "bs.construction_in_progress"
 
-  [[bars.children]]
+  [[series.children]]
   name = "无形资产"
   expr = "bs.intangible_assets"
 
-  [[bars.children]]
+  [[series.children]]
   name = "商誉"
   expr = "bs.goodwill"
 
-  [[bars.children]]
+  [[series.children]]
   name = "递延所得税资产"
   expr = "bs.deferred_tax_assets"
 
-  [[bars.children]]
+  [[series.children]]
   name = "其他非流动资产"
   expr = "bs.other_non_current_assets"
 
-  [[bars.children]]
+  [[series.children]]
   name = "非流动资产合计"
   expr = "bs.total_non_current_assets"
 
-  [[bars.children]]
+  [[series.children]]
   name = "资产总计"
   expr = "bs.total_assets"
