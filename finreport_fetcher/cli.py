@@ -15,7 +15,7 @@ from rich.console import Console
 from rich.prompt import IntPrompt
 
 from .exporter.excel import export_bundle_to_excel
-from .metrics_sheet import build_metrics_sheet
+from .metrics_sheet import build_metrics_sheet, build_placeholder_metrics_sheet
 from .pdf.cninfo import find_and_download_period_pdf
 from .raw_store import RawReportStore
 from .providers.registry import ProviderConfig, build_providers
@@ -189,7 +189,7 @@ def _load_metrics_sheet(
     source_df = metrics_store.load_source(provider_used)
     sheet_df = build_metrics_sheet(source_df, metrics_df, period_end, provider_used)
     if sheet_df is None or sheet_df.empty:
-        return None, provider_used
+        return build_placeholder_metrics_sheet(f"provider={provider_used} 在 {period_end.strftime('%Y-%m-%d')} 未返回指标数据"), provider_used
     return sheet_df, provider_used
 
 
@@ -345,7 +345,8 @@ def _fetch_one_period(
             meta["metrics_provider"] = metrics_provider_used
     except Exception as exc:
         meta["metrics_note"] = f"财报指标补充失败：{_exc_short(exc)}"
-        log_warn(f"财报指标补充失败，继续导出三表：{company_name or code6} {period_end.strftime('%Y-%m-%d')} => {_exc_short(exc)}")
+        log_warn(f"财报指标补充失败，继续导出占位指标 sheet：{company_name or code6} {period_end.strftime('%Y-%m-%d')} => {_exc_short(exc)}")
+        metrics_sheet_df = build_placeholder_metrics_sheet(f"财报指标补充失败：{_exc_short(exc)}")
 
     export_bundle_to_excel(
         out_path,

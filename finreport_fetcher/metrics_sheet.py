@@ -372,6 +372,34 @@ def _empty_sheet() -> pd.DataFrame:
     return pd.DataFrame(columns=SHEET_COLUMNS)
 
 
+def build_placeholder_metrics_sheet(note: str) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "科目": "财报指标",
+                "数值": None,
+                "key": "metrics.section.placeholder",
+                "备注": "",
+                "英文": "Report metrics",
+                "__level": 0,
+                "__is_header": True,
+                "__uncommon": False,
+            },
+            {
+                "科目": "当前报告期未获取到财报指标",
+                "数值": None,
+                "key": "metrics.placeholder.unavailable",
+                "备注": str(note or "未获取到财报指标"),
+                "英文": "Metrics unavailable for current reporting period",
+                "__level": 1,
+                "__is_header": False,
+                "__uncommon": True,
+            },
+        ],
+        columns=SHEET_COLUMNS,
+    )
+
+
 def _clean_period_str(v: object) -> str:
     return re.sub(r"[^0-9]", "", str(v or ""))
 

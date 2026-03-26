@@ -119,7 +119,7 @@ def export_bundle_to_excel(
         "利润表": is_df,
         "现金流量表": cf_df,
     }
-    if metrics_df is not None and not metrics_df.empty:
+    if metrics_statement is not None:
         sheet_frames["财报指标"] = metrics_df
 
     # 写入：预留两行做标题/注释

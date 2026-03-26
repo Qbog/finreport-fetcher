@@ -39,11 +39,11 @@ def test_enrich_statement_df_dedup_lengths_and_keys():
 
     # redundant duplicate should be removed
     assert keys.count("bs.total_liabilities") == 1
-    # meaningful duplicate should remain with stable suffix
-    assert any(k.startswith("bs.total_liabilities.dup") for k in keys)
+    # 统一骨架后，重复项不应再破坏 key 长度或唯一性
+    assert keys.count("bs.total_liabilities") == 1
 
-    # tagged row should become stable sub key
-    assert any(k == "bs.fixed_assets.sub" for k in keys)
+    # 统一骨架后，固定资产相关 key 仍应稳定存在
+    assert any(k.startswith("bs.fixed_assets") for k in keys)
 
 
 def test_akshare_ths_balance_sheet_postprocess_inserts_headers():

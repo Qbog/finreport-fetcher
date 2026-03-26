@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 from pandas.api import types as pd_types
 
-from .subject_glossary import lookup_subject, lookup_subject_by_key
+from .subject_glossary import SUBJECT_SPECS, lookup_subject, lookup_subject_by_key
 
 
 _STATEMENT_PREFIX = {
@@ -104,6 +104,86 @@ def _slugify_en(en: str) -> str:
 
 def _prefix_from_sheet(sheet_name_cn: str) -> str:
     return _STATEMENT_PREFIX.get(sheet_name_cn, "")
+
+
+def _spec_applies_to_category(spec, company_category: str) -> bool:
+    common_in = tuple(getattr(spec, "common_in", ()) or ())
+    if common_in:
+        return company_category in common_in
+    return True
+
+
+def _build_statement_scaffold(prefix: str, company_category: str) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for spec in SUBJECT_SPECS:
+        key = str(getattr(spec, "key", "") or "")
+        if not key.startswith(f"{prefix}."):
+            continue
+        if not _spec_applies_to_category(spec, company_category):
+            continue
+        is_header = key.startswith(f"{prefix}.section.")
+        common_in = tuple(getattr(spec, "common_in", ()) or ())
+        if common_in:
+            uncommon = company_category not in common_in
+        else:
+            uncommon = not bool(getattr(spec, "common", True))
+        note = str(getattr(spec, "note", "") or "")
+        if uncommon and not note:
+            note = "非通用科目：仅少数公司/行业披露，口径以财报附注为准。"
+        rows.append(
+            {
+                "key": key,
+                "科目": str(getattr(spec, "cn", "") or ""),
+                "数值": np.nan,
+                "备注": note,
+                "英文": str(getattr(spec, "en", "") or ""),
+                "__uncommon": bool(uncommon),
+                "__is_header": bool(is_header),
+                "__level": 0 if is_header else 1,
+            }
+        )
+    return rows
+
+
+def _apply_statement_scaffold(out: pd.DataFrame, *, prefix: str, company_category: str) -> pd.DataFrame:
+    scaffold = _build_statement_scaffold(prefix, company_category)
+    if not scaffold:
+        return out
+
+    actual_by_key: dict[str, dict[str, object]] = {}
+    extras: list[dict[str, object]] = []
+    for _, row in out.iterrows():
+        item = {col: row[col] for col in out.columns}
+        key = str(item.get("key") or "")
+        if key and key not in actual_by_key:
+            actual_by_key[key] = item
+        else:
+            extras.append(item)
+
+    merged_rows: list[dict[str, object]] = []
+    seen_keys: set[str] = set()
+    for base in scaffold:
+        key = str(base.get("key") or "")
+        row = dict(base)
+        actual = actual_by_key.get(key)
+        if actual is not None:
+            row.update(actual)
+            row["key"] = key
+        merged_rows.append(row)
+        if key:
+            seen_keys.add(key)
+
+    for item in extras:
+        key = str(item.get("key") or "")
+        if key and key in seen_keys:
+            continue
+        merged_rows.append(item)
+
+    cols: list[str] = []
+    for c in out.columns.tolist() + ["key", "科目", "数值", "备注", "英文", "__uncommon", "__is_header", "__level"]:
+        if c not in cols:
+            cols.append(c)
+    return pd.DataFrame(merged_rows, columns=cols)
 
 
 _RE_NUM_PREFIX = re.compile(r"^\s*([一二三四五六七八九十]+|\d+)[、\.．]\s*")
@@ -925,6 +1005,10 @@ def enrich_statement_df(
     if "key" in out.columns and "__is_header" in out.columns:
         kser = out["key"].astype(str)
         out.loc[kser.str.startswith(("bs.section.", "is.section.", "cf.section.")), "__is_header"] = True
+
+    # 按公司大类套用统一骨架：同类公司输出同一套科目结构，缺失值保留空白。
+    if prefix in {"bs", "is", "cf"}:
+        out = _apply_statement_scaffold(out, prefix=prefix, company_category=company_category)
 
     # 对标题行下的明细行统一做一层缩进（保留已有更深的 __level）。
     # 例外：核心指标区块通常希望保持“顶格”展示，不自动缩进。
