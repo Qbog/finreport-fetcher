@@ -474,13 +474,15 @@ def _row_from_tushare_field(field: str, value: object) -> dict[str, object]:
 
 
 def _row_from_akshare_metric_name(name: str, value: object, section_name: str | None) -> dict[str, object]:
-    # 对 akshare 财务摘要：尽量保留原始中文指标名，只做 exact 映射与稳定 key。
+    # 对 akshare 财务摘要：保留原始 section 与原始中文指标名。
     if section_name and section_name in _AKSHARE_SECTION_MAP:
         section_key, section_cn, section_en = _AKSHARE_SECTION_MAP[section_name]
     else:
         section_key, section_cn = _classify_metric(name)
         section_en = _english_from_key(section_key)
-    key = _metric_key_from_cn(name)
+    base_key = _metric_key_from_cn(name)
+    tail = base_key.split('.', 1)[1] if base_key.startswith('metrics.') else base_key
+    key = f"metrics.{section_key}.{tail}" if section_key else f"metrics.{tail}"
     en = _translate_cn_metric(name) or _english_from_key(key)
     return {
         "科目": name,
@@ -502,15 +504,15 @@ def _finalize_rows(rows: list[dict[str, object]]) -> pd.DataFrame:
         return _empty_sheet()
     out_rows: list[dict[str, object]] = []
     current_section = None
-    seen_keys: set[str] = set()
-    seen_subjects: set[str] = set()
+    seen_rows: set[tuple[str, str, str]] = set()
     for row in rows:
         sec_key = str(row.pop("__section_key"))
         sec_cn = str(row.pop("__section_cn"))
         sec_en = str(row.pop("__section_en"))
         key0 = str(row["key"])
         subj0 = str(row["科目"])
-        if key0 in seen_keys or subj0 in seen_subjects:
+        dup_key = (sec_key, key0, subj0)
+        if dup_key in seen_rows:
             continue
         if sec_key != current_section:
             out_rows.append({
@@ -524,8 +526,7 @@ def _finalize_rows(rows: list[dict[str, object]]) -> pd.DataFrame:
                 "__uncommon": False,
             })
             current_section = sec_key
-        seen_keys.add(key0)
-        seen_subjects.add(subj0)
+        seen_rows.add(dup_key)
         out_rows.append({k: row[k] for k in SHEET_COLUMNS})
     return pd.DataFrame(out_rows, columns=SHEET_COLUMNS)
 

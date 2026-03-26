@@ -10,21 +10,28 @@ from finreport_fetcher.exporter.excel import export_bundle_to_excel
 from finreport_fetcher.metrics_sheet import build_metrics_sheet
 
 
-def test_metrics_sheet_keeps_alias_metric_names_without_hash_suffix():
+def test_metrics_sheet_keeps_all_section_rows_without_hash_suffix():
     source_df = pd.DataFrame([
+        {"选项": "常用指标", "指标": "毛利率", "20241231": 91.2},
+        {"选项": "盈利能力", "指标": "毛利率", "20241231": 91.2},
         {"选项": "常用指标", "指标": "总资产报酬率(ROA)", "20241231": 17.2},
         {"选项": "盈利能力", "指标": "总资产报酬率", "20241231": 17.1},
         {"选项": "盈利能力", "指标": "投入资本回报率", "20241231": 18.6},
     ])
     sheet = build_metrics_sheet(source_df, None, date(2024, 12, 31), "akshare")
-    names = sheet[~sheet["key"].astype(str).str.startswith("metrics.section.")]["科目"].astype(str).tolist()
-    keys = sheet[~sheet["key"].astype(str).str.startswith("metrics.section.")]["key"].astype(str).tolist()
+    metric_rows = sheet[~sheet["key"].astype(str).str.startswith("metrics.section.")].copy()
+    names = metric_rows["科目"].astype(str).tolist()
+    keys = metric_rows["key"].astype(str).tolist()
+    assert len(metric_rows) == 5
+    assert names.count("毛利率") == 2
     assert "总资产报酬率(ROA)" in names
     assert "总资产报酬率" in names
     assert "投入资本回报率" in names
-    assert "metrics.return_on_assets_roa" in keys
-    assert "metrics.return_on_assets" in keys
-    assert "metrics.return_on_invested_capital" in keys
+    assert "metrics.highlights.gross_margin" in keys
+    assert "metrics.profitability.gross_margin" in keys
+    assert "metrics.highlights.return_on_assets_roa" in keys
+    assert "metrics.profitability.return_on_assets" in keys
+    assert "metrics.profitability.return_on_invested_capital" in keys
     assert not any("__" in k for k in keys)
 
 
