@@ -20,4 +20,4 @@ mode = "trend"
 
 [[series]]
 name = "归母净利润"
-expr = "is.net_profit_parent"
+expr = "is.net_profit_parent - is.net_profit_parent.prev_in_year"
