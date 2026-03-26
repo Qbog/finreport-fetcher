@@ -7,8 +7,10 @@ import pandas as pd
 from finshared.global_datasets import (
     CompanyBasicsProvider,
     FinancialMetricsProvider,
+    clear_dataset_raw_files,
     fetch_company_basics_dataset,
     fetch_financial_metrics_dataset,
+    legacy_dataset_paths,
     load_company_basics_csv,
     load_financial_metrics_csv,
 )
@@ -38,6 +40,7 @@ class FakeMetricsProvider(FinancialMetricsProvider):
 def test_fetch_company_basics_dataset(tmp_path: Path):
     paths = fetch_company_basics_dataset(data_dir=tmp_path, provider=FakeBasicsProvider())
     assert paths.csv_path.exists()
+    assert "/global/company_basics/" in str(paths.csv_path)
     df = load_company_basics_csv(tmp_path)
     assert sorted([str(x).zfill(6) for x in df["code6"]]) == ["300454", "600519"]
 
@@ -45,11 +48,29 @@ def test_fetch_company_basics_dataset(tmp_path: Path):
 def test_fetch_financial_metrics_dataset(tmp_path: Path):
     paths = fetch_financial_metrics_dataset(data_dir=tmp_path, provider=FakeMetricsProvider())
     assert paths.csv_path.exists()
+    assert "/global/financial_metrics/" in str(paths.csv_path)
     df = load_financial_metrics_csv(tmp_path)
     assert list(df.columns) == ["ts_code", "code6", "name", "end_date", "ann_date", "roe", "roa", "roic", "ev", "ebitda"]
     assert len(df.index) == 2
     assert (paths.raw_dir / "600519.csv").exists()
     assert any(tmp_path.glob("*_600519/metrics/600519_financial_metrics.csv"))
+
+
+def test_clear_dataset_raw_files_preserves_latest_and_load_legacy_path(tmp_path: Path):
+    legacy = legacy_dataset_paths(tmp_path, "company_basics", "company_basics.csv")
+    legacy.root.mkdir(parents=True, exist_ok=True)
+    legacy.raw_dir.mkdir(parents=True, exist_ok=True)
+    (legacy.csv_path).write_text("code6,name\n600519,贵州茅台\n", encoding="utf-8")
+    (legacy.raw_dir / "old.csv").write_text("a\n", encoding="utf-8")
+    (legacy.raw_dir / "new.csv").write_text("b\n", encoding="utf-8")
+    legacy.latest_meta_path.write_text('{"raw": "new.csv"}', encoding="utf-8")
+
+    df = load_company_basics_csv(tmp_path)
+    assert df.iloc[0]["code6"] == 600519
+
+    removed = clear_dataset_raw_files(legacy)
+    assert removed == ["old.csv"]
+    assert (legacy.raw_dir / "new.csv").exists()
 
 
 def test_fetch_financial_metrics_dataset_without_token_writes_empty_csv(tmp_path: Path, monkeypatch):

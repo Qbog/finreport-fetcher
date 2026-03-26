@@ -33,6 +33,7 @@ def test_excel_schema_is_fixed_and_subject_column_not_excessive(tmp_path: Path):
         balance_sheet=bs,
         income_statement=is_,
         cashflow_statement=cf,
+        metrics_statement=None,
         meta={"k": "v"},
         title_info={
             "code6": "000001",

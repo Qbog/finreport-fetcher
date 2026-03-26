@@ -23,7 +23,8 @@ class DatasetPaths:
     latest_meta_path: Path
 
 
-GLOBAL_ROOT_NAME = "_global"
+GLOBAL_ROOT_NAME = "global"
+LEGACY_GLOBAL_ROOT_NAME = "_global"
 COMPANY_BASICS_DATASET = "company_basics"
 FINANCIAL_METRICS_DATASET = "financial_metrics"
 
@@ -37,6 +38,27 @@ def dataset_paths(data_dir: Path, dataset_name: str, csv_name: str) -> DatasetPa
         csv_path=root / csv_name,
         latest_meta_path=root / "latest.json",
     )
+
+
+def legacy_dataset_paths(data_dir: Path, dataset_name: str, csv_name: str) -> DatasetPaths:
+    root = data_dir.resolve() / LEGACY_GLOBAL_ROOT_NAME / dataset_name
+    raw_dir = root / "raw"
+    return DatasetPaths(
+        root=root,
+        raw_dir=raw_dir,
+        csv_path=root / csv_name,
+        latest_meta_path=root / "latest.json",
+    )
+
+
+def resolve_existing_dataset_paths(data_dir: Path, dataset_name: str, csv_name: str) -> DatasetPaths:
+    current = dataset_paths(data_dir, dataset_name, csv_name)
+    legacy = legacy_dataset_paths(data_dir, dataset_name, csv_name)
+    if current.csv_path.exists() or current.root.exists():
+        return current
+    if legacy.csv_path.exists() or legacy.root.exists():
+        return legacy
+    return current
 
 
 def ensure_dir(path: Path) -> Path:
@@ -71,6 +93,26 @@ def write_dataset(df: pd.DataFrame, *, paths: DatasetPaths, provider: str, raw_n
         ),
         encoding="utf-8",
     )
+
+
+def clear_dataset_raw_files(paths: DatasetPaths) -> list[str]:
+    if not paths.raw_dir.exists():
+        return []
+    latest_raw = None
+    if paths.latest_meta_path.exists():
+        try:
+            latest_raw = json.loads(paths.latest_meta_path.read_text(encoding="utf-8")).get("raw")
+        except Exception:
+            latest_raw = None
+    removed: list[str] = []
+    for p in sorted(paths.raw_dir.glob("*")):
+        if not p.is_file():
+            continue
+        if latest_raw and p.name == str(latest_raw):
+            continue
+        p.unlink()
+        removed.append(p.name)
+    return removed
 
 
 BASIC_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
@@ -424,14 +466,14 @@ def fetch_financial_metrics_dataset(
 
 
 def load_company_basics_csv(data_dir: Path) -> pd.DataFrame:
-    paths = dataset_paths(data_dir, COMPANY_BASICS_DATASET, "company_basics.csv")
+    paths = resolve_existing_dataset_paths(data_dir, COMPANY_BASICS_DATASET, "company_basics.csv")
     if not paths.csv_path.exists():
         return pd.DataFrame(columns=list(BASIC_FIELD_ALIASES.keys()))
     return pd.read_csv(paths.csv_path)
 
 
 def load_financial_metrics_csv(data_dir: Path) -> pd.DataFrame:
-    paths = dataset_paths(data_dir, FINANCIAL_METRICS_DATASET, "financial_metrics.csv")
+    paths = resolve_existing_dataset_paths(data_dir, FINANCIAL_METRICS_DATASET, "financial_metrics.csv")
     if not paths.csv_path.exists():
         return pd.DataFrame(columns=DEFAULT_METRIC_COLUMNS)
     return pd.read_csv(paths.csv_path)

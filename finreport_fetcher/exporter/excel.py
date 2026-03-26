@@ -71,6 +71,7 @@ def export_bundle_to_excel(
     balance_sheet: pd.DataFrame,
     income_statement: pd.DataFrame,
     cashflow_statement: pd.DataFrame,
+    metrics_statement: pd.DataFrame | None,
     meta: dict,
     title_info: dict | None = None,
 ):
@@ -91,6 +92,7 @@ def export_bundle_to_excel(
     bs_df = enrich_statement_df(balance_sheet, sheet_name_cn="资产负债表", company_category=company_category)
     is_df = enrich_statement_df(income_statement, sheet_name_cn="利润表", company_category=company_category)
     cf_df = enrich_statement_df(cashflow_statement, sheet_name_cn="现金流量表", company_category=company_category)
+    metrics_df = metrics_statement.copy() if metrics_statement is not None else pd.DataFrame()
 
     def view_df(df: pd.DataFrame) -> pd.DataFrame:
         # 固定导出列顺序（跨数据源保持一致）：科目 | 数值 | (spacer) | key | 备注 | 英文
@@ -112,11 +114,18 @@ def export_bundle_to_excel(
 
         return out
 
+    sheet_frames: dict[str, pd.DataFrame] = {
+        "资产负债表": bs_df,
+        "利润表": is_df,
+        "现金流量表": cf_df,
+    }
+    if metrics_df is not None and not metrics_df.empty:
+        sheet_frames["财报指标"] = metrics_df
+
     # 写入：预留两行做标题/注释
     with pd.ExcelWriter(out_path, engine="openpyxl") as writer:
-        view_df(bs_df).to_excel(writer, sheet_name="资产负债表", index=False, startrow=2)
-        view_df(is_df).to_excel(writer, sheet_name="利润表", index=False, startrow=2)
-        view_df(cf_df).to_excel(writer, sheet_name="现金流量表", index=False, startrow=2)
+        for sname, sdf in sheet_frames.items():
+            view_df(sdf).to_excel(writer, sheet_name=sname, index=False, startrow=2)
 
     # 美化（openpyxl）
     from openpyxl import load_workbook
@@ -155,9 +164,13 @@ def export_bundle_to_excel(
         parts.append(sheet_name)
         if period_end:
             parts.append(f"报告期末日: {period_end}")
-        if stype:
+        if sheet_name != "财报指标" and stype:
             parts.append(f"口径: {stype}")
-        if provider:
+        if sheet_name == "财报指标":
+            metrics_provider = info.get("metrics_provider") or meta.get("metrics_provider")
+            if metrics_provider:
+                parts.append(f"指标源: {metrics_provider}")
+        elif provider:
             parts.append(f"数据源: {provider}")
         return " | ".join(parts)
 
@@ -171,13 +184,9 @@ def export_bundle_to_excel(
         return " | ".join(parts) if parts else ""
 
     # 将 df 的缩进信息带到工作表里
-    df_map = {
-        "资产负债表": bs_df,
-        "利润表": is_df,
-        "现金流量表": cf_df,
-    }
+    df_map = sheet_frames
 
-    for sname in ["资产负债表", "利润表", "现金流量表"]:
+    for sname in sheet_frames:
         ws = wb[sname]
         end_col = ws.max_column
 

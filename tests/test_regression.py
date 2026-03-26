@@ -93,6 +93,7 @@ def test_export_excel_schema_and_autofit(tmp_path: Path):
         balance_sheet=bs,
         income_statement=inc,
         cashflow_statement=cf,
+        metrics_statement=None,
         meta={"k": "v"},
         title_info={
             "code6": "300454",

@@ -64,24 +64,26 @@ def parse_global_series_ident(ident: str) -> tuple[str, str, str] | None:
 
 
 def resolve_global_series_csv(data_dir: Path, kind: str, symbol: str) -> Path | None:
-    root = data_dir.resolve() / "_global"
+    roots = [data_dir.resolve() / "global", data_dir.resolve() / "_global"]
     candidates: list[Path] = []
     if kind == "commodity":
         slug = normalize_commodity_symbol(symbol)
         if not slug:
             return None
-        candidates = [
-            root / "commodities" / slug / "price" / f"{slug}.csv",
-            root / "commodities" / slug / f"{slug}.csv",
-        ]
+        for root in roots:
+            candidates.extend([
+                root / "commodities" / slug / "price" / f"{slug}.csv",
+                root / "commodities" / slug / f"{slug}.csv",
+            ])
     elif kind == "index":
         code = normalize_index_symbol(symbol)
         if not code:
             return None
-        candidates = [
-            root / "indexes" / code / f"{code}.csv",
-            root / "indexes" / code / "index" / f"{code}.csv",
-        ]
+        for root in roots:
+            candidates.extend([
+                root / "indexes" / code / f"{code}.csv",
+                root / "indexes" / code / "index" / f"{code}.csv",
+            ])
     for path in candidates:
         if path.exists():
             return path

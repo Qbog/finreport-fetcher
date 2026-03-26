@@ -453,7 +453,7 @@ class AppContext:
             raise ValueError("未选中任何分析内容")
 
         request_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-        run_root = self.data_dir / "_global" / "web_runs" / request_id
+        run_root = self.data_dir / "global" / "web_runs" / request_id
         run_root.mkdir(parents=True, exist_ok=True)
 
         errors: list[dict[str, Any]] = []
@@ -717,6 +717,8 @@ def guess_statement_from_expr(expr: str) -> str:
         return "资产负债表"
     if ss.startswith("cf."):
         return "现金流量表"
+    if ss.startswith(("metrics.", "metric.", "mt.")):
+        return "财报指标"
     return "利润表"
 
 
@@ -820,6 +822,8 @@ def statement_from_key(key0: str, default_statement: str) -> str:
         return "资产负债表"
     if k2.startswith("cf."):
         return "现金流量表"
+    if k2.startswith(("metrics.", "metric.", "mt.")):
+        return "财报指标"
     return default_statement
 
 
@@ -886,6 +890,10 @@ class CompanyDataResolver:
             prev_n += 1
             ident_s = ident_s[: -len(".prev")]
         base, specified_date = split_id_date(ident_s)
+        if base.startswith("metric."):
+            base = "metrics." + base.split(".", 1)[1]
+        elif base.startswith("mt."):
+            base = "metrics." + base.split(".", 1)[1]
         statement = statement_from_key(base, default_statement)
         target_pe = latest_quarter_end_on_or_before(specified_date) if specified_date else current_pe
         if prev_in_year:

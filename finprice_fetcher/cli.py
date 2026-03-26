@@ -969,7 +969,7 @@ def commodity(
         raise typer.BadParameter('必须提供 --start/--end；若仅维护 raw，可使用 --update-raw/--clear-raw')
 
     slug, spec = _normalize_commodity(name)
-    root = out.resolve() / '_global' / 'commodities' / slug
+    root = out.resolve() / 'global' / 'commodities' / slug
     price_dir = root / 'price'
     price_dir.mkdir(parents=True, exist_ok=True)
     store = RawPriceStore(root)

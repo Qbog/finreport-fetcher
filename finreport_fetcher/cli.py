@@ -5,6 +5,8 @@ from datetime import date
 from enum import IntEnum
 from pathlib import Path
 
+import pandas as pd
+
 # 避免 pandas 在某些环境下对 numexpr/bottleneck 版本给出噪声警告
 warnings.filterwarnings("ignore", message=r"Pandas requires version.*", category=UserWarning)
 
@@ -13,6 +15,7 @@ from rich.console import Console
 from rich.prompt import IntPrompt
 
 from .exporter.excel import export_bundle_to_excel
+from .metrics_sheet import build_metrics_sheet
 from .pdf.cninfo import find_and_download_period_pdf
 from .raw_store import RawReportStore
 from .providers.registry import ProviderConfig, build_providers
@@ -20,6 +23,8 @@ from .utils.dates import candidate_quarter_ends_before, parse_date, quarter_ends
 from .utils.paths import safe_dir_component
 from .utils.company_category import detect_company_category
 from finshared.company_categories import default_company_categories_path, resolve_company_category_symbols
+from finmetrics_fetcher.cli import CommonOpts as MetricsCommonOpts, ensure_raw_metrics
+from finmetrics_fetcher.raw_store import RawMetricsStore
 from .utils.symbols import ResolvedSymbol, fuzzy_match_name, load_a_share_name_map, parse_code
 
 app = typer.Typer(add_completion=False)
@@ -160,12 +165,52 @@ def _expected_xlsx_path(out_dir: Path, code6: str, statement_type: str, period_e
     return out_dir / f"{code6}_{statement_type}_{period_end.strftime('%Y%m%d')}.xlsx"
 
 
+def _company_root_from(out_dir: Path, company_name: str | None, code6: str) -> Path:
+    return out_dir.parent / safe_dir_component(f"{(company_name or code6)}_{code6}")
+
+
+def _load_metrics_sheet(
+    *,
+    ts_code: str,
+    code6: str,
+    company_name: str | None,
+    period_end: date,
+    provider: str,
+    out_dir: Path,
+    tushare_token: str | None,
+    raw_store: RawReportStore | None,
+) -> tuple[pd.DataFrame | None, str | None]:
+    company_root = raw_store.company_root if raw_store is not None else _company_root_from(out_dir, company_name, code6)
+    metrics_store = RawMetricsStore(company_root)
+    rs0 = parse_code(ts_code) or parse_code(code6)
+    rs = ResolvedSymbol(code6=code6, ts_code=ts_code, market=rs0.market if rs0 else "SZ", name=company_name)
+    opts = MetricsCommonOpts(rs=rs, out_dir=company_root.parent.resolve(), provider=(provider or "auto").strip().lower(), tushare_token=tushare_token)
+    provider_used, metrics_df = ensure_raw_metrics(opts, metrics_store, required_periods={period_end.strftime('%Y%m%d')})
+    sheet_df = build_metrics_sheet(metrics_df, period_end)
+    if sheet_df is None or sheet_df.empty:
+        return None, provider_used
+    return sheet_df, provider_used
+
+
+def _infer_metrics_provider(requested_provider: str, used_provider_name: str | None) -> str:
+    req = (requested_provider or "auto").strip().lower()
+    if req in {"tushare", "akshare"}:
+        return req
+    used = (used_provider_name or "").strip().lower()
+    if "tushare" in used:
+        return "tushare"
+    if "akshare" in used or used == "akshare_ths":
+        return "akshare"
+    return "auto"
+
+
 def _fetch_one_period(
     ts_code: str,
     code6: str,
     company_name: str | None,
     period_end: date,
     statement_type: str,
+    provider_pref: str,
     providers,
     want_pdf: bool,
     out_dir: Path,
@@ -282,11 +327,31 @@ def _fetch_one_period(
         meta["company_industry"] = cat.industry
     meta["company_category_source"] = cat.source
 
+    metrics_sheet_df = None
+    metrics_provider_used = None
+    try:
+        metrics_sheet_df, metrics_provider_used = _load_metrics_sheet(
+            ts_code=ts_code,
+            code6=code6,
+            company_name=company_name,
+            period_end=period_end,
+            provider=_infer_metrics_provider(provider_pref, used_provider_name),
+            out_dir=out_dir,
+            tushare_token=tushare_token,
+            raw_store=raw_store,
+        )
+        if metrics_provider_used:
+            meta["metrics_provider"] = metrics_provider_used
+    except Exception as exc:
+        meta["metrics_note"] = f"财报指标补充失败：{_exc_short(exc)}"
+        log_warn(f"财报指标补充失败，继续导出三表：{company_name or code6} {period_end.strftime('%Y-%m-%d')} => {_exc_short(exc)}")
+
     export_bundle_to_excel(
         out_path,
         balance_sheet=bs,
         income_statement=inc,
         cashflow_statement=cf,
+        metrics_statement=metrics_sheet_df,
         meta=meta,
         title_info={
             "code6": code6,
@@ -297,6 +362,7 @@ def _fetch_one_period(
             "pdf_url": pdf_url,
             "pdf_path": pdf_local_path,
             "company_category": cat.category,
+            "metrics_provider": metrics_provider_used,
         },
     )
 
@@ -443,6 +509,7 @@ def fetch(
                         company_name=rs.name,
                         period_end=pe,
                         statement_type=statement_type,
+                        provider_pref=provider,
                         providers=providers,
                         want_pdf=pdf,
                         out_dir=out_reports_dir,
@@ -477,6 +544,7 @@ def fetch(
                         company_name=rs.name,
                         period_end=pe,
                         statement_type=statement_type,
+                        provider_pref=provider,
                         providers=providers,
                         want_pdf=pdf,
                         out_dir=out_reports_dir,

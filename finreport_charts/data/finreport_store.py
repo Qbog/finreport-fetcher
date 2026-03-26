@@ -258,6 +258,15 @@ def _subject_cn_from_display(s: str) -> str:
     return ss
 
 
+def _normalize_metric_key_alias(item: str) -> str:
+    s = str(item or "").strip()
+    if s.startswith("metric."):
+        return "metrics." + s.split(".", 1)[1]
+    if s.startswith("mt."):
+        return "metrics." + s.split(".", 1)[1]
+    return s
+
+
 def get_item_value(xlsx_path: Path, sheet_name: str, item: str) -> float | None:
     """按科目取值。
 
@@ -275,7 +284,7 @@ def get_item_value(xlsx_path: Path, sheet_name: str, item: str) -> float | None:
 
     df = read_statement_df(xlsx_path, sheet_name)
 
-    item_s = str(item)
+    item_s = _normalize_metric_key_alias(str(item))
     if "key" in df.columns and "." in item_s:
         m = df["key"].astype(str) == item_s
     else:

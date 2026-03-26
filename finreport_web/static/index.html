@@ -54,7 +54,7 @@
         <div class="actions top-gap">
           <button id="generateBtn" class="primary" type="button">开始分析</button>
         </div>
-        <p class="hint">输出目录：<code>output/_global/web_runs/时间戳/</code>。同一次分析内的趋势/结构/同业/合并图表都会放在全局目录中。</p>
+        <p class="hint">输出目录：<code>output/global/web_runs/时间戳/</code>。同一次分析内的趋势/结构/同业/合并图表都会放在全局目录中。</p>
 
         <div class="section-title top-gap">
           <h3>配置辅助</h3>
@@ -63,7 +63,7 @@
           </div>
         </div>
         <p class="hint">公司类别只在前台创建，保存后会自动写回 <code>config/company_categories.toml</code>，不再需要手工编辑 TOML。</p>
-        <p class="hint">启动时会优先读取 <code>output/_global/company_basics/company_basics.csv</code> 作为公司总表；如果还没有，先运行 <code>python3 -m fincompany_fetcher fetch --out output</code>。</p>
+        <p class="hint">启动时会优先读取 <code>output/global/company_basics/company_basics.csv</code> 作为公司总表；如果还没有，先运行 <code>python3 -m fincompany_fetcher fetch --out output</code>。</p>
         <p class="hint" id="datasetHint"></p>
 
         <div class="section-title top-gap">
@@ -179,7 +179,7 @@
         </div>
         <div class="field" id="templateExprField">
           <label for="templateExprInput">表达式</label>
-          <input id="templateExprInput" type="text" placeholder="例如：is.revenue_total">
+          <input id="templateExprInput" type="text" placeholder="例如：is.revenue_total / metrics.roe / index.上证.close">
         </div>
         <div class="field" id="templateStatementField">
           <label for="templateStatementSelect">报表类型</label>
@@ -187,6 +187,7 @@
             <option value="利润表">利润表</option>
             <option value="资产负债表">资产负债表</option>
             <option value="现金流量表">现金流量表</option>
+            <option value="财报指标">财报指标</option>
           </select>
         </div>
         <div class="field" id="templateBarItemField" style="display:none;">
@@ -195,7 +196,7 @@
         </div>
         <div class="field" id="templateLineField" style="display:none;">
           <label for="templateLineInput">股价字段</label>
-          <input id="templateLineInput" type="text" placeholder="例如：px.close / idx.sh000001.close / com.gold.close">
+          <input id="templateLineInput" type="text" placeholder="例如：px.close / idx.sh000001.close / index.上证.close / commodity.黄金.close">
         </div>
       </div>
       <div class="actions top-gap">

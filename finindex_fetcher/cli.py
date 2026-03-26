@@ -225,7 +225,7 @@ def fetch(
         raise typer.BadParameter("必须提供 --start/--end；若仅维护 raw，可使用 --update-raw/--clear-raw")
     targets = resolve_indexes(index)
     for code, label in targets:
-        root = out.resolve() / "_global" / "indexes" / code
+        root = out.resolve() / "global" / "indexes" / code
         out_dir = root / "index"
         out_dir.mkdir(parents=True, exist_ok=True)
         store = RawIndexStore(root)

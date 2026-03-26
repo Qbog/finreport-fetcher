@@ -169,6 +169,8 @@ Web 创建 merge 模板时，`line` 字段默认使用 `px.close`；也可以写
 
 - `idx.sh000001.close`
 - `idx.sz399001.close`
+- `index.上证.close`
+- `commodity.黄金.close`
 - `com.gold.close`
 - `com.oil.close`
 
@@ -181,7 +183,7 @@ Web 创建 merge 模板时，`line` 字段默认使用 `px.close`；也可以写
 每次 Web 发起分析，都会单独输出到全局目录：
 
 ```text
-output/_global/web_runs/{时间戳}/
+output/global/web_runs/{时间戳}/
 ```
 
 优点：

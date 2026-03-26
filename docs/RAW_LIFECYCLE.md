@@ -137,7 +137,7 @@ output/{公司名}_{code6}/raw/metrics/{provider}/
 ## 2.4 商品（finprice_fetcher commodity）
 
 ```text
-output/_global/commodities/{slug}/
+output/global/commodities/{slug}/
   price/{slug}.csv
   price/{slug}.xlsx
   raw/price/{provider}/
@@ -157,7 +157,7 @@ output/_global/commodities/{slug}/
 ## 2.5 指数（finindex_fetcher）
 
 ```text
-output/_global/indexes/{code}/
+output/global/indexes/{code}/
   index/{code}.csv
   index/{code}.xlsx
   raw/{provider}/

@@ -26,8 +26,8 @@ items = [
         encoding="utf-8",
     )
 
-    (data_dir / "_global" / "company_basics").mkdir(parents=True)
-    (data_dir / "_global" / "company_basics" / "company_basics.csv").write_text(
+    (data_dir / "global" / "company_basics").mkdir(parents=True)
+    (data_dir / "global" / "company_basics" / "company_basics.csv").write_text(
         "code6,name,industry\n600519,贵州茅台,白酒\n300454,深信服,网络安全\n",
         encoding="utf-8",
     )

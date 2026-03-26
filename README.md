@@ -73,7 +73,7 @@ pip install tushare
   - 不输出 PDF 链接/本地路径列（改为标题下方注释行展示）
   - **新增**：每行包含稳定的模板键 `key`（ASCII-only，如 `is.revenue_total` / `bs.cash`；即使未命中词典也会生成可读英文 key）
   - **新增**：每行包含 `备注`（英文名称），用于你后续校对/补全词典映射；并且 **备注永远是最后一列**
-  - **固定列顺序**（跨数据源保持一致）：`科目 | 数值 | (空白列) | key | 备注`
+  - **固定列顺序**（跨数据源保持一致）：`科目 | 数值 | (空白列) | key | 备注 | 英文`
   - **约束**：不再导出 `科目_CN` / `科目_EN` 两列（避免重复）
 - PDF：`--pdf` 下载后优先保存到 `output/{公司名}_{code6}/raw/pdf/{code6}_{report_period}.pdf`（保留历史缓存，不再重复删除/下载；旧版 `pdf/` 目录仍兼容读取）
 
@@ -85,6 +85,7 @@ pip install tushare
   - 第一次无缓存时，会按“单公司全历史”抓取，不再只缓存某一个报告期切片。
   - 后续请求若遇到 raw 中没有的新报告期，会优先做增量补齐并与旧 raw 合并；其中 tushare 是按单期 `end_date` 增量补齐，akshare / akshare_ths 当前采用“重新取源 + 本地 merge 去重”的兼容策略。
   - 原始缓存包含三张表（资产负债/利润/现金流）以及对应的 meta 信息，方便后续数据复核。
+  - 导出的 Excel 现在默认包含第 4 张 sheet：`财报指标`（当前包含 `metrics.roe / metrics.roa / metrics.roic / metrics.ev / metrics.ebitda`，并做分组缩进与美化）。
 - PDF 也迁移到原始目录：`output/.../raw/pdf/{code6}_{period}.pdf`，成功下载后不再删除。
   - 程序会先检查该 PDF 是否存在、而不是每次都重新抓取；如文件缺失才会再次调用巨潮公告下载。
 
@@ -394,7 +395,7 @@ python3 -m finprice_fetcher commodity --name 石油 --clear-raw --out output
 输出结构示例：
 
 ```text
-output/_global/commodities/oil/
+output/global/commodities/oil/
   price/oil.csv
   price/oil.xlsx
   raw/price/stooq/current/daily.pkl
@@ -408,12 +409,13 @@ output/_global/commodities/oil/
 ## 4) 全局数据集（公司基础信息 / 财报指标）
 
 新增两个全局抓取程序：
-- 公司基础信息仍然落在 `output/_global/`
-- 财报指标则只落在各公司目录下（不再写 `_global/financial_metrics`）
+- 公司基础信息仍然落在 `output/global/`
+- 财报指标则只落在各公司目录下（不再写 `global/financial_metrics`）
 
 ```bash
 # 1) 抓全部公司基础信息
 python3 -m fincompany_fetcher fetch --out output
+python3 -m fincompany_fetcher fetch --out output --clear-raw
 
 # 2) 抓公司财报指标（ROE / ROA / ROIC / EV / EBITDA 等；拿不到就留空）
 python3 -m finmetrics_fetcher fetch --category test --start 2024-01-01 --end 2024-12-31 --out output
@@ -422,7 +424,7 @@ python3 -m finmetrics_fetcher fetch --category test --start 2024-01-01 --end 202
 输出结构：
 
 ```text
-output/_global/company_basics/
+output/global/company_basics/
   company_basics.csv
   raw/*.csv
   latest.json
@@ -442,7 +444,7 @@ output/{公司名}_{code6}/raw/metrics/{provider}/
   snapshots/{timestamp}/...
 ```
 
-Web 启动时会优先从 `output/_global/company_basics/company_basics.csv` 加载公司总表。
+Web 启动时会优先从 `output/global/company_basics/company_basics.csv` 加载公司总表（也兼容旧的 `_global` 路径读取）。
 
 ---
 
@@ -459,7 +461,7 @@ python3 -m finindex_fetcher fetch --index 上证 --clear-raw --out output
 输出结构示例：
 
 ```text
-output/_global/indexes/sh000001/
+output/global/indexes/sh000001/
   index/sh000001.csv
   index/sh000001.xlsx
   raw/tencent/current/daily.pkl
@@ -474,7 +476,7 @@ output/_global/indexes/sh000001/
 
 - 只保留 3 个分析入口：**公司类别 / 时间范围 / 分析内容**
 - 直接读取财报与股价原始数据，在 Web 端生成图表与 Excel
-- 支持 **趋势分析 / 结构分析 / 同业分析 / 合并报表（财务 + 股价）**
+- 支持 **趋势分析 / 结构分析 / 同业分析 / 合并报表（财务 + 股价 / 指数 / 商品）**
 - 支持“创建公司类别”“模板创建”
 - 支持在前端触发：更新财报 raw / 清理财报 raw / 更新股价 raw / 清理股价 raw
 - Web 左侧带 raw 更新/清理的实时日志面板
@@ -502,7 +504,7 @@ http://127.0.0.1:8787
 - 同业分析：`← / →` 切时间，`↑ / ↓` 切分析内容
 - 合并报表：`← / →` 切分析内容，`↑ / ↓` 切公司
 
-输出目录统一为：`output/_global/web_runs/{时间戳}/...`
+输出目录统一为：`output/global/web_runs/{时间戳}/...`
 
 详见：[`docs/WEB_UI.md`](docs/WEB_UI.md)
 

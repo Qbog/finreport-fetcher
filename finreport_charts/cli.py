@@ -230,6 +230,8 @@ def _statement_from_key(key0: str, default_statement: str) -> str:
         return '资产负债表'
     if k2.startswith('cf.'):
         return '现金流量表'
+    if k2.startswith(('metrics.', 'metric.', 'mt.')):
+        return '财报指标'
     return default_statement
 
 
@@ -641,6 +643,10 @@ class ExpressionEvaluator:
             ident_s = ident_s[: -len('.prev')]
 
         base, specified_date = _split_id_date(ident_s)
+        if base.startswith('metric.'):
+            base = 'metrics.' + base.split('.', 1)[1]
+        elif base.startswith('mt.'):
+            base = 'metrics.' + base.split('.', 1)[1]
         statement = _statement_from_key(base, default_statement)
 
         target_pe = current_pe

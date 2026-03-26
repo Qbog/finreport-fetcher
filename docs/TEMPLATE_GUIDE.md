@@ -56,8 +56,9 @@ expr = "is.net_profit_parent - is.net_profit_parent.prev_in_year"
 也支持外部序列标识：
 
 - 公司股价：`px.close`
-- 指数：`idx.sh000001.close` / `idx.sz399001.close` / `idx.sz399006.close` / `idx.bj899050.close`
-- 商品：`com.gold.close` / `com.silver.close` / `com.oil.close`
+- 财报指标：`metrics.roe` / `metrics.roa` / `metrics.roic` / `metrics.ev` / `metrics.ebitda`
+- 指数：`idx.sh000001.close` / `idx.sz399001.close` / `idx.sz399006.close` / `idx.bj899050.close` / `index.上证.close`
+- 商品：`com.gold.close` / `com.silver.close` / `com.oil.close` / `commodity.黄金.close`
 
 外部序列默认取“当前日期 / 当前报告期末及之前最近一个可用值”。
 
