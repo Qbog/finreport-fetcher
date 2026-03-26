@@ -23,7 +23,7 @@ from .utils.dates import candidate_quarter_ends_before, parse_date, quarter_ends
 from .utils.paths import safe_dir_component
 from .utils.company_category import detect_company_category
 from finshared.company_categories import default_company_categories_path, resolve_company_category_symbols
-from finmetrics_fetcher.cli import CommonOpts as MetricsCommonOpts, ensure_raw_metrics
+from finmetrics_fetcher.cli import CommonOpts as MetricsCommonOpts, clear_raw_metrics, ensure_raw_metrics, update_raw_metrics
 from finmetrics_fetcher.raw_store import RawMetricsStore
 from .utils.symbols import ResolvedSymbol, fuzzy_match_name, load_a_share_name_map, parse_code
 
@@ -436,32 +436,42 @@ def fetch(
     else:
         targets = [_resolve_symbol(code=code, name=name)]
 
-    def _update_raw_for_symbol(rs: ResolvedSymbol, raw_store: RawReportStore) -> str:
+    def _update_raw_for_symbol(rs: ResolvedSymbol, raw_store: RawReportStore, metrics_store: RawMetricsStore) -> str:
         last_err: Exception | None = None
+        snapshot_id: str | None = None
         for p in providers:
             refresh = getattr(p, "refresh_raw_history", None)
             if callable(refresh):
                 try:
                     snapshot_id = refresh(rs.ts_code, statement_type, raw_store)
                     log_info(f"已更新原始数据快照：{rs.name or rs.code6}({rs.code6}) provider={getattr(p, 'name', p)} snapshot={snapshot_id}")
-                    return snapshot_id
+                    break
                 except Exception as exc:
                     last_err = exc
                     log_debug(f"update_raw 失败，继续尝试下一个 provider：{getattr(p, 'name', p)} => {_exc_short(exc)}")
                     continue
-        raise RuntimeError(f"更新原始数据失败：{last_err}")
+        if snapshot_id is None:
+            raise RuntimeError(f"更新原始数据失败：{last_err}")
 
-    def _clear_raw_for_symbol(raw_store: RawReportStore) -> None:
+        metrics_provider = _infer_metrics_provider(provider, None)
+        metrics_opts = MetricsCommonOpts(rs=rs, out_dir=out_root, provider=metrics_provider, tushare_token=tushare_token)
+        metrics_provider_used, _metrics_df, metrics_sid = update_raw_metrics(metrics_opts, metrics_store)
+        log_info(f"已更新指标原始数据：{rs.name or rs.code6}({rs.code6}) provider={metrics_provider_used} snapshot={metrics_sid}")
+        return snapshot_id
+
+    def _clear_raw_for_symbol(raw_store: RawReportStore, metrics_store: RawMetricsStore) -> None:
         all_providers = list(raw_store.available_providers())
         if not all_providers:
             log_info("未发现可清理的财报原始数据。")
-            return
-        for pname in sorted(all_providers):
-            removed = raw_store.clear_old_provider_snapshots(pname)
-            if removed:
-                log_info(f"已清理 provider={pname} 旧原始快照 {len(removed)} 个")
-            else:
-                log_info(f"provider={pname} 没有旧原始快照可清理。")
+        else:
+            for pname in sorted(all_providers):
+                removed = raw_store.clear_old_provider_snapshots(pname)
+                if removed:
+                    log_info(f"已清理 provider={pname} 旧原始快照 {len(removed)} 个")
+                else:
+                    log_info(f"provider={pname} 没有旧原始快照可清理。")
+
+        clear_raw_metrics(metrics_store)
 
     def _fetch_for_symbol(rs: ResolvedSymbol) -> list[Path]:
         company_name = rs.name or rs.code6
@@ -470,11 +480,12 @@ def fetch(
         out_reports_dir = company_root / "reports"
         out_reports_dir.mkdir(parents=True, exist_ok=True)
         raw_store = RawReportStore(company_root)
+        metrics_store = RawMetricsStore(company_root)
 
         if update_raw:
-            _update_raw_for_symbol(rs, raw_store)
+            _update_raw_for_symbol(rs, raw_store, metrics_store)
         if clear_raw:
-            _clear_raw_for_symbol(raw_store)
+            _clear_raw_for_symbol(raw_store, metrics_store)
 
         if not no_clean:
             for p in out_reports_dir.glob(f"{rs.code6}_*.xlsx"):

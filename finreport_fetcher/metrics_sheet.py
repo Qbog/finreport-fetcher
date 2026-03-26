@@ -6,7 +6,7 @@ import re
 
 import pandas as pd
 
-from finreport_fetcher.mappings.enrich import _auto_en_from_cn, _short_hash, _slugify_en
+from finreport_fetcher.mappings.enrich import _slugify_en
 
 
 @dataclass(frozen=True)
@@ -22,7 +22,7 @@ class MetricSpec:
 
 METRIC_SPECS: list[MetricSpec] = [
     MetricSpec("metrics.roe", "净资产收益率(ROE)", "Return on equity (ROE)", "returns", "回报能力", aliases=("ROE", "净资产收益率", "roe", "roe_dt"), note="百分比指标；不同数据源口径可能略有差异。"),
-    MetricSpec("metrics.roa", "总资产报酬率(ROA)", "Return on assets (ROA)", "returns", "回报能力", aliases=("ROA", "总资产报酬率", "总资产净利率", "roa"), note="百分比指标；不同数据源口径可能略有差异。"),
+    MetricSpec("metrics.roa", "总资产报酬率(ROA)", "Return on assets (ROA)", "returns", "回报能力", aliases=("ROA", "总资产报酬率", "总资产净利率", "roa", "总资产报酬率"), note="百分比指标；不同数据源口径可能略有差异。"),
     MetricSpec("metrics.roic", "投入资本回报率(ROIC)", "Return on invested capital (ROIC)", "returns", "回报能力", aliases=("ROIC", "投入资本回报率", "roic"), note="百分比指标；部分公司/数据源可能缺失。"),
     MetricSpec("metrics.ev", "企业价值(EV)", "Enterprise value (EV)", "valuation", "估值与现金创造", aliases=("EV", "企业价值", "ev"), note="估值指标；部分公司/数据源可能缺失。"),
     MetricSpec("metrics.ebitda", "息税折旧摊销前利润(EBITDA)", "EBITDA", "valuation", "估值与现金创造", aliases=("EBITDA", "ebitda"), note="利润规模指标；部分公司/数据源可能缺失。"),
@@ -135,64 +135,235 @@ _TUSHARE_FIELD_LABELS = {
     "equity_yoy": "归母净资产同比增长率",
 }
 
-_CN_KEY_TOKEN_MAP = [
-    ("净资产收益率", "return_on_equity"),
-    ("总资产报酬率", "return_on_assets"),
-    ("总资产净利率", "return_on_assets"),
-    ("投入资本回报率", "return_on_invested_capital"),
-    ("每股经营现金流", "operating_cashflow_per_share"),
-    ("每股现金流量净额", "cashflow_per_share"),
-    ("每股净资产", "book_value_per_share"),
-    ("基本每股收益", "eps_basic"),
-    ("稀释每股收益", "eps_diluted"),
-    ("每股", "per_share"),
-    ("同比增长率", "yoy_growth_rate"),
-    ("环比增长率", "qoq_growth_rate"),
-    ("增长率", "growth_rate"),
-    ("资产负债率", "debt_to_assets_ratio"),
-    ("流动比率", "current_ratio"),
-    ("速动比率", "quick_ratio"),
-    ("现金比率", "cash_ratio"),
-    ("毛利率", "gross_margin"),
-    ("净利率", "net_margin"),
-    ("营业利润率", "operating_margin"),
-    ("存货周转率", "inventory_turnover"),
-    ("应收账款周转率", "accounts_receivable_turnover"),
-    ("总资产周转率", "asset_turnover"),
-    ("流动资产周转率", "current_asset_turnover"),
-    ("固定资产周转率", "fixed_asset_turnover"),
-    ("周转天数", "turnover_days"),
-    ("企业价值", "enterprise_value"),
-    ("营业总收入", "total_operating_revenue"),
-    ("营业收入", "operating_revenue"),
-    ("营业利润", "operating_profit"),
-    ("净利润", "net_profit"),
-    ("扣非净利润", "net_profit_excluding_nonrecurring"),
-    ("经营现金流", "operating_cashflow"),
-    ("经营活动产生的现金流量净额", "operating_cashflow"),
-    ("带息债务", "interest_bearing_debt"),
-    ("净债务", "net_debt"),
-    ("有形资产", "tangible_assets"),
-    ("营运资金", "working_capital"),
-    ("留存收益", "retained_earnings"),
-    ("折旧与摊销", "depreciation_and_amortization"),
-    ("折旧摊销前利润", "ebitda"),
-    ("息税前利润", "ebit"),
-    ("股东权益", "equity"),
-    ("净资产", "net_assets"),
-    ("总资产", "total_assets"),
-]
-
-_SECTION_LABELS = {
-    "growth": "成长能力",
-    "returns": "回报能力",
-    "profitability": "盈利能力",
-    "operation": "营运效率",
-    "solvency": "偿债与流动性",
-    "per_share": "每股指标",
-    "valuation": "估值与现金创造",
-    "other": "其他指标",
+_AKSHARE_SECTION_MAP = {
+    "常用指标": ("highlights", "常用指标", "Highlights"),
+    "每股指标": ("per_share", "每股指标", "Per-share metrics"),
+    "盈利能力": ("profitability", "盈利能力", "Profitability"),
+    "成长能力": ("growth", "成长能力", "Growth"),
+    "收益质量": ("quality", "收益质量", "Earnings quality"),
+    "财务风险": ("solvency", "财务风险", "Financial risk"),
+    "营运能力": ("operation", "营运能力", "Operating efficiency"),
 }
+
+_CN_TO_EN_EXACT = {
+    "归母净利润": "Parent net profit",
+    "营业总收入": "Total operating revenue",
+    "营业成本": "Operating cost",
+    "净利润": "Net profit",
+    "扣非净利润": "Net profit excluding non-recurring items",
+    "股东权益合计(净资产)": "Total equity (net assets)",
+    "商誉": "Goodwill",
+    "经营现金流量净额": "Net operating cashflow",
+    "总资产报酬率(ROA)": "Return on assets (ROA)",
+    "企业价值(EV)": "Enterprise value (EV)",
+    "息税前利润(EBIT)": "EBIT",
+    "基本每股收益": "Basic EPS",
+    "基本每股收益(EPS)": "Basic EPS",
+    "稀释每股收益": "Diluted EPS",
+    "摊薄每股收益_最新股数": "Diluted EPS (latest shares)",
+    "摊薄每股净资产_期末股数": "Diluted BPS (period-end shares)",
+    "调整每股净资产_期末股数": "Adjusted BPS (period-end shares)",
+    "每股净资产(BPS)": "Book value per share (BPS)",
+    "每股净资产_最新股数": "BPS (latest shares)",
+    "每股经营现金流": "Operating cashflow per share",
+    "每股现金流": "Cashflow per share",
+    "每股现金流量净额": "Net cashflow per share",
+    "每股企业自由现金流量": "FCFF per share",
+    "每股股东自由现金流量": "FCFE per share",
+    "每股未分配利润": "Undistributed profit per share",
+    "每股资本公积金": "Capital reserve per share",
+    "每股盈余公积金": "Surplus reserve per share",
+    "每股留存收益": "Retained earnings per share",
+    "每股营业收入": "Operating revenue per share",
+    "每股营业总收入": "Total operating revenue per share",
+    "每股息税前利润": "EBIT per share",
+    "净资产收益率(ROE)": "Return on equity (ROE)",
+    "摊薄净资产收益率": "Diluted return on equity",
+    "净资产收益率_平均": "Average return on equity",
+    "净资产收益率_平均_扣除非经常损益": "Average return on equity excluding non-recurring items",
+    "摊薄净资产收益率_扣除非经常损益": "Diluted return on equity excluding non-recurring items",
+    "息税前利润率": "EBIT margin",
+    "总资产报酬率": "Return on assets",
+    "总资本回报率": "Return on total capital",
+    "投入资本回报率": "Return on invested capital",
+    "息前税后总资产报酬率_平均": "Average after-tax return on assets",
+    "毛利率": "Gross margin",
+    "销售净利率": "Net margin",
+    "期间费用率": "Period expense ratio",
+    "成本费用利润率": "Cost expense profit ratio",
+    "营业利润率": "Operating margin",
+    "总资产净利率_平均": "Average return on assets",
+    "总资产净利率_平均(含少数股东损益)": "Average return on assets incl. minority interests",
+    "营业总收入增长率": "Total operating revenue growth rate",
+    "归属母公司净利润增长率": "Parent net profit growth rate",
+    "经营活动净现金/销售收入": "Operating cash to sales",
+    "经营性现金净流量/营业总收入": "Operating cashflow to total operating revenue",
+    "成本费用率": "Cost expense ratio",
+    "销售成本率": "Cost of sales ratio",
+    "经营活动净现金/归属母公司的净利润": "Operating cash to parent net profit",
+    "所得税/利润总额": "Income tax to total profit",
+    "流动比率": "Current ratio",
+    "速动比率": "Quick ratio",
+    "保守速动比率": "Conservative quick ratio",
+    "资产负债率": "Debt to assets ratio",
+    "权益乘数": "Equity multiplier",
+    "权益乘数(含少数股权的净资产)": "Equity multiplier incl. minority interests",
+    "产权比率": "Debt to equity ratio",
+    "现金比率": "Cash ratio",
+    "应收账款周转率": "Accounts receivable turnover ratio",
+    "应收账款周转天数": "Accounts receivable turnover days",
+    "存货周转率": "Inventory turnover ratio",
+    "存货周转天数": "Inventory turnover days",
+    "总资产周转率": "Asset turnover ratio",
+    "总资产周转天数": "Asset turnover days",
+    "流动资产周转率": "Current asset turnover ratio",
+    "流动资产周转天数": "Current asset turnover days",
+    "应付账款周转率": "Accounts payable turnover ratio",
+}
+
+_CN_TO_KEY_EXACT = {
+    "归母净利润": "metrics.parent_net_profit",
+    "营业总收入": "metrics.total_operating_revenue",
+    "营业成本": "metrics.operating_cost",
+    "净利润": "metrics.net_profit",
+    "扣非净利润": "metrics.net_profit_excluding_non_recurring_items",
+    "股东权益合计(净资产)": "metrics.total_equity_net_assets",
+    "商誉": "metrics.goodwill",
+    "经营现金流量净额": "metrics.net_operating_cashflow",
+    "基本每股收益": "metrics.basic_eps",
+    "稀释每股收益": "metrics.diluted_eps",
+    "摊薄每股收益_最新股数": "metrics.diluted_eps_latest_shares",
+    "摊薄每股净资产_期末股数": "metrics.diluted_bps_period_end_shares",
+    "调整每股净资产_期末股数": "metrics.adjusted_bps_period_end_shares",
+    "每股净资产_最新股数": "metrics.bps_latest_shares",
+    "每股经营现金流": "metrics.operating_cashflow_per_share",
+    "每股现金流": "metrics.cashflow_per_share",
+    "每股现金流量净额": "metrics.net_cashflow_per_share",
+    "每股企业自由现金流量": "metrics.fcff_per_share",
+    "每股股东自由现金流量": "metrics.fcfe_per_share",
+    "每股未分配利润": "metrics.undistributed_profit_per_share",
+    "每股资本公积金": "metrics.capital_reserve_per_share",
+    "每股盈余公积金": "metrics.surplus_reserve_per_share",
+    "每股留存收益": "metrics.retained_earnings_per_share",
+    "每股营业收入": "metrics.operating_revenue_per_share",
+    "每股营业总收入": "metrics.total_operating_revenue_per_share",
+    "每股息税前利润": "metrics.ebit_per_share",
+    "净资产收益率(ROE)": "metrics.roe",
+    "摊薄净资产收益率": "metrics.diluted_roe",
+    "净资产收益率_平均": "metrics.average_roe",
+    "净资产收益率_平均_扣除非经常损益": "metrics.average_roe_excluding_non_recurring_items",
+    "摊薄净资产收益率_扣除非经常损益": "metrics.diluted_roe_excluding_non_recurring_items",
+    "息税前利润率": "metrics.ebit_margin",
+    "总资产报酬率": "metrics.roa",
+    "总资本回报率": "metrics.return_on_total_capital",
+    "投入资本回报率": "metrics.roic",
+    "息前税后总资产报酬率_平均": "metrics.average_after_tax_roa",
+    "毛利率": "metrics.gross_margin",
+    "销售净利率": "metrics.net_margin",
+    "期间费用率": "metrics.period_expense_ratio",
+    "成本费用利润率": "metrics.cost_expense_profit_ratio",
+    "营业利润率": "metrics.operating_margin",
+    "总资产净利率_平均": "metrics.average_roa",
+    "总资产净利率_平均(含少数股东损益)": "metrics.average_roa_including_minority_interests",
+    "营业总收入增长率": "metrics.total_operating_revenue_growth_rate",
+    "归属母公司净利润增长率": "metrics.parent_net_profit_growth_rate",
+    "经营活动净现金/销售收入": "metrics.operating_cash_to_sales",
+    "经营性现金净流量/营业总收入": "metrics.operating_cashflow_to_total_operating_revenue",
+    "成本费用率": "metrics.cost_expense_ratio",
+    "销售成本率": "metrics.cost_of_sales_ratio",
+    "经营活动净现金/归属母公司的净利润": "metrics.operating_cash_to_parent_net_profit",
+    "所得税/利润总额": "metrics.income_tax_to_total_profit",
+    "流动比率": "metrics.current_ratio",
+    "速动比率": "metrics.quick_ratio",
+    "保守速动比率": "metrics.conservative_quick_ratio",
+    "资产负债率": "metrics.debt_to_assets_ratio",
+    "权益乘数": "metrics.equity_multiplier",
+    "权益乘数(含少数股权的净资产)": "metrics.equity_multiplier_including_minority_interests",
+    "产权比率": "metrics.debt_to_equity_ratio",
+    "现金比率": "metrics.cash_ratio",
+    "应收账款周转率": "metrics.accounts_receivable_turnover_ratio",
+    "应收账款周转天数": "metrics.accounts_receivable_turnover_days",
+    "存货周转率": "metrics.inventory_turnover_ratio",
+    "存货周转天数": "metrics.inventory_turnover_days",
+    "总资产周转率": "metrics.asset_turnover_ratio",
+    "总资产周转天数": "metrics.asset_turnover_days",
+    "流动资产周转率": "metrics.current_asset_turnover_ratio",
+    "流动资产周转天数": "metrics.current_asset_turnover_days",
+    "应付账款周转率": "metrics.accounts_payable_turnover_ratio",
+}
+
+_FALLBACK_CN_TO_EN = [
+    ("归属母公司", "parent company"),
+    ("归母", "parent"),
+    ("营业总收入", "total operating revenue"),
+    ("营业收入", "operating revenue"),
+    ("营业成本", "operating cost"),
+    ("营业利润", "operating profit"),
+    ("净利润", "net profit"),
+    ("扣非", "excluding non-recurring items"),
+    ("股东权益合计", "total equity"),
+    ("净资产", "net assets"),
+    ("商誉", "goodwill"),
+    ("经营现金流量净额", "net operating cashflow"),
+    ("经营性现金净流量", "operating cashflow"),
+    ("经营活动净现金", "operating cash"),
+    ("经营活动", "operating activities"),
+    ("企业自由现金流量", "fcff"),
+    ("股东自由现金流量", "fcfe"),
+    ("自由现金流量", "free cashflow"),
+    ("基本每股收益", "basic eps"),
+    ("稀释每股收益", "diluted eps"),
+    ("每股净资产", "bps"),
+    ("每股经营现金流", "operating cashflow per share"),
+    ("每股现金流量净额", "net cashflow per share"),
+    ("每股现金流", "cashflow per share"),
+    ("每股营业总收入", "total operating revenue per share"),
+    ("每股营业收入", "operating revenue per share"),
+    ("每股息税前利润", "ebit per share"),
+    ("每股未分配利润", "undistributed profit per share"),
+    ("每股资本公积金", "capital reserve per share"),
+    ("每股盈余公积金", "surplus reserve per share"),
+    ("每股留存收益", "retained earnings per share"),
+    ("净资产收益率", "return on equity"),
+    ("总资产报酬率", "return on assets"),
+    ("总资产净利率", "return on assets"),
+    ("总资本回报率", "return on total capital"),
+    ("投入资本回报率", "return on invested capital"),
+    ("毛利率", "gross margin"),
+    ("销售净利率", "net margin"),
+    ("期间费用率", "period expense ratio"),
+    ("成本费用利润率", "cost expense profit ratio"),
+    ("成本费用率", "cost expense ratio"),
+    ("销售成本率", "cost of sales ratio"),
+    ("营业利润率", "operating margin"),
+    ("资产负债率", "debt to assets ratio"),
+    ("流动比率", "current ratio"),
+    ("速动比率", "quick ratio"),
+    ("保守速动比率", "conservative quick ratio"),
+    ("现金比率", "cash ratio"),
+    ("产权比率", "debt to equity ratio"),
+    ("权益乘数", "equity multiplier"),
+    ("应收账款", "accounts receivable"),
+    ("应付账款", "accounts payable"),
+    ("存货", "inventory"),
+    ("总资产", "asset"),
+    ("流动资产", "current asset"),
+    ("周转率", "turnover ratio"),
+    ("周转天数", "turnover days"),
+    ("增长率", "growth rate"),
+    ("同比", "year-on-year"),
+    ("环比", "quarter-on-quarter"),
+    ("所得税", "income tax"),
+    ("利润总额", "total profit"),
+    ("息税前利润", "ebit"),
+    ("息前税后", "after-tax"),
+    ("平均", "average"),
+    ("摊薄", "diluted"),
+    ("最新股数", "latest shares"),
+    ("期末股数", "period-end shares"),
+    ("含少数股权的净资产", "including minority interests"),
+    ("含少数股东损益", "including minority interests"),
+]
 
 
 def _empty_sheet() -> pd.DataFrame:
@@ -207,43 +378,55 @@ def _humanize_field_name(field: str) -> str:
     return str(field or "").replace("_", " ").strip().title() or str(field or "")
 
 
+def _english_from_key(key: str) -> str:
+    tail = str(key or "").split(".")[-1].replace("_", " ").strip()
+    return tail.title() if tail else "Indicator"
+
+
+def _translate_cn_metric(cn: str) -> str:
+    s = str(cn or "").strip()
+    if not s:
+        return ""
+    if s in _CN_TO_EN_EXACT:
+        return _CN_TO_EN_EXACT[s]
+    out = s
+    for src, dst in _FALLBACK_CN_TO_EN:
+        out = out.replace(src, dst)
+    out = re.sub(r"[（）()【】\[\]：:、，,%％\-+/]+", " ", out)
+    out = re.sub(r"\s+", " ", out).strip()
+    out = re.sub(r"[\u4e00-\u9fff]+", "", out)
+    out = re.sub(r"\s+", " ", out).strip()
+    return out
+
+
 def _metric_key_from_cn(cn: str) -> str:
     s = str(cn or "").strip()
     if not s:
-        return "metrics.unknown"
-    for src, dst in _CN_KEY_TOKEN_MAP:
-        if src in s:
-            key = s
-            key = key.replace(src, dst)
-            key = re.sub(r"[（）()【】\[\]：:、，,%％\-+/]+", "_", key)
-            key = re.sub(r"[^A-Za-z0-9_]+", "_", key)
-            key = re.sub(r"_+", "_", key).strip("_").lower()
-            if key:
-                return f"metrics.{key}"
-    en = _auto_en_from_cn(s)
+        return "metrics.indicator"
+    if s in _CN_TO_KEY_EXACT:
+        return _CN_TO_KEY_EXACT[s]
+    en = _translate_cn_metric(s)
     slug = _slugify_en(en)
-    if slug:
-        return f"metrics.{slug}"
-    return f"metrics.m_{_short_hash(s)}"
+    return f"metrics.{slug}" if slug else "metrics.indicator"
 
 
 def _classify_metric(field_or_cn: str) -> tuple[str, str]:
     s = str(field_or_cn or "").strip().lower()
     if any(x in s for x in ["yoy", "qoq", "growth", "增长", "增速"]):
-        return "growth", _SECTION_LABELS["growth"]
+        return "growth", "成长能力"
     if any(x in s for x in ["eps", "bps", "cfps", "ps", "每股"]):
-        return "per_share", _SECTION_LABELS["per_share"]
+        return "per_share", "每股指标"
     if any(x in s for x in ["roe", "roa", "roic", "回报", "收益率"]):
-        return "returns", _SECTION_LABELS["returns"]
+        return "returns", "回报能力"
     if any(x in s for x in ["turn", "days", "周转", "营运"]):
-        return "operation", _SECTION_LABELS["operation"]
+        return "operation", "营运效率"
     if any(x in s for x in ["current_ratio", "quick_ratio", "cash_ratio", "debt", "liab", "偿债", "负债", "流动比率", "速动比率", "现金比率", "产权比率", "债务"]):
-        return "solvency", _SECTION_LABELS["solvency"]
+        return "solvency", "偿债与流动性"
     if any(x in s for x in ["ev", "ebitda", "cashflow", "现金流", "enterprise value", "估值"]):
-        return "valuation", _SECTION_LABELS["valuation"]
+        return "valuation", "估值与现金创造"
     if any(x in s for x in ["margin", "profit", "收入", "利润", "毛利", "净利"]):
-        return "profitability", _SECTION_LABELS["profitability"]
-    return "other", _SECTION_LABELS["other"]
+        return "profitability", "盈利能力"
+    return "other", "其他指标"
 
 
 def _known_spec(alias: str) -> MetricSpec | None:
@@ -262,6 +445,7 @@ def _row_from_known(spec: MetricSpec, value: object) -> dict[str, object]:
         "__uncommon": False,
         "__section_key": spec.section_key,
         "__section_cn": spec.section_cn,
+        "__section_en": _english_from_key(spec.section_key),
     }
 
 
@@ -271,27 +455,33 @@ def _row_from_tushare_field(field: str, value: object) -> dict[str, object]:
         return _row_from_known(spec, value)
     cn = _TUSHARE_FIELD_LABELS.get(field, field)
     section_key, section_cn = _classify_metric(field)
+    en = _translate_cn_metric(cn) or _humanize_field_name(field)
     return {
         "科目": cn,
         "数值": value,
         "key": f"metrics.{field}",
         "备注": "tushare fina_indicator 原始字段",
-        "英文": _humanize_field_name(field),
+        "英文": en,
         "__level": 1,
         "__is_header": False,
         "__uncommon": False,
         "__section_key": section_key,
         "__section_cn": section_cn,
+        "__section_en": _english_from_key(section_key),
     }
 
 
-def _row_from_akshare_metric_name(name: str, value: object) -> dict[str, object]:
+def _row_from_akshare_metric_name(name: str, value: object, section_name: str | None) -> dict[str, object]:
     spec = _known_spec(name)
     if spec is not None:
         return _row_from_known(spec, value)
-    section_key, section_cn = _classify_metric(name)
+    if section_name and section_name in _AKSHARE_SECTION_MAP:
+        section_key, section_cn, section_en = _AKSHARE_SECTION_MAP[section_name]
+    else:
+        section_key, section_cn = _classify_metric(name)
+        section_en = _english_from_key(section_key)
     key = _metric_key_from_cn(name)
-    en = _auto_en_from_cn(name) or name
+    en = _translate_cn_metric(name) or _english_from_key(key)
     return {
         "科目": name,
         "数值": value,
@@ -303,6 +493,7 @@ def _row_from_akshare_metric_name(name: str, value: object) -> dict[str, object]
         "__uncommon": False,
         "__section_key": section_key,
         "__section_cn": section_cn,
+        "__section_en": section_en,
     }
 
 
@@ -312,26 +503,29 @@ def _finalize_rows(rows: list[dict[str, object]]) -> pd.DataFrame:
     out_rows: list[dict[str, object]] = []
     current_section = None
     seen_keys: set[str] = set()
+    seen_subjects: set[str] = set()
     for row in rows:
         sec_key = str(row.pop("__section_key"))
         sec_cn = str(row.pop("__section_cn"))
+        sec_en = str(row.pop("__section_en"))
+        key0 = str(row["key"])
+        subj0 = str(row["科目"])
+        if key0 in seen_keys or subj0 in seen_subjects:
+            continue
         if sec_key != current_section:
             out_rows.append({
                 "科目": sec_cn,
                 "数值": None,
                 "key": f"metrics.section.{sec_key}",
                 "备注": "",
-                "英文": sec_cn,
+                "英文": sec_en,
                 "__level": 0,
                 "__is_header": True,
                 "__uncommon": False,
             })
             current_section = sec_key
-        key0 = str(row["key"])
-        if key0 in seen_keys:
-            key0 = f"{key0}__{_short_hash(str(row['科目']))[:4]}"
-            row["key"] = key0
         seen_keys.add(key0)
+        seen_subjects.add(subj0)
         out_rows.append({k: row[k] for k in SHEET_COLUMNS})
     return pd.DataFrame(out_rows, columns=SHEET_COLUMNS)
 
@@ -352,7 +546,7 @@ def _build_from_tushare_source(source_df: pd.DataFrame, period_end: date) -> pd.
         if pd.isna(value):
             continue
         rows.append(_row_from_tushare_field(str(field), value))
-    rows.sort(key=lambda x: (str(x["__section_key"]), str(x["key"])))
+    rows.sort(key=lambda x: (str(x["__section_key"]), str(x["key"]), str(x["科目"])))
     return _finalize_rows(rows)
 
 
@@ -375,8 +569,16 @@ def _build_from_akshare_source(source_df: pd.DataFrame, period_end: date) -> pd.
         value = r.get(period_col)
         if pd.isna(value):
             continue
-        rows.append(_row_from_akshare_metric_name(name, value))
-    rows.sort(key=lambda x: (str(x["__section_key"]), str(x["key"])))
+        section_name = str(r.get("选项") or "").strip() or None
+        rows.append(_row_from_akshare_metric_name(name, value, section_name))
+
+    def _akshare_row_sort(item: dict[str, object]) -> tuple[str, int, str]:
+        sec = str(item["__section_key"])
+        # 常用指标里常有重复摘要，放后面，便于更具体分类优先保留
+        priority = 1 if sec == "highlights" else 0
+        return (sec, priority, str(item["key"]))
+
+    rows.sort(key=_akshare_row_sort)
     return _finalize_rows(rows)
 
 
@@ -391,7 +593,6 @@ def build_metrics_sheet(source_df: pd.DataFrame | None, metrics_df: pd.DataFrame
         if not out.empty:
             return out
 
-    # fallback: use source shape inference first, then normalized summary metrics
     if source_df is not None and not source_df.empty:
         if "指标" in source_df.columns:
             out = _build_from_akshare_source(source_df, period_end)

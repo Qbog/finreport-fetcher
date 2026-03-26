@@ -35,6 +35,11 @@ def test_build_metrics_sheet_and_export(tmp_path: Path):
     assert "metrics.roe" in keys0
     assert "metrics.eps" in keys0
     assert "metrics.current_ratio" in keys0
+    assert not any("__" in k for k in keys0)
+    english_values = [str(x) for x in sheet["英文"].dropna().tolist() if str(x).strip()]
+    assert "基本每股收益(EPS)" not in english_values
+    assert any("Basic Eps" == x or "Return on equity (ROE)" == x for x in english_values)
+    assert sheet["科目"].astype(str).tolist().count("净资产收益率(ROE)") == 1
 
     bs = pd.DataFrame({"科目": ["资产总计"], "数值": [100.0], "__level": [0], "__is_header": [False]})
     is_ = pd.DataFrame({"科目": ["营业总收入"], "数值": [50.0], "__level": [0], "__is_header": [False]})
