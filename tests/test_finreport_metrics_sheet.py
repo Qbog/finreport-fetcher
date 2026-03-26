@@ -11,22 +11,30 @@ from finreport_fetcher.metrics_sheet import build_metrics_sheet
 
 
 def test_build_metrics_sheet_and_export(tmp_path: Path):
-    metrics_df = pd.DataFrame(
+    source_df = pd.DataFrame(
         [
             {
-                "end_date": "20241231",
+                "ts_code": "600519.SH",
                 "ann_date": "20250328",
+                "end_date": "20241231",
                 "roe": 22.5,
                 "roa": 17.2,
                 "roic": 18.6,
                 "ev": 1234.0,
                 "ebitda": 234.5,
+                "eps": 12.3,
+                "grossprofit_margin": 89.0,
+                "current_ratio": 3.2,
             }
         ]
     )
-    sheet = build_metrics_sheet(metrics_df, date(2024, 12, 31))
+    metrics_df = source_df[["end_date", "ann_date", "roe", "roa", "roic", "ev", "ebitda"]].copy()
+    sheet = build_metrics_sheet(source_df, metrics_df, date(2024, 12, 31), "tushare")
     assert not sheet.empty
-    assert "metrics.roe" in sheet["key"].astype(str).tolist()
+    keys0 = sheet["key"].astype(str).tolist()
+    assert "metrics.roe" in keys0
+    assert "metrics.eps" in keys0
+    assert "metrics.current_ratio" in keys0
 
     bs = pd.DataFrame({"科目": ["资产总计"], "数值": [100.0], "__level": [0], "__is_header": [False]})
     is_ = pd.DataFrame({"科目": ["营业总收入"], "数值": [50.0], "__level": [0], "__is_header": [False]})

@@ -333,11 +333,10 @@ class FinancialMetricsProvider:
             raise RuntimeError("抓取财报指标需要 TUSHARE_TOKEN")
         ts.set_token(token)
         pro = ts.pro_api()
-        fields = "ts_code,ann_date,end_date,roe,roe_dt,roa,roic,ebitda,ev"
         try:
-            df = pro.fina_indicator(ts_code=ts_code, fields=fields)
+            df = pro.fina_indicator(ts_code=ts_code)
         except Exception:
-            df = pro.fina_indicator_vip(ts_code=ts_code, fields=fields)
+            df = pro.fina_indicator_vip(ts_code=ts_code)
         if df is None:
             return pd.DataFrame(columns=DEFAULT_METRIC_COLUMNS)
         return df

@@ -186,7 +186,8 @@ def _load_metrics_sheet(
     rs = ResolvedSymbol(code6=code6, ts_code=ts_code, market=rs0.market if rs0 else "SZ", name=company_name)
     opts = MetricsCommonOpts(rs=rs, out_dir=company_root.parent.resolve(), provider=(provider or "auto").strip().lower(), tushare_token=tushare_token)
     provider_used, metrics_df = ensure_raw_metrics(opts, metrics_store, required_periods={period_end.strftime('%Y%m%d')})
-    sheet_df = build_metrics_sheet(metrics_df, period_end)
+    source_df = metrics_store.load_source(provider_used)
+    sheet_df = build_metrics_sheet(source_df, metrics_df, period_end, provider_used)
     if sheet_df is None or sheet_df.empty:
         return None, provider_used
     return sheet_df, provider_used
