@@ -14,4 +14,4 @@ y_label = "金额"
 
 [[series]]
 name = "营业总收入"
-expr = "is.revenue_total - is.revenue_total.prev_in_year"
+expr = "is.revenue_total"
