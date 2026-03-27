@@ -13,6 +13,7 @@ import typer
 from rich.console import Console
 
 from finreport_fetcher.utils.dates import parse_date as _parse_date
+from finshared.cli_entry import run_typer_app_with_default_command
 from finshared.company_categories import default_company_categories_path, resolve_company_category_symbols
 from finshared.global_datasets import (
     DEFAULT_METRIC_COLUMNS,
@@ -308,19 +309,19 @@ def _root():
 
 @app.command("fetch")
 def fetch(
-    code: str | None = typer.Option(None, "--code"),
-    name: str | None = typer.Option(None, "--name"),
-    category: str | None = typer.Option(None, "--category"),
-    category_config: Path | None = typer.Option(None, "--category-config"),
-    date_: str | None = typer.Option(None, "--date"),
-    start: str | None = typer.Option(None, "--start"),
-    end: str | None = typer.Option(None, "--end"),
-    out_dir: Path = typer.Option(Path("output"), "--out", help="输出根目录"),
-    provider: str = typer.Option("auto", "--provider", help="auto|tushare|akshare"),
-    no_clean: bool = typer.Option(False, "--no-clean"),
-    update_raw: bool = typer.Option(False, "--update-raw"),
-    clear_raw: bool = typer.Option(False, "--clear-raw"),
-    tushare_token: str | None = typer.Option(None, "--tushare-token"),
+    code: str | None = typer.Option(None, "--code", "-c"),
+    name: str | None = typer.Option(None, "--name", "-n"),
+    category: str | None = typer.Option(None, "--category", "-g"),
+    category_config: Path | None = typer.Option(None, "--category-config", "-G"),
+    date_: str | None = typer.Option(None, "--date", "-d"),
+    start: str | None = typer.Option(None, "--start", "-s"),
+    end: str | None = typer.Option(None, "--end", "-e"),
+    out_dir: Path = typer.Option(Path("output"), "--out", "-o", help="输出根目录"),
+    provider: str = typer.Option("auto", "--provider", "-p", help="auto|tushare|akshare"),
+    no_clean: bool = typer.Option(False, "--no-clean", "-N"),
+    update_raw: bool = typer.Option(False, "--update-raw", "-u"),
+    clear_raw: bool = typer.Option(False, "--clear-raw", "-x"),
+    tushare_token: str | None = typer.Option(None, "--tushare-token", "-k"),
 ):
     if category and (code or name):
         raise typer.BadParameter("--category 与 --code/--name 互斥")
@@ -401,7 +402,7 @@ def fetch(
 
 
 def main():
-    app()
+    run_typer_app_with_default_command(app, default_command="fetch")
 
 
 if __name__ == "__main__":

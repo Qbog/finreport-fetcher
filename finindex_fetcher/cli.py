@@ -11,6 +11,7 @@ import typer
 from rich.console import Console
 
 from finreport_fetcher.utils.dates import parse_date as _parse_date
+from finshared.cli_entry import run_typer_app_with_default_command
 
 from .raw_store import RawIndexStore
 
@@ -209,13 +210,13 @@ def _root():
 
 @app.command("fetch")
 def fetch(
-    index: list[str] = typer.Option(None, "--index", help="可重复：上证/深证/创业板/北证 或对应代码"),
-    start: str | None = typer.Option(None, "--start"),
-    end: str | None = typer.Option(None, "--end"),
-    out: Path = typer.Option(Path("output"), "--out"),
-    no_clean: bool = typer.Option(False, "--no-clean"),
-    update_raw: bool = typer.Option(False, "--update-raw"),
-    clear_raw: bool = typer.Option(False, "--clear-raw"),
+    index: list[str] = typer.Option(None, "--index", "-i", help="可重复：上证/深证/创业板/北证 或对应代码"),
+    start: str | None = typer.Option(None, "--start", "-s"),
+    end: str | None = typer.Option(None, "--end", "-e"),
+    out: Path = typer.Option(Path("output"), "--out", "-o"),
+    no_clean: bool = typer.Option(False, "--no-clean", "-N"),
+    update_raw: bool = typer.Option(False, "--update-raw", "-u"),
+    clear_raw: bool = typer.Option(False, "--clear-raw", "-x"),
 ):
     maintenance_only = (update_raw or clear_raw) and not start and not end
     if not maintenance_only and ((start and not end) or (end and not start)):
@@ -263,7 +264,7 @@ def fetch(
 
 
 def main():
-    app()
+    run_typer_app_with_default_command(app, default_command="fetch")
 
 
 if __name__ == "__main__":

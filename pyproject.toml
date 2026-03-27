@@ -22,14 +22,14 @@ tushare = ["tushare>=1.4.0"]
 dev = ["pytest>=8.0.0"]
 
 [project.scripts]
-finfetch = "finreport_fetcher.cli:app"
-fincompany = "fincompany_fetcher.cli:app"
-finmetrics = "finmetrics_fetcher.cli:app"
-finchart = "finreport_charts.cli:app"
-finprice = "finprice_fetcher.cli:app"
-finindex = "finindex_fetcher.cli:app"
-finmerge = "finchart_merge.cli:app"
-finweb = "finreport_web.cli:app"
+finfetch = "finreport_fetcher.cli:main"
+fincompany = "fincompany_fetcher.cli:main"
+finmetrics = "finmetrics_fetcher.cli:main"
+finchart = "finreport_charts.cli:main"
+finprice = "finprice_fetcher.cli:main"
+finindex = "finindex_fetcher.cli:main"
+finmerge = "finchart_merge.cli:main"
+finweb = "finreport_web.cli:main"
 
 [tool.ruff]
 line-length = 100

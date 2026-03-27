@@ -14,6 +14,7 @@ import pandas as pd
 import typer
 from rich.console import Console
 
+from finshared.cli_entry import run_typer_app_with_default_command
 from finshared.company_categories import resolve_company_category_symbols
 from finreport_fetcher.utils.dates import parse_date
 from finreport_fetcher.utils.paths import safe_dir_component
@@ -752,16 +753,16 @@ def _root(
 
 @app.command("fetch")
 def fetch(
-    code: str | None = typer.Option(None, "--code"),
-    name: str | None = typer.Option(None, "--name"),
-    category: str | None = typer.Option(None, "--category", help="公司分类名（见 config/company_categories.toml）"),
-    category_config: Path | None = typer.Option(None, "--category-config", help="分类配置文件路径（默认：config/company_categories.toml）"),
-    start: str | None = typer.Option(None, "--start"),
-    end: str | None = typer.Option(None, "--end"),
-    out: Path = typer.Option(Path("output"), "--out", help="输出根目录（默认 output）"),
+    code: str | None = typer.Option(None, "--code", "-c"),
+    name: str | None = typer.Option(None, "--name", "-n"),
+    category: str | None = typer.Option(None, "--category", "-g", help="公司分类名（见 config/company_categories.toml）"),
+    category_config: Path | None = typer.Option(None, "--category-config", "-G", help="分类配置文件路径（默认：config/company_categories.toml）"),
+    start: str | None = typer.Option(None, "--start", "-s"),
+    end: str | None = typer.Option(None, "--end", "-e"),
+    out: Path = typer.Option(Path("output"), "--out", "-o", help="输出根目录（默认 output）"),
     provider: str = typer.Option(
         "auto",
-        "--provider",
+        "--provider", "-p",
         help="数据源：auto|akshare|tushare（默认 auto）",
         show_default=True,
     ),
@@ -772,9 +773,9 @@ def fetch(
         help="频率：daily/weekly/monthly 或 Nd（例如 5d/7d/10d；Nd 会在 fetcher 内由日频聚合得到）（默认 daily）",
         show_default=True,
     ),
-    update_raw: bool = typer.Option(False, "--update-raw", help="更新全历史原始股价快照（保留旧快照）"),
-    clear_raw: bool = typer.Option(False, "--clear-raw", help="清理旧原始股价快照，仅保留最新一版"),
-    tushare_token: str | None = typer.Option(None, "--tushare-token", envvar="TUSHARE_TOKEN"),
+    update_raw: bool = typer.Option(False, "--update-raw", "-u", help="更新全历史原始股价快照（保留旧快照）"),
+    clear_raw: bool = typer.Option(False, "--clear-raw", "-x", help="清理旧原始股价快照，仅保留最新一版"),
+    tushare_token: str | None = typer.Option(None, "--tushare-token", "-k", envvar="TUSHARE_TOKEN"),
 ):
     """抓取股价数据（CSV + Excel）。
 
@@ -954,13 +955,13 @@ def _fetch_full_history_commodity_stooq(stooq_symbol: str) -> pd.DataFrame:
 
 @app.command('commodity')
 def commodity(
-    name: str = typer.Option(..., '--name', help='商品名：黄金/白银/石油'),
-    start: str | None = typer.Option(None, '--start'),
-    end: str | None = typer.Option(None, '--end'),
-    out: Path = typer.Option(Path('output'), '--out', help='输出根目录'),
-    no_clean: bool = typer.Option(False, '--no-clean'),
-    update_raw: bool = typer.Option(False, '--update-raw'),
-    clear_raw: bool = typer.Option(False, '--clear-raw'),
+    name: str = typer.Option(..., '--name', '-n', help='商品名：黄金/白银/石油'),
+    start: str | None = typer.Option(None, '--start', '-s'),
+    end: str | None = typer.Option(None, '--end', '-e'),
+    out: Path = typer.Option(Path('output'), '--out', '-o', help='输出根目录'),
+    no_clean: bool = typer.Option(False, '--no-clean', '-N'),
+    update_raw: bool = typer.Option(False, '--update-raw', '-u'),
+    clear_raw: bool = typer.Option(False, '--clear-raw', '-x'),
 ):
     maintenance_only = not start and not end
     if not maintenance_only and ((start and not end) or (end and not start)):
@@ -1021,7 +1022,7 @@ def commodity(
 
 
 def main():
-    app()
+    run_typer_app_with_default_command(app, default_command="fetch", known_subcommands={"commodity"})
 
 
 if __name__ == "__main__":

@@ -5,6 +5,8 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
+from finshared.cli_entry import run_typer_app_with_default_command
+
 from finshared.global_datasets import clear_dataset_raw_files, fetch_company_basics_dataset, resolve_existing_dataset_paths
 
 app = typer.Typer(add_completion=False)
@@ -18,9 +20,9 @@ def _root():
 
 @app.command("fetch")
 def fetch(
-    out_dir: Path = typer.Option(Path("output"), "--out", help="输出根目录"),
-    tushare_token: str | None = typer.Option(None, "--tushare-token", help="Tushare token，可选"),
-    clear_raw: bool = typer.Option(False, "--clear-raw", help="清理旧 raw 文件，仅保留 latest.json 指向的最新 raw"),
+    out_dir: Path = typer.Option(Path("output"), "--out", "-o", help="输出根目录"),
+    tushare_token: str | None = typer.Option(None, "--tushare-token", "-k", help="Tushare token，可选"),
+    clear_raw: bool = typer.Option(False, "--clear-raw", "-x", help="清理旧 raw 文件，仅保留 latest.json 指向的最新 raw"),
 ):
     """抓取全部公司基础信息，输出到独立全局目录。"""
 
@@ -34,7 +36,7 @@ def fetch(
 
 
 def main():
-    app()
+    run_typer_app_with_default_command(app, default_command="fetch")
 
 
 if __name__ == "__main__":

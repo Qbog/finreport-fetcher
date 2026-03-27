@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 from ..utils.mpl_style import apply_pretty_style
-from ..utils.numfmt import UnitScale, choose_unit_scale, fmt_tick
+from ..utils.numfmt import UnitScale, choose_unit_scale, fmt_scaled, fmt_tick
 
 
 def render_merge_png(
@@ -62,26 +62,45 @@ def render_merge_png(
         except Exception:
             us = None
 
-    fig_size = figsize or (12, 6)
+    n_points = max(int(len(df_line.index)), 1)
+    fig_size = figsize or (max(14.0, min(24.0, 12.5 + n_points / 260.0)), 7.4)
     fig, ax1 = plt.subplots(figsize=fig_size)
+    ax1.set_axisbelow(True)
+    ax1.grid(axis="y", linestyle="--", linewidth=0.8, alpha=0.22)
+
+    bar_cont = None
+    by_numeric = None
 
     # bars on left axis
     if df_bar is not None and (not df_bar.empty):
         bx = pd.to_datetime(df_bar[bar_x_col], errors="coerce").to_numpy()
-        by = pd.to_numeric(df_bar[bar_col], errors="coerce").to_numpy()
+        by_numeric = pd.to_numeric(df_bar[bar_col], errors="coerce")
+        by = by_numeric.to_numpy()
         # width in days (timedelta is more robust across datetime types)
         w = np.timedelta64(int(bar_width_days or 12), "D")
-        ax1.bar(bx, by, width=w, color=bar_color, alpha=0.75, label=bar_label or bar_col, zorder=2)
+        bar_cont = ax1.bar(
+            bx,
+            by,
+            width=w,
+            color=bar_color,
+            alpha=0.88,
+            edgecolor="#F4F6F8",
+            linewidth=0.9,
+            label=bar_label or bar_col,
+            zorder=2,
+        )
 
     ax1.set_xlabel(x_label or "时间")
-    ax1.set_ylabel(bar_label or bar_col)
+    ax1.set_ylabel(bar_label or bar_col, color=bar_color)
+    ax1.tick_params(axis="y", colors=bar_color)
     if us is not None:
         ax1.yaxis.set_major_formatter(FuncFormatter(lambda v, _pos: fmt_tick(v, us)))
 
     # line on right axis
     ax2 = ax1.twinx()
-    ax2.plot(x_line, y_line, color=line_color, linewidth=2, label=line_label or line_col, zorder=3)
-    ax2.set_ylabel(line_label or line_col)
+    ax2.plot(x_line, y_line, color=line_color, linewidth=1.55, label=line_label or line_col, zorder=3)
+    ax2.set_ylabel(line_label or line_col, color=line_color)
+    ax2.tick_params(axis="y", colors=line_color)
 
     # x axis ticks
     if xtick_dates:
@@ -100,7 +119,34 @@ def render_merge_png(
 
     fig.autofmt_xdate(rotation=30)
 
-    ax1.set_title(title)
+    if by_numeric is not None and us is not None and bar_cont is not None:
+        finite_vals = by_numeric.dropna()
+        if not finite_vals.empty:
+            ymax = float(finite_vals.max())
+            ymin = float(finite_vals.min())
+            span = max(abs(ymax - ymin), abs(ymax), 1.0)
+            cur_lo, cur_hi = ax1.get_ylim()
+            ax1.set_ylim(min(cur_lo, ymin - 0.08 * span), max(cur_hi, ymax + 0.20 * span))
+        for patch in bar_cont.patches:
+            h = patch.get_height()
+            if h is None or (isinstance(h, float) and not math.isfinite(h)):
+                continue
+            x0 = patch.get_x() + patch.get_width() / 2
+            txt = fmt_scaled(float(h), us)
+            ax1.text(
+                x0,
+                h,
+                txt,
+                ha="center",
+                va="bottom" if h >= 0 else "top",
+                fontsize=9,
+                color="#EAEAEA",
+                fontweight="semibold",
+                zorder=4,
+            )
+
+    ax1.margins(x=0.01)
+    ax1.set_title(title, pad=14)
 
     # merged legend
     h1, l1 = ax1.get_legend_handles_labels()

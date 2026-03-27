@@ -19,6 +19,7 @@ import typer
 from rich.console import Console
 from rich.prompt import IntPrompt
 
+from finshared.cli_entry import run_typer_app_with_default_command
 from finshared.company_categories import default_company_categories_path, resolve_company_category_symbols
 from finshared.global_series import global_series_value_on_or_before, load_global_series_csv, parse_global_series_ident, resolve_global_series_csv
 from finreport_fetcher.utils.dates import parse_date, quarter_ends_between
@@ -950,45 +951,45 @@ def _root(
 def run(
     template: list[str] = typer.Option(
         [],
-        "--template",
+        "--template", "-t",
         help="模板文件/模板名（可重复）。支持 '*' 表示运行模板目录下全部模板。",
         show_default=False,
     ),
     template_category: list[str] = typer.Option(
         [],
-        "--template-category",
+        "--template-category", "-C",
         help="模板分类文件夹名（可重复，支持 英文/中文/english#中文 形式）。",
         show_default=False,
     ),
-    templates: Path = typer.Option(Path("templates"), "--templates", help="模板目录（支持子文件夹分类）"),
-    code: str | None = typer.Option(None, "--code"),
-    name: str | None = typer.Option(None, "--name"),
-    category: str | None = typer.Option(None, "--category", help="公司分类名（见 config/company_categories.toml）"),
-    category_config: Path | None = typer.Option(None, "--category-config", help="分类配置文件路径（默认：config/company_categories.toml）"),
+    templates: Path = typer.Option(Path("templates"), "--templates", "-T", help="模板目录（支持子文件夹分类）"),
+    code: str | None = typer.Option(None, "--code", "-c"),
+    name: str | None = typer.Option(None, "--name", "-n"),
+    category: str | None = typer.Option(None, "--category", "-g", help="公司分类名（见 config/company_categories.toml）"),
+    category_config: Path | None = typer.Option(None, "--category-config", "-G", help="分类配置文件路径（默认：config/company_categories.toml）"),
     peer: list[str] = typer.Option(
         [],
-        "--peer",
+        "--peer", "-r",
         help="同业分析：同业公司（可重复；支持 6 位代码或公司简称）。例如：--peer 深信服 --peer 奇安信",
         show_default=False,
     ),
-    start: str = typer.Option(..., "--start", help="趋势分析必须提供时间范围；结构分析也可复用该范围"),
-    end: str = typer.Option(..., "--end"),
-    as_of: str | None = typer.Option(None, "--as-of", help="结构分析使用的报告期末日（YYYY-MM-DD）。不传则取 end 对应的最近一个季末"),
+    start: str = typer.Option(..., "--start", "-s", help="趋势分析必须提供时间范围；结构分析也可复用该范围"),
+    end: str = typer.Option(..., "--end", "-e"),
+    as_of: str | None = typer.Option(None, "--as-of", "-a", help="结构分析使用的报告期末日（YYYY-MM-DD）。不传则取 end 对应的最近一个季末"),
     period: str | None = typer.Option(
         None,
-        "--period",
+        "--period", "-m",
         "--period-ends",
         help="仅过滤绘图输出的报告期（例如: q4,q2 或 half 或 0630,1231；不影响自动补数/取数）",
     ),
-    data_dir: Path | None = typer.Option(None, "--data-dir", help="财报数据目录（默认：若 ./output 存在则用 output，否则用当前目录）"),
-    out_dir: Path | None = typer.Option(None, "--out", help="输出目录（默认：{data_dir}/{公司名}_{code6}/charts/）"),
-    provider: str = typer.Option("auto", "--provider"),
-    statement_type: str = typer.Option("merged", "--statement-type"),
-    pdf: bool = typer.Option(False, "--pdf"),
-    top_n: int | None = typer.Option(None, "--top-n", help="覆盖模板的 top_n（常用于 pie）"),
-    list_only: bool = typer.Option(False, "--list", help="仅列出将要运行的模板并退出"),
-    tushare_token: str | None = typer.Option(None, "--tushare-token"),
-    strict: bool = typer.Option(False, "--strict", help="缺失财报时是否直接报错退出（默认：跳过缺失期继续）"),
+    data_dir: Path | None = typer.Option(None, "--data-dir", "-d", help="财报数据目录（默认：若 ./output 存在则用 output，否则用当前目录）"),
+    out_dir: Path | None = typer.Option(None, "--out", "-o", help="输出目录（默认：{data_dir}/{公司名}_{code6}/charts/）"),
+    provider: str = typer.Option("auto", "--provider", "-p"),
+    statement_type: str = typer.Option("merged", "--statement-type", "-S"),
+    pdf: bool = typer.Option(False, "--pdf", "-P"),
+    top_n: int | None = typer.Option(None, "--top-n", "-N", help="覆盖模板的 top_n（常用于 pie）"),
+    list_only: bool = typer.Option(False, "--list", "-L", help="仅列出将要运行的模板并退出"),
+    tushare_token: str | None = typer.Option(None, "--tushare-token", "-k"),
+    strict: bool = typer.Option(False, "--strict", "-x", help="缺失财报时是否直接报错退出（默认：跳过缺失期继续）"),
     share_axis: bool = typer.Option(
         False,
         "--share-axis/--no-share-axis",
@@ -2187,7 +2188,7 @@ def run(
                         line_label=str(line_item['display']),
                         bar_color=str(bar_item.get('color') or '#4E79A7'),
                         line_color=str(line_item.get('color') or '#F28E2B'),
-                        bar_width_days=18,
+                        bar_width_days=42,
                         xtick_dates=xtick_dates,
                         xtick_labels=xtick_labels,
                     )
@@ -2359,21 +2360,21 @@ def run(
 
 @app.command("merge")
 def merge(
-    bar_template: str = typer.Option(..., "--bar-template", help="柱状图模板（bar + mode=trend）模板名或文件路径"),
-    line_template: str = typer.Option(..., "--line-template", help="折线图模板（line + mode=price）模板名或文件路径"),
-    templates: Path = typer.Option(Path("templates"), "--templates", help="模板目录（单模板单文件 *.toml）"),
-    code: str | None = typer.Option(None, "--code"),
-    name: str | None = typer.Option(None, "--name"),
-    category: str | None = typer.Option(None, "--category", help="公司分类名（见 config/company_categories.toml）"),
-    category_config: Path | None = typer.Option(None, "--category-config", help="分类配置文件路径（默认：config/company_categories.toml）"),
-    start: str = typer.Option(..., "--start"),
-    end: str = typer.Option(..., "--end"),
-    data_dir: Path | None = typer.Option(None, "--data-dir", help="财报数据目录（默认：若 ./output 存在则用 output，否则用当前目录）"),
-    out_dir: Path | None = typer.Option(None, "--out", help="输出目录（默认：{data_dir}/{公司名}_{code6}/charts/）"),
-    provider: str = typer.Option("auto", "--provider"),
-    statement_type: str = typer.Option("merged", "--statement-type"),
-    tushare_token: str | None = typer.Option(None, "--tushare-token"),
-    strict: bool = typer.Option(False, "--strict", help="缺失财报时是否直接报错退出（默认：跳过缺失期继续）"),
+    bar_template: str = typer.Option(..., "--bar-template", "-b", help="柱状图模板（bar + mode=trend）模板名或文件路径"),
+    line_template: str = typer.Option(..., "--line-template", "-l", help="折线图模板（line + mode=price）模板名或文件路径"),
+    templates: Path = typer.Option(Path("templates"), "--templates", "-T", help="模板目录（单模板单文件 *.toml）"),
+    code: str | None = typer.Option(None, "--code", "-c"),
+    name: str | None = typer.Option(None, "--name", "-n"),
+    category: str | None = typer.Option(None, "--category", "-g", help="公司分类名（见 config/company_categories.toml）"),
+    category_config: Path | None = typer.Option(None, "--category-config", "-G", help="分类配置文件路径（默认：config/company_categories.toml）"),
+    start: str = typer.Option(..., "--start", "-s"),
+    end: str = typer.Option(..., "--end", "-e"),
+    data_dir: Path | None = typer.Option(None, "--data-dir", "-d", help="财报数据目录（默认：若 ./output 存在则用 output，否则用当前目录）"),
+    out_dir: Path | None = typer.Option(None, "--out", "-o", help="输出目录（默认：{data_dir}/{公司名}_{code6}/charts/）"),
+    provider: str = typer.Option("auto", "--provider", "-p"),
+    statement_type: str = typer.Option("merged", "--statement-type", "-S"),
+    tushare_token: str | None = typer.Option(None, "--tushare-token", "-k"),
+    strict: bool = typer.Option(False, "--strict", "-x", help="缺失财报时是否直接报错退出（默认：跳过缺失期继续）"),
 ):
     """将两个模板合并为一个双轴 PNG 图（v1：bar(trend) + line(price)）。
 
@@ -2688,7 +2689,7 @@ def merge(
 
 
 def main():
-    app()
+    run_typer_app_with_default_command(app, default_command="run", known_subcommands={"merge"})
 
 
 if __name__ == "__main__":

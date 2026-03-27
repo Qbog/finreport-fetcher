@@ -22,6 +22,7 @@ from .providers.registry import ProviderConfig, build_providers
 from .utils.dates import candidate_quarter_ends_before, parse_date, quarter_ends_between
 from .utils.paths import safe_dir_component
 from .utils.company_category import detect_company_category
+from finshared.cli_entry import run_typer_app_with_default_command
 from finshared.company_categories import default_company_categories_path, resolve_company_category_symbols
 from finmetrics_fetcher.cli import CommonOpts as MetricsCommonOpts, clear_raw_metrics, ensure_raw_metrics, update_raw_metrics
 from finmetrics_fetcher.raw_store import RawMetricsStore
@@ -373,21 +374,21 @@ def _fetch_one_period(
 
 @app.command("fetch")
 def fetch(
-    code: str | None = typer.Option(None, "--code", help="股票代码：600519 / 600519.SH / sh600519 等"),
-    name: str | None = typer.Option(None, "--name", help="股票名称（模糊匹配，重名会提示选择）"),
-    category: str | None = typer.Option(None, "--category", help="公司分类名（见 config/company_categories.toml）"),
-    category_config: Path | None = typer.Option(None, "--category-config", help="分类配置文件路径（默认：config/company_categories.toml）"),
-    date_: str | None = typer.Option(None, "--date", help="单个日期：取该日期之前最近一期已披露的报告期"),
-    start: str | None = typer.Option(None, "--start", help="日期范围开始"),
-    end: str | None = typer.Option(None, "--end", help="日期范围结束"),
-    provider: str = typer.Option("auto", "--provider", help="auto/tushare/akshare"),
-    statement_type: str = typer.Option("merged", "--statement-type", help="merged(合并)/parent(母公司)"),
-    pdf: bool = typer.Option(False, "--pdf", help="下载对应报告期 PDF 原文，并写入 Excel"),
-    out_dir: Path = typer.Option(Path("output"), "--out", help="输出目录"),
-    no_clean: bool = typer.Option(False, "--no-clean", help="不清空输出目录，改为增量写入（供图表程序补数据使用）"),
-    update_raw: bool = typer.Option(False, "--update-raw", help="更新原始数据快照（保留旧快照）"),
-    clear_raw: bool = typer.Option(False, "--clear-raw", help="清理旧原始数据快照，仅保留最新一版"),
-    tushare_token: str | None = typer.Option(None, "--tushare-token", help="Tushare token（可选，未提供则尝试环境变量）"),
+    code: str | None = typer.Option(None, "--code", "-c", help="股票代码：600519 / 600519.SH / sh600519 等"),
+    name: str | None = typer.Option(None, "--name", "-n", help="股票名称（模糊匹配，重名会提示选择）"),
+    category: str | None = typer.Option(None, "--category", "-g", help="公司分类名（见 config/company_categories.toml）"),
+    category_config: Path | None = typer.Option(None, "--category-config", "-G", help="分类配置文件路径（默认：config/company_categories.toml）"),
+    date_: str | None = typer.Option(None, "--date", "-d", help="单个日期：取该日期之前最近一期已披露的报告期"),
+    start: str | None = typer.Option(None, "--start", "-s", help="日期范围开始"),
+    end: str | None = typer.Option(None, "--end", "-e", help="日期范围结束"),
+    provider: str = typer.Option("auto", "--provider", "-p", help="auto/tushare/akshare"),
+    statement_type: str = typer.Option("merged", "--statement-type", "-S", help="merged(合并)/parent(母公司)"),
+    pdf: bool = typer.Option(False, "--pdf", "-P", help="下载对应报告期 PDF 原文，并写入 Excel"),
+    out_dir: Path = typer.Option(Path("output"), "--out", "-o", help="输出目录"),
+    no_clean: bool = typer.Option(False, "--no-clean", "-N", help="不清空输出目录，改为增量写入（供图表程序补数据使用）"),
+    update_raw: bool = typer.Option(False, "--update-raw", "-u", help="更新原始数据快照（保留旧快照）"),
+    clear_raw: bool = typer.Option(False, "--clear-raw", "-x", help="清理旧原始数据快照，仅保留最新一版"),
+    tushare_token: str | None = typer.Option(None, "--tushare-token", "-k", help="Tushare token（可选，未提供则尝试环境变量）"),
 ):
     """抓取 A 股三大报表并导出 Excel。"""
 
@@ -622,7 +623,7 @@ def fetch(
 
 
 def main():
-    app()
+    run_typer_app_with_default_command(app, default_command="fetch")
 
 
 if __name__ == "__main__":
