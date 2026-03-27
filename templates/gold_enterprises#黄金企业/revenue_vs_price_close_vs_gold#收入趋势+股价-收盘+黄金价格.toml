@@ -9,10 +9,10 @@ x_label = "报告期"
 y_label = "数值"
 
 [[series]]
-expr = "income_trend"
+expr = "income_trend#收入趋势.toml"
 
 [[series]]
-expr = "price_close_trend"
+expr = "price_close_trend#股价-收盘.toml"
 
 [[series]]
-expr = "gold_price_trend"
+expr = "gold_enterprises#黄金企业/gold_price_trend#黄金价格.toml"
