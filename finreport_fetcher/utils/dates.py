@@ -1,17 +1,23 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 
 def parse_date(d: str) -> date:
-    d = d.strip()
+    d = str(d or "").strip()
+    key = d.lower()
+    if key in {"now", "today"}:
+        return date.today()
+    if key == "yesterday":
+        return date.today() - timedelta(days=1)
+
     for fmt in ("%Y-%m-%d", "%Y%m%d", "%Y/%m/%d"):
         try:
             return datetime.strptime(d, fmt).date()
         except ValueError:
             pass
-    raise ValueError(f"无法解析日期: {d}. 支持格式: YYYY-MM-DD / YYYYMMDD / YYYY/MM/DD")
+    raise ValueError(f"无法解析日期: {d}. 支持格式: YYYY-MM-DD / YYYYMMDD / YYYY/MM/DD；也支持别名: now / yesterday")
 
 
 def yyyymmdd(dt: date) -> str:

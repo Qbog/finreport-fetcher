@@ -12,6 +12,7 @@ import pandas as pd
 import typer
 from rich.console import Console
 
+from finreport_fetcher.utils.dates import parse_date as _parse_date
 from finshared.company_categories import default_company_categories_path, resolve_company_category_symbols
 from finshared.global_datasets import (
     DEFAULT_METRIC_COLUMNS,
@@ -45,7 +46,7 @@ class CommonOpts:
 
 
 def parse_date_local(s: str) -> date:
-    return datetime.strptime(str(s).strip(), "%Y-%m-%d").date()
+    return _parse_date(s)
 
 
 def quarter_ends_between_local(start: date, end: date) -> list[date]:

@@ -10,6 +10,8 @@ import pandas as pd
 import typer
 from rich.console import Console
 
+from finreport_fetcher.utils.dates import parse_date as _parse_date
+
 from .raw_store import RawIndexStore
 
 app = typer.Typer(add_completion=False)
@@ -38,7 +40,7 @@ def log_info(msg: str):
 
 
 def parse_date_local(s: str):
-    return datetime.strptime(str(s).strip(), "%Y-%m-%d").date()
+    return _parse_date(s)
 
 
 def resolve_indexes(items: list[str] | None) -> list[tuple[str, str]]:

@@ -769,6 +769,163 @@ class ExpressionEvaluator:
         return float(v) if v is not None else None
 
 
+def _build_price_expr_daily_df(
+    c: CommonOpts,
+    main_eval: ExpressionEvaluator,
+    *,
+    expr: str,
+    default_statement: str,
+    base_frequency: str = "daily",
+) -> pd.DataFrame:
+    """Build one daily/periodic price expression series across the full requested range.
+
+    用于 merge 中的 mode=price 引用模板，避免把股价线错误地压缩成“报告期点”。
+    """
+
+    check_end = min(c.end, date.today())
+    base_freq = (base_frequency or "daily").strip().lower()
+
+    price_csv = _maybe_fetch_price_missing(c, start=c.start, end=check_end, frequency=base_freq)
+    if not price_csv.exists():
+        return pd.DataFrame(columns=["date", "value"])
+
+    df_base = load_price_csv(price_csv)
+    df_base = df_base[(df_base["date"] >= c.start) & (df_base["date"] <= check_end)].copy()
+    if df_base.empty:
+        return pd.DataFrame(columns=["date", "value"])
+
+    fin_ids: set[str] = set()
+    global_ids: dict[str, tuple[str, str, str]] = {}
+    extra_freqs: set[str] = set()
+    for t in tokenize(expr):
+        if t in {"+", "-", "*", "/", "(", ")"}:
+            continue
+        if re.fullmatch(r"\d+(?:\.\d+)?", t):
+            continue
+        if t.startswith(("is.", "bs.", "cf.", "metrics.", "metric.", "mt.")):
+            fin_ids.add(t)
+            continue
+        parsed_global = parse_global_series_ident(t)
+        if parsed_global is not None:
+            global_ids[t] = parsed_global
+            continue
+        m = re.match(r"^(?:px|price)_(?P<f>[A-Za-z0-9_]+)\.", t)
+        if m:
+            f0 = m.group("f").strip().lower()
+            if f0 in {"1d", "d", "day", "daily"}:
+                extra_freqs.add("daily")
+            else:
+                extra_freqs.add(f0)
+
+    extra_price: dict[str, pd.DataFrame] = {}
+    for f0 in sorted(extra_freqs):
+        if f0 == base_freq:
+            continue
+        p_csv = _maybe_fetch_price_missing(c, start=c.start, end=check_end, frequency=f0)
+        if not p_csv.exists():
+            continue
+        try:
+            df0 = load_price_csv(p_csv)
+            df0 = df0[(df0["date"] >= c.start) & (df0["date"] <= check_end)].copy()
+            if not df0.empty:
+                extra_price[f0] = df0
+        except Exception:
+            continue
+
+    fin_cache: dict[str, dict[date, float]] = {}
+    if fin_ids:
+        q0 = _latest_quarter_end_on_or_before(c.start)
+        q_start = _prev_quarter_end(q0)
+        q_end = _latest_quarter_end_on_or_before(check_end)
+        _ = _maybe_fetch_missing(c, fetch_start=q_start)
+        q_periods = quarter_ends_between(q_start, q_end)
+        for fid in sorted(fin_ids):
+            mp: dict[date, float] = {}
+            for pe in q_periods:
+                v = main_eval.eval(fid, current_pe=pe, default_statement=default_statement)
+                if v is None:
+                    continue
+                try:
+                    mp[pe] = float(v)
+                except Exception:
+                    continue
+            fin_cache[fid] = mp
+
+    base_tag = "1d" if base_freq == "daily" else base_freq
+    rows: list[dict[str, object]] = []
+    for _, r in df_base.iterrows():
+        dt0 = r.get("date")
+        if not isinstance(dt0, date):
+            continue
+
+        values: dict[str, float] = {}
+        for col in df_base.columns:
+            if col == "date":
+                continue
+            v0 = r.get(col)
+            if v0 is None or (isinstance(v0, float) and not math.isfinite(v0)) or pd.isna(v0):
+                continue
+            try:
+                fv = float(v0)
+            except Exception:
+                continue
+            values[col] = fv
+            values[f"px.{col}"] = fv
+            values[f"price.{col}"] = fv
+            values[f"px_{base_tag}.{col}"] = fv
+            values[f"price_{base_tag}.{col}"] = fv
+
+        for f0, df_ex in extra_price.items():
+            tag = "1d" if f0 == "daily" else f0
+            try:
+                sub = df_ex[df_ex["date"] <= dt0]
+                if sub.empty:
+                    continue
+                rr = sub.iloc[-1]
+            except Exception:
+                continue
+            for col in df_ex.columns:
+                if col == "date":
+                    continue
+                v0 = rr.get(col)
+                if v0 is None or (isinstance(v0, float) and not math.isfinite(v0)) or pd.isna(v0):
+                    continue
+                try:
+                    fv = float(v0)
+                except Exception:
+                    continue
+                values[f"px_{tag}.{col}"] = fv
+                values[f"price_{tag}.{col}"] = fv
+
+        if fin_ids:
+            pe = _latest_quarter_end_on_or_before(dt0)
+            for fid in fin_ids:
+                vv = fin_cache.get(fid, {}).get(pe)
+                if vv is not None:
+                    values[fid] = float(vv)
+
+        for ident, (kind, symbol, field) in global_ids.items():
+            vv = main_eval._global_series_value_on_or_before(kind, symbol, dt0, field)
+            if vv is not None:
+                values[ident] = float(vv)
+
+        try:
+            y = eval_expr(expr, values)
+        except ExprError:
+            y = float("nan")
+
+        rows.append({"date": dt0, "value": y})
+
+    if not rows:
+        return pd.DataFrame(columns=["date", "value"])
+
+    out = pd.DataFrame(rows).dropna(subset=["date"]).sort_values("date")
+    if out.empty:
+        return pd.DataFrame(columns=["date", "value"])
+    out["value"] = pd.to_numeric(out["value"], errors="coerce")
+    return out.reset_index(drop=True)
+
+
 @app.callback()
 def _root(
     log_level: str = typer.Option(
@@ -1920,6 +2077,8 @@ def run(
                                 'statement': str(blk.get('statement') or _guess_statement_from_expr(str(blk['expr']))),
                                 'color': blk.get('color'),
                                 'kind': ref_type,
+                                'mode': ref_mode,
+                                'frequency': getattr(ref_tpl, 'frequency', None),
                                 'template': str(getattr(ref_tpl, 'name', '')),
                                 'label': str(getattr(ref_tpl, 'alias', None) or getattr(ref_tpl, 'name', '')),
                             }
@@ -1931,8 +2090,8 @@ def run(
                     bar_item = getattr(tpl, 'bar_item', None) or 'is.revenue_total'
                     line_expr = getattr(tpl, 'line', None) or 'px.close'
                     merge_series = [
-                        {'name': y_label or 'financial', 'display': y_label or 'financial', 'expr': str(bar_item), 'statement': _guess_statement_from_expr(str(bar_item)), 'color': '#4E79A7', 'kind': 'bar'},
-                        {'name': str(line_expr).split('.')[-1], 'display': str(line_expr).split('.')[-1], 'expr': str(line_expr), 'statement': _guess_statement_from_expr(str(line_expr)), 'color': '#F28E2B', 'kind': 'line'},
+                        {'name': y_label or 'financial', 'display': y_label or 'financial', 'expr': str(bar_item), 'statement': _guess_statement_from_expr(str(bar_item)), 'color': '#4E79A7', 'kind': 'bar', 'mode': 'trend'},
+                        {'name': str(line_expr).split('.')[-1], 'display': str(line_expr).split('.')[-1], 'expr': str(line_expr), 'statement': _guess_statement_from_expr(str(line_expr)), 'color': '#F28E2B', 'kind': 'line', 'mode': 'trend'},
                     ]
 
                 if not merge_series:
@@ -1946,6 +2105,112 @@ def run(
                         disp = f"{disp}_{idx+1}"
                     item['display'] = disp
                     seen_display.add(disp)
+
+                # 对“1 根季度柱 + 1 条 mode=price 折线”的常见 merge 场景，
+                # 直接按完整日频价格序列绘图，避免把折线错误压成“每个报告期一个点”。
+                special_bar_defs = [x for x in merge_series if str(x.get('kind')) == 'bar']
+                special_line_defs = [x for x in merge_series if str(x.get('kind')) == 'line']
+                special_price_lines = [x for x in special_line_defs if str(x.get('mode') or '').strip().lower() == 'price']
+                if len(special_bar_defs) == 1 and len(special_line_defs) == 1 and len(special_price_lines) == 1:
+                    bar_item = special_bar_defs[0]
+                    line_item = special_price_lines[0]
+
+                    bar_rows: list[dict[str, object]] = []
+                    for pe in periods:
+                        v = main_eval.eval(
+                            str(bar_item['expr']),
+                            current_pe=pe,
+                            default_statement=str(bar_item.get('statement') or _guess_statement_from_expr(str(bar_item['expr']))),
+                        )
+                        if v is None and not pad_x:
+                            continue
+                        bar_rows.append({
+                            'date': pe,
+                            'period_end': pe.strftime('%Y-%m-%d'),
+                            str(bar_item['display']): v,
+                        })
+
+                    df_bar = pd.DataFrame(bar_rows)
+                    if not df_bar.empty:
+                        df_bar[str(bar_item['display'])] = pd.to_numeric(df_bar[str(bar_item['display'])], errors='coerce')
+                        if not pad_x:
+                            df_bar = df_bar.dropna(subset=[str(bar_item['display'])])
+
+                    df_line = _build_price_expr_daily_df(
+                        c,
+                        main_eval,
+                        expr=str(line_item['expr']),
+                        default_statement=str(line_item.get('statement') or _guess_statement_from_expr(str(line_item['expr']))),
+                        base_frequency=str(line_item.get('frequency') or 'daily'),
+                    )
+
+                    if df_bar.empty or df_line.empty:
+                        if not collect_only:
+                            log_warn(f"提示：{k} 在该区间内没有可用数据。")
+                        continue
+
+                    actual_s = pd.to_datetime(df_line['date'], errors='coerce').min()
+                    actual_e = pd.to_datetime(df_line['date'], errors='coerce').max()
+                    if pd.isna(actual_s) or pd.isna(actual_e):
+                        if not collect_only:
+                            log_warn(f"提示：{k} 在该区间内没有可用日期数据。")
+                        continue
+
+                    if collect_only and stats_map is not None:
+                        stats = stats_map.setdefault(k, AxisStatsCollector())
+                        _collect_axis_stats(stats, df_line, value_cols=['value'], point_col='date')
+                        _collect_axis_stats(stats, df_bar.rename(columns={str(bar_item['display']): 'bar_value'}), value_cols=['bar_value'], point_col='period_end')
+                        continue
+
+                    title = f"{c.rs.name or c.rs.code6} | {title0}"
+                    out_png = c.out_dir / f"{fname_base}_{c.rs.code6}_{actual_s.strftime('%Y%m%d')}_{actual_e.strftime('%Y%m%d')}.png"
+                    out_xlsx = c.out_dir / f"{fname_base}_{c.rs.code6}_{actual_s.strftime('%Y%m%d')}_{actual_e.strftime('%Y%m%d')}.xlsx"
+
+                    def _q_label(pe: date) -> str:
+                        q = (pe.month - 1) // 3 + 1
+                        return f"{pe.year}Q{q}"
+
+                    xtick_dates = [str(x) for x in df_bar['period_end'].tolist()]
+                    xtick_labels = [_q_label(parse_date(str(x))) for x in df_bar['period_end'].tolist()]
+
+                    render_merge_png(
+                        df_line=df_line,
+                        x_col='date',
+                        line_col='value',
+                        df_bar=df_bar,
+                        bar_x_col='date',
+                        bar_col=str(bar_item['display']),
+                        out_png=out_png,
+                        title=title,
+                        x_label=x_label or '日期',
+                        bar_label=str(bar_item['display']),
+                        line_label=str(line_item['display']),
+                        bar_color=str(bar_item.get('color') or '#4E79A7'),
+                        line_color=str(line_item.get('color') or '#F28E2B'),
+                        bar_width_days=18,
+                        xtick_dates=xtick_dates,
+                        xtick_labels=xtick_labels,
+                    )
+
+                    df_line_export = df_line.copy()
+                    df_line_export['date'] = pd.to_datetime(df_line_export['date'], errors='coerce').dt.strftime('%Y-%m-%d')
+                    df_line_export = df_line_export.rename(columns={'value': str(line_item['display'])})
+                    df_bar_export = df_bar.copy()
+                    df_bar_export['date'] = pd.to_datetime(df_bar_export['date'], errors='coerce').dt.strftime('%Y-%m-%d')
+                    df_merged = df_line_export.merge(
+                        df_bar_export[['date', 'period_end', str(bar_item['display'])]],
+                        on='date',
+                        how='left',
+                    )
+                    with pd.ExcelWriter(out_xlsx, engine='openpyxl') as writer:
+                        df_merged.to_excel(writer, index=False, sheet_name='data')
+                        df_line_export.to_excel(writer, index=False, sheet_name='line_data')
+                        df_bar_export.to_excel(writer, index=False, sheet_name='bar_data')
+
+                    if not collect_only:
+                        log_info(f"已生成: {out_png}")
+                        log_info(f"已生成: {out_xlsx}")
+                    continue
 
                 rows = []
                 for pe in periods:
