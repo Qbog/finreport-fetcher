@@ -269,6 +269,28 @@ def _parse_bar_blocks(data: dict[str, Any]) -> list[BarBlock] | None:
     return None
 
 
+def _resolve_template_link_path(path: Path) -> Path:
+    text = path.read_text(encoding="utf-8").strip()
+    if not text:
+        return path
+    if ('=' in text) or ('[[' in text) or text.startswith('name') or text.startswith('type'):
+        return path
+    target = (path.parent / text).resolve()
+    return target if target.exists() else path
+
+
+def _canonical_template_source(path: Path) -> Path:
+    if path.is_symlink():
+        try:
+            return path.resolve()
+        except Exception:
+            return path
+    try:
+        return _resolve_template_link_path(path).resolve()
+    except Exception:
+        return path.resolve() if path.exists() else path
+
+
 def load_template_file(path: Path, *, root: Path | None = None) -> Template:
     """Load a single-template TOML file.
 
@@ -279,8 +301,15 @@ def load_template_file(path: Path, *, root: Path | None = None) -> Template:
     name 默认取文件名 stem，也可在 TOML 里显式指定 name。
     """
 
+    source = path
+    if (not path.is_symlink()) and path.suffix.lower() == '.toml':
+        try:
+            source = _resolve_template_link_path(path)
+        except Exception:
+            source = path
+
     loads = _toml_loads()
-    cfg = loads(path.read_text(encoding="utf-8"))
+    cfg = loads(source.read_text(encoding="utf-8"))
 
     v = cfg.get("template") if isinstance(cfg, dict) else None
     data: dict[str, Any]
@@ -289,7 +318,7 @@ def load_template_file(path: Path, *, root: Path | None = None) -> Template:
     else:
         data = cfg if isinstance(cfg, dict) else {}
 
-    name = str(data.get("name") or path.stem)
+    name = str(data.get("name") or source.stem)
     alias = _as_str(data.get("alias"))
     names = _as_str_list(data.get("names") or data.get("template_names") or data.get("aliases"))
 
@@ -298,11 +327,11 @@ def load_template_file(path: Path, *, root: Path | None = None) -> Template:
         raise ValueError(f"template 缺少 type/chart 字段: {path}")
 
     cat_key, cat_alias, cat_path = _template_path_meta(path, root or path.parent)
-    source_path = None
+    source_path_str = None
     try:
-        source_path = path.relative_to(root).as_posix() if root else path.name
+        source_path_str = path.relative_to(root).as_posix() if root else path.name
     except Exception:
-        source_path = path.name
+        source_path_str = path.name
 
     return Template(
         name=name,
@@ -325,7 +354,7 @@ def load_template_file(path: Path, *, root: Path | None = None) -> Template:
         category=cat_key,
         category_alias=cat_alias,
         category_path=cat_path,
-        source_path=source_path,
+        source_path=source_path_str,
     )
 
 
@@ -336,12 +365,17 @@ def load_template_dir(dir_path: Path) -> dict[str, Template]:
         raise FileNotFoundError(f"模板目录不存在: {dir_path}")
 
     out: dict[str, Template] = {}
+    seen_canonical: dict[str, str] = {}
     for p in _iter_template_files(dir_path):
+        can = str(_canonical_template_source(p))
+        if can in seen_canonical:
+            continue
         tpl = load_template_file(p, root=dir_path)
         if tpl.name in out:
             prev = out[tpl.name]
             raise ValueError(f"模板 name 重复: {tpl.name} ({prev.source_path} / {tpl.source_path})")
         out[tpl.name] = tpl
+        seen_canonical[can] = tpl.name
     return out
 
 
