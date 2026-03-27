@@ -1,0 +1,16 @@
+name = "nonfin-merge-revenue_vs_price_close"
+alias = "收入趋势+股价-收盘"
+
+names = ["revenue_vs_price_close", "revenue_vs_price_close#收入趋势+股价-收盘", "nonfin-merge-revenue_vs_price_close"]
+type = "combo"
+mode = "merge"
+
+title = "收入趋势 + 股价-收盘"
+x_label = "报告期"
+y_label = "数值"
+
+[[series]]
+expr = "nonfin-trend-income"
+
+[[series]]
+expr = "nonfin-trend-price_close"

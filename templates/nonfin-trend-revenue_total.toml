@@ -1,0 +1,17 @@
+# 单模板单文件示例：趋势分析（利润表 - 营业总收入）
+
+name = "nonfin-trend-revenue_total"
+alias = "营业总收入（TTM）柱状趋势图"
+
+names = ["revenue_total_trend", "revenue_total_trend#营业总收入", "nonfin-trend-revenue_total"]
+type = "bar"
+mode = "trend"
+
+title = "营业总收入趋势（TTM）"
+x_label = "报告期"
+y_label = "金额"
+
+
+[[series]]
+name = "营业总收入"
+expr = "is.revenue_total + is.revenue_total.prev_year.q4 - is.revenue_total.prev_year"

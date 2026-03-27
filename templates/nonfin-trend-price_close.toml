@@ -1,0 +1,22 @@
+# 股价折线（按日）示例模板
+#
+# mode = "price"：表示 x 轴为交易日（date），数据来自 finprice_fetcher 输出的 price CSV。
+# 表达式里可引用：
+# - px.<列名> / price.<列名>：股价列（如 px.close/px.open/px.avg_ohlc4）
+# - is./bs./cf. 前缀：财务科目 key（会按“日期对应的最新季末值”映射到日频）
+#
+# 输出：png + xlsx（xlsx 包含 data + chart sheet，便于未来与其它报表合并）。
+
+name = "nonfin-trend-price_close"
+alias = "股价-收盘"
+names = ["price_close_trend", "price_close_trend#股价-收盘", "nonfin-trend-price_close"]
+type = "line"
+mode = "price"
+
+title = "股价（收盘）走势"
+x_label = "日期"
+y_label = "价格"
+
+[[series]]
+name = "收盘价"
+expr = "px.close"

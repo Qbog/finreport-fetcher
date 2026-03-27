@@ -1,0 +1,17 @@
+# 财报分析 / 公司对比 / 收入对比
+
+name = "nonfin-peer-revenue"
+alias = "收入对比"
+names = ["公司对比-收入对比", "营业总收入对比", "revenue_peer", "revenue_peer#收入对比", "nonfin-peer-revenue"]
+type = "bar"
+mode = "peer"
+
+
+title = "收入对比（单季营业总收入）"
+x_label = "公司"
+y_label = "金额"
+
+
+[[series]]
+name = "营业总收入"
+expr = "is.revenue_total - is.revenue_total.prev_in_year"

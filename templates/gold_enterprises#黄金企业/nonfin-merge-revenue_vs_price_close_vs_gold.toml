@@ -1,0 +1,19 @@
+name = "nonfin-merge-revenue_vs_price_close_vs_gold"
+alias = "收入趋势+股价-收盘+黄金价格"
+
+names = ["revenue_vs_price_close_vs_gold", "revenue_vs_price_close_vs_gold#收入趋势+股价-收盘+黄金价格", "nonfin-merge-revenue_vs_price_close_vs_gold"]
+type = "combo"
+mode = "merge"
+
+title = "收入趋势 + 股价-收盘 + 黄金价格"
+x_label = "报告期"
+y_label = "数值"
+
+[[series]]
+expr = "nonfin-trend-income"
+
+[[series]]
+expr = "nonfin-trend-price_close"
+
+[[series]]
+expr = "nonfin-trend-gold_price"

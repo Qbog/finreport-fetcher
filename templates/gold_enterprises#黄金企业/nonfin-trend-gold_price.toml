@@ -1,0 +1,14 @@
+name = "nonfin-trend-gold_price"
+alias = "黄金价格"
+
+names = ["gold_price_trend", "gold_price_trend#黄金价格", "nonfin-trend-gold_price"]
+type = "line"
+mode = "trend"
+
+title = "黄金价格"
+x_label = "报告期"
+y_label = "价格"
+
+[[series]]
+name = "黄金价格"
+expr = "commodity.黄金.close"

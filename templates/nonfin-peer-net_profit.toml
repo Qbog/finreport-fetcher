@@ -1,0 +1,25 @@
+# 同业分析示例：净利润（横轴=公司）
+# peer 模式只取“一个期末”（默认取 --end 对应的最近可用季度；也可用 --as-of / period_end 指定）。
+
+name = "nonfin-peer-net_profit"
+alias = "净利润同业分析"
+
+names = ["net_profit_peer", "net_profit_peer#净利润同业分析", "nonfin-peer-net_profit"]
+type = "bar"
+mode = "peer"
+
+# 可选：写死期末；也可以留空并在命令行用 --as-of
+# period_end = "2024-12-31"
+
+# peers：同业公司列表（可写 code6 或公司简称；会尽量解析为 A 股 code6）
+# 建议先写 code6，避免歧义。
+
+title = "净利润同业分析"
+
+x_label = "公司"
+y_label = "金额"
+
+
+[[series]]
+name = "归母净利润"
+expr = "is.net_profit_parent"

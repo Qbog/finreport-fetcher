@@ -1,0 +1,16 @@
+# 财报分析 / 趋势分析 / 利润趋势
+
+name = "nonfin-trend-profit"
+alias = "利润趋势"
+names = ["净利润趋势", "利润趋势-净利润", "profit_trend", "profit_trend#利润趋势", "nonfin-trend-profit"]
+type = "bar"
+mode = "trend"
+
+title = "净利润趋势（单季归母）"
+x_label = "报告期"
+y_label = "金额"
+
+
+[[series]]
+name = "归母净利润"
+expr = "is.net_profit_parent - is.net_profit_parent.prev_in_year"

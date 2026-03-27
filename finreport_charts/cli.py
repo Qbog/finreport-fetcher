@@ -50,7 +50,7 @@ from .templates.config import category_lookup_names, find_template_file, list_te
 from .utils.expr import ExprError, eval_expr, tokenize
 from .utils.files import safe_slug
 from .utils.mpl_style import apply_pretty_style
-from .utils.numfmt import UnitScale, choose_unit_scale, fmt_tick
+from .utils.numfmt import UnitScale, choose_unit_scale, fmt_scaled, fmt_tick
 
 app = typer.Typer(add_completion=False)
 console = Console()
@@ -1978,24 +1978,37 @@ def run(
                 out_xlsx = c.out_dir / f"{fname_base}_{c.rs.code6}_{actual_s.strftime('%Y%m%d')}_{actual_e.strftime('%Y%m%d')}.xlsx"
 
                 import matplotlib.pyplot as plt
+                from matplotlib.ticker import FuncFormatter
                 apply_pretty_style()
                 fig, ax1 = plt.subplots(figsize=axis_png_extra.get('figsize', (10, 4.8)) if axis_png_extra else (10, 4.8))
                 x_pos = list(range(len(df.index)))
                 x_labels = df['period_end'].tolist()
+                bar_us = choose_unit_scale(max([float(pd.to_numeric(df[x['name']], errors='coerce').abs().max()) for x in bar_defs], default=0.0)) if bar_defs else UnitScale(scale=1.0, unit='')
+                line_us = choose_unit_scale(max([float(pd.to_numeric(df[x['name']], errors='coerce').abs().max()) for x in line_defs], default=0.0)) if line_defs else UnitScale(scale=1.0, unit='')
                 if bar_defs:
                     width = 0.8 / max(len(bar_defs), 1)
                     start = -width * (len(bar_defs) - 1) / 2
                     for idx, item in enumerate(bar_defs):
                         pos = [x + start + idx * width for x in x_pos]
-                        ax1.bar(pos, pd.to_numeric(df[item['name']], errors='coerce').tolist(), width=width, label=item['name'], color=item.get('color') or None, alpha=0.82)
-                    ax1.set_ylabel(y_label or '数值')
+                        yvals = pd.to_numeric(df[item['name']], errors='coerce').tolist()
+                        cont = ax1.bar(pos, yvals, width=width, label=item['name'], color=item.get('color') or None, alpha=0.82)
+                        for p in cont.patches:
+                            h = p.get_height()
+                            if h is None or (isinstance(h, float) and not math.isfinite(h)):
+                                continue
+                            x0 = p.get_x() + p.get_width() / 2
+                            txt = fmt_scaled(float(h), bar_us)
+                            ax1.text(x0, h, txt, ha='center', va='bottom' if h >= 0 else 'top', fontsize=8)
+                    ax1.set_ylabel((y_label or '数值') + (f'（{bar_us.unit}）' if bar_us.unit else ''))
+                    ax1.yaxis.set_major_formatter(FuncFormatter(lambda v, _pos: fmt_tick(v, bar_us)))
                 ax2 = ax1.twinx()
                 has_line = False
                 for item in line_defs:
                     ax2.plot(x_pos, pd.to_numeric(df[item['name']], errors='coerce').tolist(), marker='o', label=item['name'], color=item.get('color') or None)
                     has_line = True
                 if has_line:
-                    ax2.set_ylabel('折线')
+                    ax2.set_ylabel('折线' + (f'（{line_us.unit}）' if line_us.unit else ''))
+                    ax2.yaxis.set_major_formatter(FuncFormatter(lambda v, _pos: fmt_tick(v, line_us)))
                 ax1.set_xticks(x_pos, x_labels)
                 ax1.tick_params(axis='x', rotation=30)
                 ax1.set_xlabel(x_label or '报告期')

@@ -162,7 +162,19 @@ def template_lookup_names(tpl: Template) -> list[str]:
 
 
 def _iter_template_files(dir_path: Path) -> list[Path]:
-    return sorted([p for p in dir_path.rglob("*.toml") if p.is_file()])
+    files = sorted([p for p in dir_path.rglob("*.toml") if p.is_file()], key=lambda p: (p.is_symlink(), str(p)))
+    out: list[Path] = []
+    seen_real: set[str] = set()
+    for p in files:
+        try:
+            real = str(p.resolve())
+        except Exception:
+            real = str(p)
+        if real in seen_real:
+            continue
+        seen_real.add(real)
+        out.append(p)
+    return out
 
 
 def _template_path_meta(path: Path, root: Path) -> tuple[str | None, str | None, str | None]:
@@ -183,7 +195,7 @@ def find_template_file(dir_path: Path, spec: str) -> Path | None:
     if not want:
         return None
     want_stem = want[:-5] if want.endswith(".toml") else want
-    for p in _iter_template_files(dir_path):
+    for p in sorted([x for x in dir_path.rglob("*.toml") if x.is_file()]):
         tpl = load_template_file(p, root=dir_path)
         keys = {_normalize_lookup_name(x) for x in template_lookup_names(tpl)}
         file_stem = _normalize_lookup_name(p.stem)

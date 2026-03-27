@@ -1,0 +1,27 @@
+# 财报分析 / 结构分析 / 现金流结构
+
+name = "nonfin-structure-cashflow_structure"
+alias = "现金流结构"
+names = ["结构分析-现金流结构", "现金流结构分析", "cashflow_structure", "cashflow_structure#现金流结构", "nonfin-structure-cashflow_structure"]
+type = "bar"
+mode = "structure"
+
+title = "现金流结构（单季）"
+x_label = "科目"
+y_label = "金额"
+
+
+[[series]]
+name = "经营现金流"
+expr = "cf.net_cash_from_ops - cf.net_cash_from_ops.prev_in_year"
+color = "#59A14F"
+
+[[series]]
+name = "投资现金流"
+expr = "cf.net_cash_from_investing - cf.net_cash_from_investing.prev_in_year"
+color = "#F28E2B"
+
+[[series]]
+name = "融资现金流"
+expr = "cf.net_cash_from_financing - cf.net_cash_from_financing.prev_in_year"
+color = "#E15759"

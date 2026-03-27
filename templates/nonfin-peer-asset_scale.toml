@@ -1,0 +1,17 @@
+# 财报分析 / 公司对比 / 资产规模对比
+
+name = "nonfin-peer-asset_scale"
+alias = "资产规模对比"
+names = ["公司对比-资产规模对比", "总资产对比", "asset_scale_peer", "asset_scale_peer#资产规模对比", "nonfin-peer-asset_scale"]
+type = "bar"
+mode = "peer"
+
+
+title = "资产规模对比（总资产）"
+x_label = "公司"
+y_label = "金额"
+
+
+[[series]]
+name = "总资产"
+expr = "bs.total_assets"

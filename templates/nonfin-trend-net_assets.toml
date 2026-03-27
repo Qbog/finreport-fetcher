@@ -1,0 +1,16 @@
+# 财报分析 / 趋势分析 / 资产趋势
+
+name = "nonfin-trend-net_assets"
+alias = "资产趋势"
+names = ["净资产趋势", "资产趋势-净资产", "net_assets_trend", "net_assets_trend#资产趋势", "nonfin-trend-net_assets"]
+type = "bar"
+mode = "trend"
+
+title = "净资产趋势"
+x_label = "报告期"
+y_label = "金额"
+
+
+[[series]]
+name = "归母净资产"
+expr = "bs.total_equity_parent"

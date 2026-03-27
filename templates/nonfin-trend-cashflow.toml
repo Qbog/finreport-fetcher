@@ -1,0 +1,22 @@
+# 财报分析 / 趋势分析 / 现金流趋势
+
+name = "nonfin-trend-cashflow"
+alias = "现金流趋势"
+names = ["现金流趋势-总现金流", "现金流趋势-经营现金流", "cashflow_trend", "cashflow_trend#现金流趋势", "nonfin-trend-cashflow"]
+type = "bar"
+mode = "trend"
+
+title = "现金流趋势（单季）"
+x_label = "报告期"
+y_label = "金额"
+
+
+[[series]]
+name = "总现金流"
+expr = "cf.net_increase_in_cash - cf.net_increase_in_cash.prev_in_year"
+color = "#4E79A7"
+
+[[series]]
+name = "经营现金流"
+expr = "cf.net_cash_from_ops - cf.net_cash_from_ops.prev_in_year"
+color = "#59A14F"
