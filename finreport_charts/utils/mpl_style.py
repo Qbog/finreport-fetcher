@@ -6,6 +6,7 @@ def apply_pretty_style():
 
     import matplotlib as mpl
     import matplotlib.pyplot as plt
+    from matplotlib import font_manager
 
     # 深色背景
     try:
@@ -13,21 +14,29 @@ def apply_pretty_style():
     except Exception:
         pass
 
-    # 字体：尽量找可用中文字体
+    # 字体：挑一个当前系统确实存在且支持中文的字体，避免中文 glyph warning
     candidates = [
+        "Noto Sans CJK SC",
+        "Noto Sans CJK TC",
+        "Noto Sans CJK JP",
+        "Noto Serif CJK SC",
+        "Source Han Sans SC",
+        "WenQuanYi Micro Hei",
+        "WenQuanYi Zen Hei",
         "Microsoft YaHei",
         "PingFang SC",
         "Hiragino Sans GB",
-        "Noto Sans CJK SC",
-        "Source Han Sans SC",
-        "WenQuanYi Micro Hei",
         "SimHei",
-        "Noto Sans CJK JP",
-        "Noto Serif CJK JP",
         "Arial Unicode MS",
+        "Droid Sans Fallback",
         "DejaVu Sans",
     ]
-    mpl.rcParams["font.sans-serif"] = candidates
+    available = {f.name for f in font_manager.fontManager.ttflist}
+    chosen = [name for name in candidates if name in available]
+    if not chosen:
+        chosen = ["DejaVu Sans"]
+    mpl.rcParams["font.family"] = ["sans-serif"]
+    mpl.rcParams["font.sans-serif"] = chosen + [name for name in candidates if name not in chosen]
     mpl.rcParams["axes.unicode_minus"] = False
 
     bg = "#0B1220"  # 深色背景

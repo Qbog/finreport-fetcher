@@ -25,6 +25,7 @@ import matplotlib.pyplot as plt
 from finreport_charts.data.finreport_store import expected_xlsx_path, load_price_csv, read_statement_df
 from finreport_charts.templates.config import BarBlock, Template, list_template_categories, load_template_dir, template_filename, template_lookup_names
 from finreport_charts.utils.expr import ExprError, eval_expr, tokenize
+from finreport_charts.utils.mpl_style import apply_pretty_style
 from finshared.global_datasets import load_company_basics_csv
 from finshared.company_categories import CompanyCategory, CompanyCategoryItem, load_company_categories, resolve_company_category_symbols
 from finshared.global_series import global_series_value_on_or_before, load_global_series_csv, parse_global_series_ident, resolve_global_series_csv
@@ -1208,6 +1209,7 @@ def build_merge_chart(ctx: AppContext, tpl: Template, rs: ResolvedSymbol, period
             row[item['name']] = resolver.eval_expr(str(item['expr']), current_pe=pe, default_statement=guess_statement_from_expr(str(item['expr'])))
         rows.append(row)
     df = pd.DataFrame(rows)
+    apply_pretty_style()
     fig, ax1 = plt.subplots(figsize=(10, 4.8))
     x_pos = list(range(len(df.index)))
     bar_defs = [x for x in merge_defs if x['kind'] == 'bar']

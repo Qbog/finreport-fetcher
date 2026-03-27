@@ -48,6 +48,7 @@ from .data.finreport_store import (
 from .templates.config import category_lookup_names, find_template_file, list_template_categories, load_template_dir, load_template_file, template_lookup_names
 from .utils.expr import ExprError, eval_expr, tokenize
 from .utils.files import safe_slug
+from .utils.mpl_style import apply_pretty_style
 from .utils.numfmt import UnitScale, choose_unit_scale, fmt_tick
 
 app = typer.Typer(add_completion=False)
@@ -1960,6 +1961,7 @@ def run(
                 out_xlsx = c.out_dir / f"{fname_base}_{c.rs.code6}_{actual_s.strftime('%Y%m%d')}_{actual_e.strftime('%Y%m%d')}.xlsx"
 
                 import matplotlib.pyplot as plt
+                apply_pretty_style()
                 fig, ax1 = plt.subplots(figsize=axis_png_extra.get('figsize', (10, 4.8)) if axis_png_extra else (10, 4.8))
                 x_pos = list(range(len(df.index)))
                 x_labels = df['period_end'].tolist()
