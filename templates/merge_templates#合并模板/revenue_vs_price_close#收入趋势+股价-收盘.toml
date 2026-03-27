@@ -9,7 +9,7 @@ x_label = "报告期"
 y_label = "数值"
 
 [[series]]
-expr = "income_trend#收入趋势.toml"
+expr = "income_trend"
 
 [[series]]
-expr = "price_close_trend#股价-收盘.toml"
+expr = "price_close_trend"

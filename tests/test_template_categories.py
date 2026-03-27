@@ -51,7 +51,7 @@ expr = "commodity.黄金.close"
     assert find_template_file(root, "merge_templates#合并模板/revenue_vs_price_close#收入趋势+股价-收盘.toml") is not None
 
 
-def test_merge_template_expr_supports_template_filenames(tmp_path: Path):
+def test_merge_template_expr_supports_same_specs_as_template_option(tmp_path: Path):
     root = tmp_path / "templates"
     (root / "gold_enterprises#黄金企业").mkdir(parents=True)
     (root / "income_trend#收入趋势.toml").write_text('name = "income_trend"\nalias = "收入趋势"\ntype = "bar"\nmode = "trend"\n[[series]]\nexpr = "is.revenue_total"\n', encoding='utf-8')
@@ -59,13 +59,9 @@ def test_merge_template_expr_supports_template_filenames(tmp_path: Path):
     (root / "gold_enterprises#黄金企业" / "gold_price_trend#黄金价格.toml").write_text('name = "gold_price_trend"\nalias = "黄金价格"\ntype = "line"\nmode = "trend"\n[[series]]\nexpr = "commodity.黄金.close"\n', encoding='utf-8')
     p = root / "gold_enterprises#黄金企业" / "revenue_vs_price_close_vs_gold#收入趋势+股价-收盘+黄金价格.toml"
     p.write_text(
-        'name = "revenue_vs_price_close_vs_gold"\nalias = "收入趋势+股价-收盘+黄金价格"\ntype = "combo"\nmode = "merge"\n[[series]]\nexpr = "income_trend#收入趋势.toml"\n[[series]]\nexpr = "price_close_trend#股价-收盘.toml"\n[[series]]\nexpr = "gold_enterprises#黄金企业/gold_price_trend#黄金价格.toml"\n',
+        'name = "revenue_vs_price_close_vs_gold"\nalias = "收入趋势+股价-收盘+黄金价格"\ntype = "combo"\nmode = "merge"\n[[series]]\nexpr = "income_trend"\n[[series]]\nexpr = "price_close_trend"\n[[series]]\nexpr = "gold_price_trend"\n',
         encoding='utf-8',
     )
     tpl = load_template_dir(root)["revenue_vs_price_close_vs_gold"]
     exprs = [x.expr for x in (tpl.series or [])]
-    assert exprs == [
-        "income_trend#收入趋势.toml",
-        "price_close_trend#股价-收盘.toml",
-        "gold_enterprises#黄金企业/gold_price_trend#黄金价格.toml",
-    ]
+    assert exprs == ["income_trend", "price_close_trend", "gold_price_trend"]

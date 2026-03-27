@@ -35,7 +35,8 @@ def apply_pretty_style():
     chosen = [name for name in candidates if name in available]
     if not chosen:
         chosen = ["DejaVu Sans"]
-    mpl.rcParams["font.family"] = ["sans-serif"]
+    primary = chosen[0]
+    mpl.rcParams["font.family"] = [primary, "sans-serif"]
     mpl.rcParams["font.sans-serif"] = chosen + [name for name in candidates if name not in chosen]
     mpl.rcParams["axes.unicode_minus"] = False
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import shlex
 import sys
 import subprocess
 import warnings
@@ -648,6 +649,19 @@ class ExpressionEvaluator:
         if key not in self._global_series_cache:
             path = resolve_global_series_csv(self.opts.data_dir, kind, symbol)
             if path is None or not path.exists():
+                try:
+                    if kind == 'commodity':
+                        name_map = {'gold': '黄金', 'silver': '白银', 'oil': '石油'}
+                        cmd = [sys.executable, '-m', 'finprice_fetcher', 'commodity', '--name', name_map.get(symbol, symbol), '--start', self.opts.start.strftime('%Y-%m-%d'), '--end', min(self.opts.end, date.today()).strftime('%Y-%m-%d'), '--out', str(self.opts.data_dir)]
+                        subprocess.run(cmd, cwd=str(Path(__file__).resolve().parents[1]), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+                    elif kind == 'index':
+                        name_map = {'sh000001': '上证', 'sz399001': '深证', 'sz399006': '创业板', 'bj899050': '北证'}
+                        cmd = [sys.executable, '-m', 'finindex_fetcher', 'fetch', '--index', name_map.get(symbol, symbol), '--start', self.opts.start.strftime('%Y-%m-%d'), '--end', min(self.opts.end, date.today()).strftime('%Y-%m-%d'), '--out', str(self.opts.data_dir)]
+                        subprocess.run(cmd, cwd=str(Path(__file__).resolve().parents[1]), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+                except Exception:
+                    pass
+                path = resolve_global_series_csv(self.opts.data_dir, kind, symbol)
+            if path is None or not path.exists():
                 self._global_series_cache[key] = pd.DataFrame(columns=["date"])
             else:
                 try:
@@ -920,7 +934,14 @@ def run(
     all_templates = load_template_dir(templates)
     selected: dict[str, object] = {}
 
+    def _clean_template_spec(s0: str) -> str:
+        s = str(s0 or '').strip()
+        while len(s) >= 2 and ((s[0], s[-1]) in {('"', '"'), ("'", "'"), ('“', '”'), ('‘', '’')}):
+            s = s[1:-1].strip()
+        return s
+
     def _resolve_tpl_path(s0: str) -> Path:
+        s0 = _clean_template_spec(s0)
         p = Path(s0)
         cands: list[Path] = []
         if p.suffix != ".toml":
@@ -941,6 +962,7 @@ def run(
         raise FileNotFoundError(f"未找到模板文件: {s0}（已尝试: {', '.join(str(x) for x in cands)}）")
 
     def _lookup_template_ref(spec: str):
+        spec = _clean_template_spec(spec)
         key = str(spec or '').strip().lower()
         if not key:
             return None
@@ -955,12 +977,12 @@ def run(
             return load_template_file(pp)
         return None
 
-    def _select_by_categories(specs: list[str]) -> dict[str, object]:
+    def _select_by_categories(specs: list[str], *, strict: bool = True) -> dict[str, object]:
         if not specs:
             return {}
         cats = list_template_categories(templates)
         matched_paths: set[str] = set()
-        wanted = [str(x).strip() for x in specs if str(x).strip()]
+        wanted = [_clean_template_spec(str(x)) for x in specs if _clean_template_spec(str(x))]
         for spec in wanted:
             key = spec.strip().lower()
             found = False
@@ -969,7 +991,7 @@ def run(
                 if key in {str(x).strip().lower() for x in names}:
                     matched_paths.add(str(cat['path']))
                     found = True
-            if not found:
+            if (not found) and strict:
                 raise FileNotFoundError(f"未找到模板分类: {spec}")
         picked: dict[str, object] = {}
         for tpl in all_templates.values():
@@ -986,7 +1008,12 @@ def run(
 
     if template:
         for t in template:
-            p = _resolve_tpl_path(t)
+            t_clean = _clean_template_spec(t)
+            picked_from_cat = _select_by_categories([t_clean], strict=False) if t_clean else {}
+            if picked_from_cat:
+                selected.update(picked_from_cat)
+                continue
+            p = _resolve_tpl_path(t_clean)
             tpl = load_template_file(p, root=templates)
             selected[tpl.name] = tpl
     elif not selected:
@@ -1373,16 +1400,6 @@ def run(
                     rows: list[dict[str, object]] = []
                     used_periods: list[date] = []
                     for pe in periods_out:
-                        xlsx0 = expected_xlsx_path(c.data_dir, c.rs.code6, c.statement_type, pe, name=c.rs.name)
-                        if not xlsx0.exists():
-                            if pad_x:
-                                row0: dict[str, object] = {"period_end": pe.strftime("%Y-%m-%d")}
-                                for b in bars_flat:
-                                    row0[str(b["name"])] = float("nan")
-                                rows.append(row0)
-                                used_periods.append(pe)
-                            continue
-
                         row: dict[str, object] = {"period_end": pe.strftime("%Y-%m-%d")}
                         any_val = False
                         for b in bars_flat:
