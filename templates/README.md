@@ -2,8 +2,9 @@
 
 本目录用于 `finreport_charts run` 的模板文件：**一个模板一个 `.toml` 文件**。
 
-模板文件名统一使用：`{english}#{中文}.toml`。
-例如：`income_trend#收入趋势.toml`。
+模板文件主名统一使用：`{category}-{mode}-{name}.toml`。
+例如：`nonfin-trend-income.toml`。
+中文文件例如：`非金融-趋势-收入趋势.toml`，作为指向英文主文件的别名入口。
 
 ## 1) 模板字段要求（当前规则）
 

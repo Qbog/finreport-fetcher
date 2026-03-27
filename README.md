@@ -282,7 +282,8 @@ python3 -m finreport_charts run \
 ### 模板化（TOML，推荐：单模板单文件）
 
 - 模板目录：`templates/`（仓库根目录）
-- 每个模板一个文件：`templates/{english}#{中文}.toml`
+- 每个模板一个主文件：`templates/{category}-{mode}-{name}.toml`
+- 可提供中文别名文件（如 `非金融-趋势-收入趋势.toml`）指向同一模板
 - 运行时仍支持用英文 `name`、中文 `alias` 或 `names` 里的别名来选模板
 
 运行全部模板：

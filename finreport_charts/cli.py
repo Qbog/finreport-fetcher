@@ -1910,9 +1910,12 @@ def run(
                         if not ref_blocks:
                             raise RuntimeError(f"merge 引用模板缺少 [[series]]: {getattr(ref_tpl, 'name', '<unknown>')}")
                         prefix = str(ref.get('name') or '').strip()
+                        only_one = len(ref_blocks) == 1
                         for blk in ref_blocks:
+                            display = str(blk['name']) if only_one else f"{str(getattr(ref_tpl, 'alias', None) or getattr(ref_tpl, 'name', ''))}/{str(blk['name'])}"
                             item = {
                                 'name': str(blk['name']),
+                                'display': display,
                                 'expr': str(blk['expr']),
                                 'statement': str(blk.get('statement') or _guess_statement_from_expr(str(blk['expr']))),
                                 'color': blk.get('color'),
@@ -1921,19 +1924,28 @@ def run(
                                 'label': str(getattr(ref_tpl, 'alias', None) or getattr(ref_tpl, 'name', '')),
                             }
                             if prefix:
-                                item['name'] = f"{prefix}/{item['name']}"
+                                item['display'] = f"{prefix}/{item['display']}"
                             merge_series.append(item)
                 else:
                     # legacy compatibility: bar_item + line
                     bar_item = getattr(tpl, 'bar_item', None) or 'is.revenue_total'
                     line_expr = getattr(tpl, 'line', None) or 'px.close'
                     merge_series = [
-                        {'name': y_label or 'financial', 'expr': str(bar_item), 'statement': _guess_statement_from_expr(str(bar_item)), 'color': '#4E79A7', 'kind': 'bar'},
-                        {'name': str(line_expr).split('.')[-1], 'expr': str(line_expr), 'statement': _guess_statement_from_expr(str(line_expr)), 'color': '#F28E2B', 'kind': 'line'},
+                        {'name': y_label or 'financial', 'display': y_label or 'financial', 'expr': str(bar_item), 'statement': _guess_statement_from_expr(str(bar_item)), 'color': '#4E79A7', 'kind': 'bar'},
+                        {'name': str(line_expr).split('.')[-1], 'display': str(line_expr).split('.')[-1], 'expr': str(line_expr), 'statement': _guess_statement_from_expr(str(line_expr)), 'color': '#F28E2B', 'kind': 'line'},
                     ]
 
                 if not merge_series:
                     raise RuntimeError(f"merge 模式缺少可用 [[series]]: {k}")
+
+                # de-dup display names
+                seen_display: set[str] = set()
+                for idx, item in enumerate(merge_series):
+                    disp = str(item.get('display') or item.get('name') or f'series_{idx+1}')
+                    if disp in seen_display:
+                        disp = f"{disp}_{idx+1}"
+                    item['display'] = disp
+                    seen_display.add(disp)
 
                 rows = []
                 for pe in periods:
@@ -1941,7 +1953,7 @@ def run(
                     any_val = False
                     for item in merge_series:
                         v = main_eval.eval(str(item['expr']), current_pe=pe, default_statement=str(item.get('statement') or _guess_statement_from_expr(str(item['expr']))))
-                        row[str(item['name'])] = v
+                        row[str(item['display'])] = v
                         if v is not None:
                             any_val = True
                     if any_val or pad_x:
@@ -1953,9 +1965,9 @@ def run(
                     continue
 
                 df = pd.DataFrame(rows).sort_values('period_end')
-                bar_defs = [x for x in merge_series if str(x.get('kind')) == 'bar' and x['name'] in df.columns]
-                line_defs = [x for x in merge_series if str(x.get('kind')) == 'line' and x['name'] in df.columns]
-                value_cols = [x['name'] for x in merge_series if x['name'] in df.columns]
+                bar_defs = [x for x in merge_series if str(x.get('kind')) == 'bar' and x['display'] in df.columns]
+                line_defs = [x for x in merge_series if str(x.get('kind')) == 'line' and x['display'] in df.columns]
+                value_cols = [x['display'] for x in merge_series if x['display'] in df.columns]
                 if not value_cols:
                     continue
                 if (not pad_x):
@@ -1969,7 +1981,7 @@ def run(
 
                 if collect_only and stats_map is not None:
                     stats = stats_map.setdefault(k, AxisStatsCollector())
-                    focus_cols = [x['name'] for x in bar_defs] or [x['name'] for x in line_defs]
+                    focus_cols = [x['display'] for x in merge_series if x['display'] in df.columns]
                     _collect_axis_stats(stats, df, value_cols=focus_cols, point_col='period_end')
                     continue
 
@@ -1980,44 +1992,68 @@ def run(
                 import matplotlib.pyplot as plt
                 from matplotlib.ticker import FuncFormatter
                 apply_pretty_style()
-                fig, ax1 = plt.subplots(figsize=axis_png_extra.get('figsize', (10, 4.8)) if axis_png_extra else (10, 4.8))
+                fig, ax0 = plt.subplots(figsize=axis_png_extra.get('figsize', (12, 5.6)) if axis_png_extra else (12, 5.6))
                 x_pos = list(range(len(df.index)))
                 x_labels = df['period_end'].tolist()
-                bar_us = choose_unit_scale(max([float(pd.to_numeric(df[x['name']], errors='coerce').abs().max()) for x in bar_defs], default=0.0)) if bar_defs else UnitScale(scale=1.0, unit='')
-                line_us = choose_unit_scale(max([float(pd.to_numeric(df[x['name']], errors='coerce').abs().max()) for x in line_defs], default=0.0)) if line_defs else UnitScale(scale=1.0, unit='')
-                if bar_defs:
-                    width = 0.8 / max(len(bar_defs), 1)
-                    start = -width * (len(bar_defs) - 1) / 2
-                    for idx, item in enumerate(bar_defs):
-                        pos = [x + start + idx * width for x in x_pos]
-                        yvals = pd.to_numeric(df[item['name']], errors='coerce').tolist()
-                        cont = ax1.bar(pos, yvals, width=width, label=item['name'], color=item.get('color') or None, alpha=0.82)
+                all_defs = [x for x in merge_series if x['display'] in df.columns]
+                bar_count = max(sum(1 for x in all_defs if x.get('kind') == 'bar'), 1)
+                bar_width = 0.72 / bar_count
+                bar_slot = 0
+                axes = [ax0]
+                handles = []
+                labels = []
+
+                def _series_unit(col_name: str) -> UnitScale:
+                    vmax = float(pd.to_numeric(df[col_name], errors='coerce').abs().max()) if col_name in df.columns else 0.0
+                    return choose_unit_scale(vmax)
+
+                for idx, item in enumerate(all_defs):
+                    col = str(item['display'])
+                    label0 = str(item['display'])
+                    kind0 = str(item.get('kind') or 'line')
+                    yvals = pd.to_numeric(df[col], errors='coerce').tolist()
+                    us = _series_unit(col)
+                    if idx == 0:
+                        ax = ax0
+                        side = 'left'
+                    else:
+                        ax = ax0.twinx()
+                        ax.spines['right'].set_position(('axes', 1.0 + 0.10 * (idx - 1)))
+                        ax.spines['right'].set_visible(True)
+                        ax.patch.set_alpha(0.0)
+                        axes.append(ax)
+                        side = 'right'
+                    color0 = item.get('color') or None
+                    if kind0 == 'bar':
+                        offset = -0.36 + bar_width / 2 + bar_slot * bar_width
+                        pos = [x + offset for x in x_pos]
+                        cont = ax.bar(pos, yvals, width=bar_width, label=label0, color=color0, alpha=0.84)
+                        bar_slot += 1
                         for p in cont.patches:
                             h = p.get_height()
                             if h is None or (isinstance(h, float) and not math.isfinite(h)):
                                 continue
                             x0 = p.get_x() + p.get_width() / 2
-                            txt = fmt_scaled(float(h), bar_us)
-                            ax1.text(x0, h, txt, ha='center', va='bottom' if h >= 0 else 'top', fontsize=8)
-                    ax1.set_ylabel((y_label or '数值') + (f'（{bar_us.unit}）' if bar_us.unit else ''))
-                    ax1.yaxis.set_major_formatter(FuncFormatter(lambda v, _pos: fmt_tick(v, bar_us)))
-                ax2 = ax1.twinx()
-                has_line = False
-                for item in line_defs:
-                    ax2.plot(x_pos, pd.to_numeric(df[item['name']], errors='coerce').tolist(), marker='o', label=item['name'], color=item.get('color') or None)
-                    has_line = True
-                if has_line:
-                    ax2.set_ylabel('折线' + (f'（{line_us.unit}）' if line_us.unit else ''))
-                    ax2.yaxis.set_major_formatter(FuncFormatter(lambda v, _pos: fmt_tick(v, line_us)))
-                ax1.set_xticks(x_pos, x_labels)
-                ax1.tick_params(axis='x', rotation=30)
-                ax1.set_xlabel(x_label or '报告期')
-                ax1.set_title(title)
-                ax1.grid(axis='y', alpha=0.25)
-                h1, l1 = ax1.get_legend_handles_labels()
-                h2, l2 = ax2.get_legend_handles_labels()
-                if h1 or h2:
-                    ax1.legend(h1 + h2, l1 + l2, loc='best')
+                            txt = fmt_scaled(float(h), us)
+                            ax.text(x0, h, txt, ha='center', va='bottom' if h >= 0 else 'top', fontsize=8, color=color0 or None)
+                        hnds, lbs = ax.get_legend_handles_labels()
+                    else:
+                        (line_obj,) = ax.plot(x_pos, yvals, marker='o', label=label0, color=color0, linewidth=2.1)
+                        hnds, lbs = [line_obj], [label0]
+                    ax.set_ylabel(f"{label0}（{us.unit}）" if us.unit else label0, color=color0 or None)
+                    ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _pos, us=us: fmt_tick(v, us)))
+                    ax.tick_params(axis='y', colors=color0 or None)
+                    if side == 'left':
+                        ax.grid(axis='y', alpha=0.25)
+                    handles.extend(hnds)
+                    labels.extend(lbs)
+
+                ax0.set_xticks(x_pos, x_labels)
+                ax0.tick_params(axis='x', rotation=30)
+                ax0.set_xlabel(x_label or '报告期')
+                ax0.set_title(title)
+                if handles:
+                    ax0.legend(handles, labels, loc='best')
                 fig.tight_layout()
                 fig.savefig(out_png, bbox_inches='tight', dpi=160)
                 plt.close(fig)

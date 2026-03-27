@@ -10,9 +10,9 @@ def test_load_template_dir_supports_recursive_categories(tmp_path: Path):
     (root / "merge_templates#合并模板").mkdir(parents=True)
     (root / "gold_enterprises#黄金企业").mkdir(parents=True)
 
-    (root / "merge_templates#合并模板" / "revenue_vs_price_close#收入趋势+股价-收盘.toml").write_text(
+    (root / "merge_templates#合并模板" / "nonfin-merge-revenue_vs_price_close.toml").write_text(
         """
-name = "revenue_vs_price_close"
+name = "nonfin-merge-revenue_vs_price_close"
 alias = "收入趋势+股价-收盘"
 
 type = "combo"
@@ -23,9 +23,9 @@ expr = "income_trend"
 """.strip(),
         encoding="utf-8",
     )
-    (root / "gold_enterprises#黄金企业" / "gold_price_trend#黄金价格.toml").write_text(
+    (root / "gold_enterprises#黄金企业" / "nonfin-trend-gold_price.toml").write_text(
         """
-name = "gold_price_trend"
+name = "nonfin-trend-gold_price"
 alias = "黄金价格"
 
 type = "line"
@@ -39,16 +39,16 @@ expr = "commodity.黄金.close"
     )
 
     loaded = load_template_dir(root)
-    assert set(loaded.keys()) == {"revenue_vs_price_close", "gold_price_trend"}
-    assert loaded["revenue_vs_price_close"].category == "merge_templates"
-    assert loaded["revenue_vs_price_close"].category_alias == "合并模板"
-    assert loaded["gold_price_trend"].category == "gold_enterprises"
-    assert loaded["gold_price_trend"].category_alias == "黄金企业"
+    assert set(loaded.keys()) == {"nonfin-merge-revenue_vs_price_close", "nonfin-trend-gold_price"}
+    assert loaded["nonfin-merge-revenue_vs_price_close"].category == "merge_templates"
+    assert loaded["nonfin-merge-revenue_vs_price_close"].category_alias == "合并模板"
+    assert loaded["nonfin-trend-gold_price"].category == "gold_enterprises"
+    assert loaded["nonfin-trend-gold_price"].category_alias == "黄金企业"
 
     cats = list_template_categories(root)
     assert [x["key"] for x in cats] == ["gold_enterprises", "merge_templates"]
-    assert find_template_file(root, "收入趋势+股价-收盘").name == "revenue_vs_price_close#收入趋势+股价-收盘.toml"
-    assert find_template_file(root, "merge_templates#合并模板/revenue_vs_price_close#收入趋势+股价-收盘.toml") is not None
+    assert find_template_file(root, "收入趋势+股价-收盘").name == "nonfin-merge-revenue_vs_price_close.toml"
+    assert find_template_file(root, "merge_templates#合并模板/nonfin-merge-revenue_vs_price_close.toml") is not None
 
 
 def test_merge_template_expr_supports_same_specs_as_template_option(tmp_path: Path):

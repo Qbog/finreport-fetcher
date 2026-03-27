@@ -4,8 +4,9 @@
 
 推荐：**一个模板一个 TOML 文件**，放在仓库根目录 `templates/`。
 
-模板文件名统一使用：`{english}#{中文}.toml`。
-例如：`net_profit_q#归母净利润.toml`。
+模板文件主名统一使用：`{category}-{mode}-{name}.toml`。
+例如：`nonfin-trend-revenue_total.toml`。
+中文文件例如：`非金融-趋势-营业总收入.toml`，作为指向英文主文件的别名入口。
 
 ---
 
