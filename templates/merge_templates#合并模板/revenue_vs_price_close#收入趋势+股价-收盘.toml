@@ -1,0 +1,15 @@
+name = "revenue_vs_price_close"
+alias = "收入趋势+股价-收盘"
+
+type = "combo"
+mode = "merge"
+
+title = "收入趋势 + 股价-收盘"
+x_label = "报告期"
+y_label = "数值"
+
+[[series]]
+expr = "income_trend"
+
+[[series]]
+expr = "price_close_trend"

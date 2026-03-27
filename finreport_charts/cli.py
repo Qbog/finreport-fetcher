@@ -45,7 +45,7 @@ from .data.finreport_store import (
     read_sheet_provider,
     read_statement_df,
 )
-from .templates.config import find_template_file, load_template_dir, load_template_file, template_lookup_names
+from .templates.config import category_lookup_names, find_template_file, list_template_categories, load_template_dir, load_template_file, template_lookup_names
 from .utils.expr import ExprError, eval_expr, tokenize
 from .utils.files import safe_slug
 from .utils.numfmt import UnitScale, choose_unit_scale, fmt_tick
@@ -782,7 +782,13 @@ def run(
         help="模板文件/模板名（可重复）。支持 '*' 表示运行模板目录下全部模板。",
         show_default=False,
     ),
-    templates: Path = typer.Option(Path("templates"), "--templates", help="模板目录（单模板单文件 *.toml）"),
+    template_category: list[str] = typer.Option(
+        [],
+        "--template-category",
+        help="模板分类文件夹名（可重复，支持 英文/中文/english#中文 形式）。",
+        show_default=False,
+    ),
+    templates: Path = typer.Option(Path("templates"), "--templates", help="模板目录（支持子文件夹分类）"),
     code: str | None = typer.Option(None, "--code"),
     name: str | None = typer.Option(None, "--name"),
     category: str | None = typer.Option(None, "--category", help="公司分类名（见 config/company_categories.toml）"),
@@ -948,16 +954,41 @@ def run(
             return load_template_file(pp)
         return None
 
+    def _select_by_categories(specs: list[str]) -> dict[str, object]:
+        if not specs:
+            return {}
+        cats = list_template_categories(templates)
+        matched_paths: set[str] = set()
+        wanted = [str(x).strip() for x in specs if str(x).strip()]
+        for spec in wanted:
+            key = spec.strip().lower()
+            found = False
+            for cat in cats:
+                names = category_lookup_names(cat.get('key'), cat.get('alias'), cat.get('raw'))
+                if key in {str(x).strip().lower() for x in names}:
+                    matched_paths.add(str(cat['path']))
+                    found = True
+            if not found:
+                raise FileNotFoundError(f"未找到模板分类: {spec}")
+        picked: dict[str, object] = {}
+        for tpl in all_templates.values():
+            if tpl.category_path and tpl.category_path in matched_paths:
+                picked[tpl.name] = tpl
+        return picked
+
     # '*' means all templates
     if template and any(t.strip() == "*" for t in template):
         template = []
 
+    if template_category:
+        selected.update(_select_by_categories(template_category))
+
     if template:
         for t in template:
             p = _resolve_tpl_path(t)
-            tpl = load_template_file(p)
+            tpl = load_template_file(p, root=templates)
             selected[tpl.name] = tpl
-    else:
+    elif not selected:
         selected = dict(all_templates)
 
     if not selected:
@@ -965,8 +996,9 @@ def run(
 
     if list_only:
         log_info("将运行以下模板：")
-        for k in selected.keys():
-            log_info(f"  - {k}")
+        for k, tpl in selected.items():
+            cat_txt = f" [{tpl.category_alias or tpl.category}]" if getattr(tpl, 'category', None) else ""
+            log_info(f"  - {k}{cat_txt}")
         return
 
     # helpers

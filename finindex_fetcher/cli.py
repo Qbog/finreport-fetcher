@@ -86,12 +86,8 @@ def _fetch_index_tx_range(symbol: str, start: dt_date, end: dt_date) -> pd.DataF
     if start > end:
         return pd.DataFrame(columns=["date", "open", "close", "high", "low", "amount"])
 
+    import json
     import requests
-
-    try:
-        import demjson3 as demjson
-    except Exception:  # pragma: no cover
-        import demjson  # type: ignore
 
     url = "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/newfqkline/get"
     frames: list[pd.DataFrame] = []
@@ -105,8 +101,9 @@ def _fetch_index_tx_range(symbol: str, start: dt_date, end: dt_date) -> pd.DataF
         }
         res = requests.get(url, params=params, timeout=(10, 20), headers={"User-Agent": "Mozilla/5.0"})
         res.raise_for_status()
-        text = res.text
-        payload = demjson.decode(text[text.find("={") + 1 :])
+        text = res.text.strip()
+        json_text = text.split("=", 1)[1] if "=" in text else text
+        payload = json.loads(json_text)
         data = payload.get("data", {}).get(symbol, {}) if isinstance(payload, dict) else {}
         rows = data.get("day") or data.get("qfqday") or []
         if rows:

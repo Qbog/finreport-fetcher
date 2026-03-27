@@ -26,8 +26,8 @@ class BarBlock:
 class Template:
     """Chart template.
 
-    推荐：一个模板一个 TOML 文件（templates/*.toml），由 `finreport_charts run` 执行。
-
+    推荐：一个模板一个 TOML 文件（templates/**/*.toml），由 `finreport_charts run` 执行。
+    允许按文件夹分类；文件夹名支持 `english#中文` 形式。
     """
 
     name: str
@@ -59,6 +59,12 @@ class Template:
     bar_item: str | None = None
     transform: str | None = None  # DEPRECATED: legacy transform（run 模式会忽略）
     line: str | None = None
+
+    # Metadata from path
+    category: str | None = None
+    category_alias: str | None = None
+    category_path: str | None = None
+    source_path: str | None = None
 
 
 def _toml_loads():
@@ -116,6 +122,31 @@ def template_filename(name: str, alias: str | None = None) -> str:
     return f"{en}#{zh}.toml" if zh else f"{en}.toml"
 
 
+def split_named_component(name: str) -> tuple[str, str | None]:
+    s = str(name or "").strip()
+    if not s:
+        return "", None
+    if "#" not in s:
+        return s, None
+    left, right = s.split("#", 1)
+    return left.strip(), (right.strip() or None)
+
+
+def category_lookup_names(category: str | None, alias: str | None, raw_name: str | None = None) -> list[str]:
+    vals = [category, alias, raw_name]
+    out: list[str] = []
+    seen: set[str] = set()
+    for s in vals:
+        if not s:
+            continue
+        k = _normalize_lookup_name(s)
+        if not k or k in seen:
+            continue
+        seen.add(k)
+        out.append(str(s))
+    return out
+
+
 def template_lookup_names(tpl: Template) -> list[str]:
     out: list[str] = []
     seen: set[str] = set()
@@ -130,20 +161,38 @@ def template_lookup_names(tpl: Template) -> list[str]:
     return out
 
 
+def _iter_template_files(dir_path: Path) -> list[Path]:
+    return sorted([p for p in dir_path.rglob("*.toml") if p.is_file()])
+
+
+def _template_path_meta(path: Path, root: Path) -> tuple[str | None, str | None, str | None]:
+    try:
+        rel = path.relative_to(root)
+    except Exception:
+        return None, None, None
+    if len(rel.parts) <= 1:
+        return None, None, None
+    cat_raw = rel.parts[-2]
+    cat_key, cat_alias = split_named_component(cat_raw)
+    cat_path = rel.parent.as_posix()
+    return cat_key or None, cat_alias, cat_path
+
+
 def find_template_file(dir_path: Path, spec: str) -> Path | None:
     want = _normalize_lookup_name(spec)
     if not want:
         return None
     want_stem = want[:-5] if want.endswith(".toml") else want
-    for p in sorted(dir_path.glob("*.toml")):
-        tpl = load_template_file(p)
+    for p in _iter_template_files(dir_path):
+        tpl = load_template_file(p, root=dir_path)
         keys = {_normalize_lookup_name(x) for x in template_lookup_names(tpl)}
         file_stem = _normalize_lookup_name(p.stem)
         file_name = _normalize_lookup_name(p.name)
+        rel_name = _normalize_lookup_name(p.relative_to(dir_path).as_posix())
         file_stem_base = file_stem.split("#", 1)[0]
         if want in keys or want_stem in keys:
             return p
-        if want == file_stem or want == file_name or want_stem == file_stem or want_stem == file_stem_base:
+        if want in {file_stem, file_name, rel_name} or want_stem in {file_stem, file_stem_base, rel_name}:
             return p
         if not want.endswith(".toml") and f"{want}.toml" == file_name:
             return p
@@ -208,7 +257,7 @@ def _parse_bar_blocks(data: dict[str, Any]) -> list[BarBlock] | None:
     return None
 
 
-def load_template_file(path: Path) -> Template:
+def load_template_file(path: Path, *, root: Path | None = None) -> Template:
     """Load a single-template TOML file.
 
     支持格式：
@@ -236,6 +285,13 @@ def load_template_file(path: Path) -> Template:
     if not type_:
         raise ValueError(f"template 缺少 type/chart 字段: {path}")
 
+    cat_key, cat_alias, cat_path = _template_path_meta(path, root or path.parent)
+    source_path = None
+    try:
+        source_path = path.relative_to(root).as_posix() if root else path.name
+    except Exception:
+        source_path = path.name
+
     return Template(
         name=name,
         alias=alias,
@@ -254,17 +310,39 @@ def load_template_file(path: Path) -> Template:
         bar_item=_as_str(data.get("bar_item")),
         transform=_as_str(data.get("transform")),
         line=_as_str(data.get("line")),
+        category=cat_key,
+        category_alias=cat_alias,
+        category_path=cat_path,
+        source_path=source_path,
     )
 
 
 def load_template_dir(dir_path: Path) -> dict[str, Template]:
-    """Load all *.toml templates under a directory."""
+    """Load all *.toml templates under a directory recursively."""
 
     if not dir_path.exists() or not dir_path.is_dir():
         raise FileNotFoundError(f"模板目录不存在: {dir_path}")
 
     out: dict[str, Template] = {}
-    for p in sorted(dir_path.glob("*.toml")):
-        tpl = load_template_file(p)
+    for p in _iter_template_files(dir_path):
+        tpl = load_template_file(p, root=dir_path)
+        if tpl.name in out:
+            prev = out[tpl.name]
+            raise ValueError(f"模板 name 重复: {tpl.name} ({prev.source_path} / {tpl.source_path})")
         out[tpl.name] = tpl
+    return out
+
+
+def list_template_categories(dir_path: Path) -> list[dict[str, str]]:
+    if not dir_path.exists() or not dir_path.is_dir():
+        raise FileNotFoundError(f"模板目录不存在: {dir_path}")
+    out: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for p in _iter_template_files(dir_path):
+        cat_key, cat_alias, cat_path = _template_path_meta(p, dir_path)
+        if not cat_key or not cat_path or cat_path in seen:
+            continue
+        seen.add(cat_path)
+        out.append({"key": cat_key, "alias": cat_alias or cat_key, "path": cat_path, "raw": Path(cat_path).name})
+    out.sort(key=lambda x: (x["path"], x["alias"]))
     return out

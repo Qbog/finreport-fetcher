@@ -67,6 +67,7 @@ expr = "price_close_trend"
     payload = ctx.bootstrap_payload()
     assert payload["categories"][0]["key"] == "demo"
     assert [tpl["key"] for tpl in payload["templates"]] == ["income_trend", "price_merge"]
+    assert payload["templateCategories"] == []
     assert payload["companyBasics"][0]["code6"] == "600519"
 
     result = ctx.create_category(

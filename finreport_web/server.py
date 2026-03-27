@@ -23,7 +23,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from finreport_charts.data.finreport_store import expected_xlsx_path, load_price_csv, read_statement_df
-from finreport_charts.templates.config import BarBlock, Template, load_template_dir, template_filename, template_lookup_names
+from finreport_charts.templates.config import BarBlock, Template, list_template_categories, load_template_dir, template_filename, template_lookup_names
 from finreport_charts.utils.expr import ExprError, eval_expr, tokenize
 from finshared.global_datasets import load_company_basics_csv
 from finshared.company_categories import CompanyCategory, CompanyCategoryItem, load_company_categories, resolve_company_category_symbols
@@ -43,6 +43,9 @@ class TemplateView:
     names: list[str]
     mode: str
     type: str
+    category: str | None = None
+    categoryAlias: str | None = None
+    categoryPath: str | None = None
 
 
 @dataclass
@@ -139,7 +142,18 @@ class AppContext:
             if mode not in {"trend", "structure", "peer", "merge"}:
                 continue
             label = str(getattr(tpl, "alias", None) or tpl.name)
-            out.append(TemplateView(key=tpl.name, label=label, names=template_lookup_names(tpl), mode=mode, type=str(tpl.type)))
+            out.append(
+                TemplateView(
+                    key=tpl.name,
+                    label=label,
+                    names=template_lookup_names(tpl),
+                    mode=mode,
+                    type=str(tpl.type),
+                    category=getattr(tpl, 'category', None),
+                    categoryAlias=getattr(tpl, 'category_alias', None),
+                    categoryPath=getattr(tpl, 'category_path', None),
+                )
+            )
         order = {"trend": 0, "structure": 1, "peer": 2, "merge": 3}
         out.sort(key=lambda x: (order.get(x.mode, 99), x.label))
         return out
@@ -151,9 +165,10 @@ class AppContext:
             "companyBasics": self.load_company_basics_payload(),
             "metricSummary": self.load_financial_metrics_summary(),
             "templates": [
-                {"key": t.key, "label": t.label, "names": t.names, "mode": t.mode, "type": t.type}
+                {"key": t.key, "label": t.label, "names": t.names, "mode": t.mode, "type": t.type, "category": t.category, "categoryAlias": t.categoryAlias, "categoryPath": t.categoryPath}
                 for t in self.list_financial_templates()
             ],
+            "templateCategories": list_template_categories(self.templates_dir),
             "rawTasks": self.list_raw_tasks(limit=5),
             "configText": config_text,
             "dataDir": str(self.data_dir),
@@ -329,6 +344,7 @@ class AppContext:
         if not selected:
             return [loaded[v.key] for v in views if v.key in loaded]
         norm_map: dict[str, Template] = {}
+        cat_map: dict[str, list[Template]] = {}
         for tpl in loaded.values():
             if tpl.name not in allowed:
                 continue
@@ -336,15 +352,24 @@ class AppContext:
                 norm_map[nm.strip().lower()] = tpl
             norm_map[tpl.name.strip().lower()] = tpl
             norm_map[str(getattr(tpl, "alias", None) or tpl.name).strip().lower()] = tpl
+            for ck in category_lookup_names(getattr(tpl, 'category', None), getattr(tpl, 'category_alias', None), Path(str(getattr(tpl, 'category_path', '') or '')).name or None):
+                cat_map.setdefault(ck.strip().lower(), []).append(tpl)
         out: list[Template] = []
         seen: set[str] = set()
         for raw in selected:
             key = str(raw or "").strip().lower()
             if not key:
                 continue
+            if key in cat_map:
+                for tpl in cat_map[key]:
+                    if tpl.name in seen:
+                        continue
+                    seen.add(tpl.name)
+                    out.append(tpl)
+                continue
             tpl = norm_map.get(key)
             if not tpl:
-                raise ValueError(f"未找到模板：{raw}")
+                raise ValueError(f"未找到模板或模板分类：{raw}")
             if tpl.name in seen:
                 continue
             seen.add(tpl.name)

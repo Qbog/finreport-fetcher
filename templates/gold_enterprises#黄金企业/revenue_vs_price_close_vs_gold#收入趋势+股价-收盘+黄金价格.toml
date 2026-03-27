@@ -1,0 +1,18 @@
+name = "revenue_vs_price_close_vs_gold"
+alias = "收入趋势+股价-收盘+黄金价格"
+
+type = "combo"
+mode = "merge"
+
+title = "收入趋势 + 股价-收盘 + 黄金价格"
+x_label = "报告期"
+y_label = "数值"
+
+[[series]]
+expr = "income_trend"
+
+[[series]]
+expr = "price_close_trend"
+
+[[series]]
+expr = "gold_price_trend"

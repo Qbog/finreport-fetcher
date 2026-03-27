@@ -1,0 +1,13 @@
+name = "gold_price_trend"
+alias = "黄金价格"
+
+type = "line"
+mode = "trend"
+
+title = "黄金价格"
+x_label = "报告期"
+y_label = "价格"
+
+[[series]]
+name = "黄金价格"
+expr = "commodity.黄金.close"
