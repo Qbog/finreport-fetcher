@@ -2023,7 +2023,7 @@ def run(
                         ax.patch.set_alpha(0.0)
                         axes.append(ax)
                         side = 'right'
-                    color0 = item.get('color') or None
+                    color0 = item.get('color') or f"C{idx % 10}"
                     if kind0 == 'bar':
                         offset = -0.36 + bar_width / 2 + bar_slot * bar_width
                         pos = [x + offset for x in x_pos]
