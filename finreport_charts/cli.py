@@ -1043,6 +1043,21 @@ def run(
             if not collect_only:
                 log_info(f"\n[bold]运行模板[/bold]: {k} → {fname_base}")
 
+            def _flatten_template_series(blocks, *, prefix: str | None = None):
+                out = []
+                for b in blocks or []:
+                    b_name = str(getattr(b, 'name', None) or '').strip() or 'value'
+                    b_expr = getattr(b, 'expr', None)
+                    b_stmt = getattr(b, 'statement', None)
+                    b_color = getattr(b, 'color', None)
+                    name_full = f"{prefix}/{b_name}" if prefix else b_name
+                    if b_expr:
+                        out.append({"name": name_full, "expr": str(b_expr).strip(), "statement": b_stmt, "color": b_color})
+                    kids = getattr(b, 'children', None)
+                    if kids:
+                        out.extend(_flatten_template_series(kids, prefix=name_full))
+                return out
+
             # ---- bar / line ----
             if t_type in {"bar", "line"}:
                 mode = (getattr(tpl, "mode", None) or "trend").strip().lower().replace("compare", "structure")
@@ -1860,7 +1875,7 @@ def run(
                     continue
 
                 merge_series = []
-                tpl_series = _flatten_bar_blocks(getattr(tpl, 'series', None))
+                tpl_series = _flatten_template_series(getattr(tpl, 'series', None))
                 if tpl_series:
                     for ref in tpl_series:
                         ref_spec = str(ref['expr']).strip()
@@ -1873,11 +1888,21 @@ def run(
                         ref_mode = str(getattr(ref_tpl, 'mode', '') or '').strip().lower().replace('compare', 'structure')
                         if ref_type not in {'bar', 'line'} or ref_mode not in {'trend', 'price'}:
                             raise RuntimeError(f"merge 仅支持引用 trend/price 的 bar/line 模板: {ref_spec}")
-                        resolved = _resolve_merge_refs(ref_tpl)
+                        ref_blocks = _flatten_template_series(getattr(ref_tpl, 'series', None))
+                        if not ref_blocks:
+                            raise RuntimeError(f"merge 引用模板缺少 [[series]]: {getattr(ref_tpl, 'name', '<unknown>')}")
                         prefix = str(ref.get('name') or '').strip()
-                        for item in resolved:
+                        for blk in ref_blocks:
+                            item = {
+                                'name': str(blk['name']),
+                                'expr': str(blk['expr']),
+                                'statement': str(blk.get('statement') or _guess_statement_from_expr(str(blk['expr']))),
+                                'color': blk.get('color'),
+                                'kind': ref_type,
+                                'template': str(getattr(ref_tpl, 'name', '')),
+                                'label': str(getattr(ref_tpl, 'alias', None) or getattr(ref_tpl, 'name', '')),
+                            }
                             if prefix:
-                                item = dict(item)
                                 item['name'] = f"{prefix}/{item['name']}"
                             merge_series.append(item)
                 else:
