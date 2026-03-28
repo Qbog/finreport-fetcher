@@ -54,8 +54,10 @@ def render_lines_png(
             pass
     us = unit_scale or choose_unit_scale(max_abs)
 
-    fig_size = figsize or (max(7, min(22, 0.75 * n + 4)), 5.5)
+    fig_size = figsize or (max(9.5, min(24, 0.88 * n + 5.0)), 6.2)
     fig, ax = plt.subplots(figsize=fig_size)
+    ax.set_axisbelow(True)
+    ax.grid(axis="y")
 
     palette = [
         "#4E79A7",
@@ -77,11 +79,11 @@ def render_lines_png(
             y,
             color=palette[j % len(palette)],
             marker=None,
-            linewidth=2,
+            linewidth=1.8,
             label=label or col,
         )
 
-    ax.set_title(title)
+    ax.set_title(title, pad=14)
     ax.set_xlabel(x_label or "时间")
     ax.set_ylabel(y_label)
 
@@ -103,11 +105,12 @@ def render_lines_png(
                 continue
     else:
         # category x axis: rotate slightly but avoid printing every label manually
-        ax.tick_params(axis="x", rotation=30)
+        ax.tick_params(axis="x", rotation=28)
     ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _pos: fmt_tick(v, us)))
     if y_range and len(y_range) == 2:
         ax.set_ylim(y_range[0], y_range[1])
 
+    ax.margins(x=0.01)
     if k > 1:
         ax.legend(loc="best")
 

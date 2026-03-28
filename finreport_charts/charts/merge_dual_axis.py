@@ -14,7 +14,7 @@ def render_merge_png(
     *,
     df_line: pd.DataFrame,
     x_col: str,
-    line_col: str,
+    line_col: str | None = None,
     df_bar: pd.DataFrame | None,
     bar_x_col: str,
     bar_col: str,
@@ -23,6 +23,7 @@ def render_merge_png(
     x_label: str = "",
     bar_label: str = "",
     line_label: str = "",
+    line_series: list[tuple[str, str, str | None]] | None = None,
     bar_color: str = "#4E79A7",
     line_color: str = "#F28E2B",
     month_interval: int = 1,
@@ -50,7 +51,12 @@ def render_merge_png(
         raise RuntimeError("df_line 为空，无法绘制")
 
     x_line = pd.to_datetime(df_line[x_col], errors="coerce").to_numpy()
-    y_line = pd.to_numeric(df_line[line_col], errors="coerce").to_numpy()
+
+    line_defs = list(line_series or [])
+    if not line_defs and line_col:
+        line_defs = [(line_col, line_label or line_col, line_color)]
+    if not line_defs:
+        raise RuntimeError("merge 图缺少可用折线 series")
 
     # bar unit scale (left axis)
     us = unit_scale
@@ -96,11 +102,45 @@ def render_merge_png(
     if us is not None:
         ax1.yaxis.set_major_formatter(FuncFormatter(lambda v, _pos: fmt_tick(v, us)))
 
-    # line on right axis
-    ax2 = ax1.twinx()
-    ax2.plot(x_line, y_line, color=line_color, linewidth=1.55, label=line_label or line_col, zorder=3)
-    ax2.set_ylabel(line_label or line_col, color=line_color)
-    ax2.tick_params(axis="y", colors=line_color)
+    # line axes on right side (support multi-line / multi-axis)
+    line_palette = [
+        "#F59E0B",
+        "#22C55E",
+        "#38BDF8",
+        "#A78BFA",
+        "#F472B6",
+        "#FB7185",
+    ]
+    extra_right = max(len(line_defs) - 1, 0)
+    ax2 = None
+    line_handles = []
+    line_labels = []
+    for idx, (col_name, label_name, color_name) in enumerate(line_defs):
+        if col_name not in df_line.columns:
+            continue
+        axis = ax1.twinx()
+        if idx > 0:
+            axis.spines["right"].set_position(("axes", 1.0 + 0.10 * idx))
+            axis.spines["right"].set_visible(True)
+            axis.patch.set_alpha(0.0)
+        color0 = color_name or line_palette[idx % len(line_palette)]
+        y_line = pd.to_numeric(df_line[col_name], errors="coerce").to_numpy()
+        line_us = None
+        try:
+            vmax = float(pd.to_numeric(df_line[col_name], errors="coerce").abs().max())
+            if math.isfinite(vmax):
+                line_us = choose_unit_scale(vmax)
+        except Exception:
+            line_us = None
+        (handle,) = axis.plot(x_line, y_line, color=color0, linewidth=1.55, marker=None, label=label_name or col_name, zorder=3 + idx)
+        axis.set_ylabel(f"{label_name}（{line_us.unit}）" if line_us and line_us.unit else (label_name or col_name), color=color0)
+        axis.tick_params(axis="y", colors=color0)
+        if line_us is not None:
+            axis.yaxis.set_major_formatter(FuncFormatter(lambda v, _pos, us=line_us: fmt_tick(v, us)))
+        line_handles.append(handle)
+        line_labels.append(label_name or col_name)
+        if ax2 is None:
+            ax2 = axis
 
     # x axis ticks
     if xtick_dates:
@@ -150,11 +190,11 @@ def render_merge_png(
 
     # merged legend
     h1, l1 = ax1.get_legend_handles_labels()
-    h2, l2 = ax2.get_legend_handles_labels()
-    if h1 or h2:
-        ax1.legend(h1 + h2, l1 + l2, loc="upper left")
+    if h1 or line_handles:
+        ax1.legend(h1 + line_handles, l1 + line_labels, loc="upper left")
 
-    fig.tight_layout()
+    right_margin = max(0.62, 0.92 - 0.08 * extra_right)
+    fig.subplots_adjust(left=0.06, right=right_margin, bottom=0.14, top=0.90)
     out_png.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_png, dpi=220)
     plt.close(fig)

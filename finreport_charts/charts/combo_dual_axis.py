@@ -42,12 +42,14 @@ def render_combo_png(
         max_abs = 0.0
     us = unit_scale or choose_unit_scale(max_abs)
 
-    fig_size = figsize or (max(7, min(22, 0.75 * len(x) + 4)), 5.5)
+    fig_size = figsize or (max(8.8, min(24, 0.88 * len(x) + 4.8)), 6.4)
     fig, ax1 = plt.subplots(figsize=fig_size)
-    cont = ax1.bar(x, y1, color="#4E79A7", alpha=0.9, label=bar_label or bar_col)
+    ax1.set_axisbelow(True)
+    ax1.grid(axis="y")
+    cont = ax1.bar(x, y1, color="#4E79A7", alpha=0.9, edgecolor="#E5EDF6", linewidth=0.9, label=bar_label or bar_col)
     ax1.set_xlabel(x_label or "时间")
     ax1.set_ylabel(bar_label or bar_col)
-    ax1.tick_params(axis="x", rotation=45)
+    ax1.tick_params(axis="x", rotation=32)
 
     from matplotlib.ticker import FuncFormatter
 
@@ -70,15 +72,16 @@ def render_combo_png(
         x0 = p.get_x() + p.get_width() / 2
         txt = fmt_scaled(float(h), us)
         if h >= 0:
-            ax1.text(x0, h, txt, ha="center", va="bottom", fontsize=9, color="#EAEAEA")
+            ax1.text(x0, h, txt, ha="center", va="bottom", fontsize=9, color="#DCE6F2", fontweight="semibold")
         else:
-            ax1.text(x0, h, txt, ha="center", va="top", fontsize=9, color="#EAEAEA")
+            ax1.text(x0, h, txt, ha="center", va="top", fontsize=9, color="#DCE6F2", fontweight="semibold")
 
     ax2 = ax1.twinx()
-    ax2.plot(x, y2, color="#FF7F0E", marker="o", linewidth=2, label=line_label or line_col)
+    ax2.plot(x, y2, color="#FF7F0E", marker=None, linewidth=1.8, label=line_label or line_col)
     ax2.set_ylabel(line_label or line_col)
 
-    ax1.set_title(title)
+    ax1.set_title(title, pad=14)
+    ax1.margins(x=0.02)
 
     # 合并图例
     h1, l1 = ax1.get_legend_handles_labels()

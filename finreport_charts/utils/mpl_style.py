@@ -40,27 +40,38 @@ def apply_pretty_style():
     mpl.rcParams["font.sans-serif"] = chosen + [name for name in candidates if name not in chosen]
     mpl.rcParams["axes.unicode_minus"] = False
 
-    bg = "#0B1220"  # 深色背景
-    fg = "#E6EDF3"  # 亮色文字
-    grid = "#2B3445"
+    bg = "#0F172A"
+    fg = "#E5EDF6"
+    grid = "#334155"
+    spine = "#94A3B8"
 
     mpl.rcParams.update(
         {
-            "figure.figsize": (12, 6),
+            "figure.figsize": (12.8, 6.8),
             "figure.facecolor": bg,
             "savefig.facecolor": bg,
             "axes.facecolor": bg,
-            "axes.edgecolor": fg,
+            "axes.edgecolor": spine,
             "axes.labelcolor": fg,
             "axes.titlesize": 16,
+            "axes.titleweight": "bold",
+            "axes.titlepad": 12,
             "axes.labelsize": 12,
+            "axes.grid": False,
             "text.color": fg,
             "xtick.color": fg,
             "ytick.color": fg,
             "xtick.labelsize": 10,
             "ytick.labelsize": 10,
             "grid.color": grid,
-            "grid.alpha": 0.35,
+            "grid.alpha": 0.22,
+            "grid.linestyle": "--",
+            "grid.linewidth": 0.8,
             "legend.fontsize": 10,
+            "legend.facecolor": bg,
+            "legend.edgecolor": grid,
+            "legend.framealpha": 0.92,
+            "lines.solid_capstyle": "round",
+            "patch.linewidth": 0.8,
         }
     )

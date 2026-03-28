@@ -82,8 +82,10 @@ def render_bars_png(
             pass
     us = unit_scale or choose_unit_scale(max_abs)
 
-    fig_size = figsize or (max(7, min(22, 0.75 * n + 4)), 5.5)
+    fig_size = figsize or (max(8.5, min(24, 0.88 * n + 4.8)), 6.4)
     fig, ax = plt.subplots(figsize=fig_size)
+    ax.set_axisbelow(True)
+    ax.grid(axis="y")
 
     palette = [
         "#4E79A7",
@@ -126,7 +128,9 @@ def render_bars_png(
                 width=width,
                 label=label,
                 color=colors,
-                alpha=0.92,
+                alpha=0.9,
+                edgecolor="#E5EDF6",
+                linewidth=0.9,
             )
         else:
             c0 = None
@@ -138,15 +142,17 @@ def render_bars_png(
                 width=width,
                 label=label,
                 color=c0 or palette[j % len(palette)],
-                alpha=0.92,
+                alpha=0.9,
+                edgecolor="#E5EDF6",
+                linewidth=0.9,
             )
         containers.append(cont)
 
-    ax.set_title(title)
+    ax.set_title(title, pad=14)
     ax.set_xlabel(x_label or "时间")
     ax.set_ylabel(y_label)
     ax.set_xticks(idx)
-    ax.set_xticklabels(x, rotation=45, ha="right")
+    ax.set_xticklabels(x, rotation=32, ha="right")
 
     # y-axis ticks with unit
     ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _pos: fmt_tick(v, us)))
@@ -179,10 +185,11 @@ def render_bars_png(
             x0 = p.get_x() + p.get_width() / 2
             txt = fmt_scaled(float(h), us)
             if h >= 0:
-                ax.text(x0, h, txt, ha="center", va="bottom", fontsize=9, color="#EAEAEA")
+                ax.text(x0, h, txt, ha="center", va="bottom", fontsize=9, color="#DCE6F2", fontweight="semibold")
             else:
-                ax.text(x0, h, txt, ha="center", va="top", fontsize=9, color="#EAEAEA")
+                ax.text(x0, h, txt, ha="center", va="top", fontsize=9, color="#DCE6F2", fontweight="semibold")
 
+    ax.margins(x=0.02)
     if k > 1:
         ax.legend(loc="best")
 
