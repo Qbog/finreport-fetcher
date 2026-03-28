@@ -1,0 +1,18 @@
+# 非金融 / 趋势分析 / PE 趋势（亏损断线版）
+# 当 EPS_TTM <= 0 时，PE 直接截断为 0；可用于后续渲染时视作无意义区间。
+
+name = "nonfin-trend-pe_positive_only"
+alias = "PE趋势-亏损断线"
+
+names = ["pe_positive_only", "pe_positive_only#PE趋势-亏损断线", "nonfin-trend-pe_positive_only"]
+type = "line"
+mode = "price"
+
+title = "PE趋势（亏损断线）"
+x_label = "日期"
+y_label = "PE"
+
+[[series]]
+name = "PE"
+unit = "倍"
+expr = "px.close / max((is.eps_basic + is.eps_basic.prev_year.q4 - is.eps_basic.prev_year), 0.000001)"

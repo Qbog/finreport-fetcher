@@ -19,4 +19,5 @@ y_label = "价格"
 
 [[series]]
 name = "收盘价"
+unit = "元"
 expr = "px.close"

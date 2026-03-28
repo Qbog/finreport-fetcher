@@ -27,8 +27,15 @@ y_label = "金额"
 
 [[series]]
 name = "归母净利润"
+unit = "元"
 expr = "is.net_profit_parent - is.net_profit_parent.prev_in_year"
 ```
+
+其中 `unit` 为可选字段，用于声明该序列的显示单位。常见示例：
+- 股价：`unit = "元"`
+- 黄金价格：`unit = "美元"`
+- 上证指数：`unit = "点"`
+- PE / EV/EBITDA：`unit = "倍"`
 
 - **强烈建议** `expr` 使用 Excel 中的 `key`（如 `is.net_profit_parent`），不要写中文科目名。
 - 模板支持多名字查找：
@@ -60,6 +67,12 @@ expr = "is.net_profit_parent - is.net_profit_parent.prev_in_year"
 - 财报指标：`metrics.roe` / `metrics.roa` / `metrics.roic` / `metrics.ev` / `metrics.ebitda`
 - 指数：`idx.sh000001.close` / `idx.sz399001.close` / `idx.sz399006.close` / `idx.bj899050.close` / `index.上证.close`
 - 商品：`com.gold.close` / `com.silver.close` / `com.oil.close` / `commodity.黄金.close`
+
+表达式函数当前支持：
+- `abs(x)`：绝对值
+- `max(a, b)`：取较大值
+- `min(a, b)`：取较小值
+- `clip_pos(x)`：小于等于 0 时裁成 0
 
 外部序列默认取“当前日期 / 当前报告期末及之前最近一个可用值”。
 

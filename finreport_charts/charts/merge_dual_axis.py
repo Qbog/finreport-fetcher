@@ -23,7 +23,7 @@ def render_merge_png(
     x_label: str = "",
     bar_label: str = "",
     line_label: str = "",
-    line_series: list[tuple[str, str, str | None]] | None = None,
+    line_series: list[tuple[str, str, str | None, str | None]] | None = None,
     bar_color: str = "#4E79A7",
     line_color: str = "#F28E2B",
     month_interval: int = 1,
@@ -54,7 +54,7 @@ def render_merge_png(
 
     line_defs = list(line_series or [])
     if not line_defs and line_col:
-        line_defs = [(line_col, line_label or line_col, line_color)]
+        line_defs = [(line_col, line_label or line_col, line_color, None)]
     if not line_defs:
         raise RuntimeError("merge 图缺少可用折线 series")
 
@@ -116,7 +116,7 @@ def render_merge_png(
     ax2 = None
     line_handles = []
     line_labels = []
-    for idx, (col_name, label_name, color_name) in enumerate(line_defs):
+    for idx, (col_name, label_name, color_name, unit_name) in enumerate(line_defs):
         if col_name not in df_line.columns:
             continue
         axis = ax1.twinx()
@@ -136,7 +136,17 @@ def render_merge_png(
         line_width = 1.85 if idx == 0 else 1.35
         line_alpha = 0.98 if idx == 0 else 0.90
         (handle,) = axis.plot(x_line, y_line, color=color0, linewidth=line_width, alpha=line_alpha, marker=None, label=label_name or col_name, zorder=3 + idx)
-        axis.set_ylabel(label_name or col_name, color=color0)
+        try:
+            valid_idx = [i for i, vv in enumerate(y_line) if vv is not None and math.isfinite(float(vv))]
+            if valid_idx:
+                li = valid_idx[-1]
+                axis.text(x_line[li], y_line[li], f" {float(y_line[li]):.2f}", color=color0, fontsize=9, va="center", ha="left")
+        except Exception:
+            pass
+        axis_label = label_name or col_name
+        if unit_name:
+            axis_label = f"{axis_label}（{unit_name}）"
+        axis.set_ylabel(axis_label, color=color0)
         axis.tick_params(axis="y", colors=color0)
         axis.spines["right"].set_edgecolor(color0)
         if line_us is not None:

@@ -1180,7 +1180,10 @@ def run(
         return [pe for pe in periods if pe.strftime('%m%d') in pe_filter]
 
     # 1) load templates
-    all_templates = load_template_dir(templates)
+    try:
+        all_templates = load_template_dir(templates)
+    except Exception as ex:
+        raise RuntimeError(f"模板预校验失败：{templates} ({ex})") from ex
     selected: dict[str, object] = {}
 
     def _clean_template_spec(s0: str) -> str:
@@ -1381,6 +1384,7 @@ def run(
                             'expr': str(blk['expr']),
                             'statement': str(blk.get('statement') or _guess_statement_from_expr(str(blk['expr']))),
                             'color': blk.get('color'),
+                            'unit': blk.get('unit'),
                             'kind': str(getattr(ref_tpl, 'type', 'line')).strip().lower(),
                             'template': str(getattr(ref_tpl, 'name', '')),
                             'label': str(getattr(ref_tpl, 'alias', None) or getattr(ref_tpl, 'name', '')),
@@ -1602,6 +1606,9 @@ def run(
                     # quarter-end markers (approx financial release markers)
                     q_marks = [d.strftime("%Y-%m-%d") for d in quarter_ends_between(c.start, check_end)]
 
+                    axis_unit = None
+                    if len(bars_flat) == 1:
+                        axis_unit = bars_flat[0].get('unit')
                     render_png(
                         df_out,
                         title=title,
@@ -1612,6 +1619,8 @@ def run(
                         y_label=y_label,
                         mark_dates=q_marks,
                         max_xticks=8,
+                        axis_unit=axis_unit,
+                        end_labels=True,
                         **axis_png_extra,
                     )
                     write_xlsx(
@@ -2181,6 +2190,7 @@ def run(
                                     'expr': str(blk['expr']),
                                     'statement': str(blk.get('statement') or _guess_statement_from_expr(str(blk['expr']))),
                                     'color': blk.get('color'),
+                                    'unit': blk.get('unit'),
                                     'kind': ref_type,
                                     'mode': ref_mode,
                                     'frequency': getattr(ref_tpl, 'frequency', None),
@@ -2201,6 +2211,7 @@ def run(
                             'expr': expr0,
                             'statement': str(ref.get('statement') or _guess_statement_from_expr(expr0)),
                             'color': ref.get('color'),
+                            'unit': ref.get('unit'),
                             'kind': 'line',
                             'mode': 'price',
                             'frequency': str(ref.get('frequency') or 'daily'),
@@ -2297,7 +2308,7 @@ def run(
                         return f"{pe.year}Q{q}"
 
                     line_render_defs = [
-                        (str(item['display']), str(item['display']), str(item.get('color') or ''))
+                        (str(item['display']), str(item['display']), str(item.get('color') or ''), str(item.get('unit') or ''))
                         for item in active_line_items
                         if str(item['display']) in df_line.columns
                     ]

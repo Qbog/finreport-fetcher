@@ -24,4 +24,5 @@ expr = "nonfin-trend-gold_price"
 
 [[series]]
 name = "上证指数"
+unit = "点"
 expr = "idx.sh000001.close"

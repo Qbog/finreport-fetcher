@@ -18,4 +18,5 @@ y_label = "PE"
 
 [[series]]
 name = "PE"
+unit = "倍"
 expr = "abs(px.close / (is.eps_basic + is.eps_basic.prev_year.q4 - is.eps_basic.prev_year))"

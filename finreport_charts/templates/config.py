@@ -18,6 +18,7 @@ class BarBlock:
     expr: str | None = None
     statement: str | None = None
     color: str | None = None  # e.g. "#4E79A7"
+    unit: str | None = None
     children: list["BarBlock"] | None = None
     transform: str | None = None  # DEPRECATED: legacy ttm|ytd|q|raw（run 模式会忽略）
 
@@ -217,6 +218,7 @@ def _parse_bar_blocks(data: dict[str, Any]) -> list[BarBlock] | None:
         expr = _as_str(b.get("expr") or b.get("item"))
         statement = _as_str(b.get("statement")) or parent_statement
         color = _as_str(b.get("color") or b.get("颜色")) or parent_color
+        unit = _as_str(b.get("unit") or b.get("单位"))
         transform = _as_str(b.get("transform"))
 
         # children (nested)
@@ -234,7 +236,7 @@ def _parse_bar_blocks(data: dict[str, Any]) -> list[BarBlock] | None:
 
         # group node
         if not expr and children:
-            return BarBlock(name=name or "group", expr=None, statement=statement, color=color, children=children, transform=transform)
+            return BarBlock(name=name or "group", expr=None, statement=statement, color=color, unit=unit, children=children, transform=transform)
 
         # leaf node
         if not expr:
@@ -245,6 +247,7 @@ def _parse_bar_blocks(data: dict[str, Any]) -> list[BarBlock] | None:
             expr=expr,
             statement=statement,
             color=color,
+            unit=unit,
             children=children,
             transform=transform,
         )

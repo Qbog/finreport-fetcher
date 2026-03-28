@@ -1,0 +1,18 @@
+# 非金融 / 趋势分析 / EV/EBITDA 趋势
+# 当前使用已存在指标：EV 与按公式计算的 EBITDA。
+
+name = "nonfin-trend-ev_ebitda"
+alias = "EV/EBITDA趋势"
+
+names = ["ev_ebitda_trend", "ev_ebitda_trend#EV/EBITDA趋势", "nonfin-trend-ev_ebitda"]
+type = "bar"
+mode = "trend"
+
+title = "EV/EBITDA趋势"
+x_label = "报告期"
+y_label = "倍数"
+
+[[series]]
+name = "EV/EBITDA"
+unit = "倍"
+expr = "metrics.ev / ((is.total_profit + is.interest_expense + is.income_tax) + (cf.depreciation + cf.amortization_intangibles + cf.amortization_long_term_deferred_expenses))"

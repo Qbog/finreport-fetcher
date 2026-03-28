@@ -23,6 +23,8 @@ def render_lines_png(
     figsize: tuple[float, float] | None = None,
     mark_dates: list[str] | None = None,
     max_xticks: int = 12,
+    axis_unit: str | None = None,
+    end_labels: bool = False,
 ):
     """Multi-series line chart.
 
@@ -74,18 +76,29 @@ def render_lines_png(
 
     for j, (col, label) in enumerate(series):
         y = pd.to_numeric(df[col], errors="coerce").tolist()
+        color0 = palette[j % len(palette)]
         ax.plot(
             x,
             y,
-            color=palette[j % len(palette)],
+            color=color0,
             marker=None,
-            linewidth=1.8,
+            linewidth=1.8 if j == 0 else 1.4,
+            alpha=0.98 if j == 0 else 0.90,
             label=label or col,
         )
+        if end_labels:
+            try:
+                last_idx = next(i for i in range(len(y) - 1, -1, -1) if pd.notna(y[i]))
+                ax.text(x[last_idx], y[last_idx], f" {y[last_idx]:.2f}", color=color0, fontsize=9, va="center", ha="left")
+            except Exception:
+                pass
 
     ax.set_title(title, pad=14)
     ax.set_xlabel(x_label or "时间")
-    ax.set_ylabel(y_label)
+    y_label0 = y_label or ""
+    if axis_unit:
+        y_label0 = f"{y_label0}（{axis_unit}）" if y_label0 else axis_unit
+    ax.set_ylabel(y_label0)
 
     if use_dt:
         locator = mdates.AutoDateLocator(minticks=6, maxticks=max(6, int(max_xticks or 12)))

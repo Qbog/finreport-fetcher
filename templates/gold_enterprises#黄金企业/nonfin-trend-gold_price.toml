@@ -11,4 +11,5 @@ y_label = "价格"
 
 [[series]]
 name = "黄金价格"
+unit = "美元"
 expr = "commodity.黄金.close"
