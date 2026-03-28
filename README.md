@@ -22,6 +22,7 @@
 - Price 折线图（mode=price）：[`docs/price_line.md`](docs/price_line.md)
 - 图表合并（merge，多轴 / 多折线也支持）：[`docs/merge.md`](docs/merge.md)
 - 回归测试：[`docs/TESTING.md`](docs/TESTING.md)
+- 安装与短命令：[`docs/INSTALL.md`](docs/INSTALL.md)
 - 股价抓取：见下文 `finprice`（输出 `output/{公司名}_{code6}/price/{code6}.csv` + 同名 `.xlsx` 供 combo 图使用/人工查看）
 
 ---
@@ -36,9 +37,10 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -U pip setuptools wheel
 
-# 安装为 editable（会提供 finfetch / fincompany / finmetrics / finchart / finprice / finindex / finweb 命令；
+# 安装为 editable（会提供 finfetch / fincompany / finmetrics / finchart / finprice / finindex / finmerge / finweb 命令；
 # 也支持 python -m finreport_fetcher / python -m fincompany_fetcher /
-# python -m finmetrics_fetcher / python -m finreport_web / python -m finprice_fetcher / python -m finindex_fetcher）
+# python -m finmetrics_fetcher / python -m finreport_web / python -m finprice_fetcher /
+# python -m finindex_fetcher / python -m finchart_merge）
 pip install -e .
 
 # 如需 tushare（可选）：

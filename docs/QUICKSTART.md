@@ -21,6 +21,20 @@ export TUSHARE_TOKEN="xxxx"
 
 ## 2) 抓取财报（先有 Excel 才能做一切）
 
+推荐短命令：
+
+```bash
+finfetch -l warning fetch \
+  --code 002594 \
+  --start 2020-01-01 --end 2025-12-31 \
+  --provider auto \
+  --statement-type merged \
+  --out output \
+  --no-clean
+```
+
+等价长命令：
+
 ```bash
 python3 -m finreport_fetcher -l warning fetch \
   --code 002594 \
@@ -36,6 +50,19 @@ python3 -m finreport_fetcher -l warning fetch \
 ---
 
 ## 3) （可选）抓取股价（combo 双轴图需要）
+
+推荐短命令：
+
+```bash
+finprice -l info fetch \
+  --code 002594 \
+  --start 2024-01-01 --end 2024-12-31 \
+  --provider auto \
+  --frequency daily \
+  --out output
+```
+
+等价长命令：
 
 ```bash
 python3 -m finprice_fetcher -l info fetch \
@@ -54,6 +81,19 @@ python3 -m finprice_fetcher -l info fetch \
 ---
 
 ## 4) 跑模板出图（PNG + Excel 图表）
+
+推荐短命令：
+
+```bash
+finchart -l info run \
+  --code 002594 \
+  --start 2020-01-01 --end 2025-12-31 \
+  --data-dir output \
+  --templates templates \
+  --template balance_sheet_analysis
+```
+
+等价长命令：
 
 ```bash
 python3 -m finreport_charts -l info run \

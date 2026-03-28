@@ -17,11 +17,14 @@ python3 -m pip install -U pip
 python3 -m pip install -e .
 ```
 
-安装后可使用三类入口（也可 `python3 -m ...` 运行）：
+安装后可使用短命令（也可 `python3 -m ...` 运行）：
 
 - `finfetch` / `python3 -m finreport_fetcher`
 - `finchart` / `python3 -m finreport_charts`
 - `finprice` / `python3 -m finprice_fetcher`
+- `finindex` / `python3 -m finindex_fetcher`
+- `finmerge` / `python3 -m finchart_merge`
+- `finweb` / `python3 -m finreport_web`
 
 ## 1.3 可选：Tushare Token
 
