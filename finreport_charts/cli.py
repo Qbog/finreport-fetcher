@@ -2115,36 +2115,55 @@ def run(
                     for ref in tpl_series:
                         ref_spec = str(ref['expr']).strip()
                         ref_tpl = _lookup_template_ref(ref_spec)
-                        if ref_tpl is None:
-                            raise RuntimeError(f"merge 模式引用模板不存在: {ref_spec}")
-                        if str(getattr(ref_tpl, 'name', '')) == str(getattr(tpl, 'name', '')):
-                            raise RuntimeError(f"merge 模式不能引用自己: {ref_spec}")
-                        ref_type = str(getattr(ref_tpl, 'type', '')).strip().lower()
-                        ref_mode = str(getattr(ref_tpl, 'mode', '') or '').strip().lower().replace('compare', 'structure')
-                        if ref_type not in {'bar', 'line'} or ref_mode not in {'trend', 'price'}:
-                            raise RuntimeError(f"merge 仅支持引用 trend/price 的 bar/line 模板: {ref_spec}")
-                        ref_blocks = _flatten_template_series(getattr(ref_tpl, 'series', None))
-                        if not ref_blocks:
-                            raise RuntimeError(f"merge 引用模板缺少 [[series]]: {getattr(ref_tpl, 'name', '<unknown>')}")
-                        prefix = str(ref.get('name') or '').strip()
-                        only_one = len(ref_blocks) == 1
-                        for blk in ref_blocks:
-                            display = str(blk['name']) if only_one else f"{str(getattr(ref_tpl, 'alias', None) or getattr(ref_tpl, 'name', ''))}/{str(blk['name'])}"
-                            item = {
-                                'name': str(blk['name']),
-                                'display': display,
-                                'expr': str(blk['expr']),
-                                'statement': str(blk.get('statement') or _guess_statement_from_expr(str(blk['expr']))),
-                                'color': blk.get('color'),
-                                'kind': ref_type,
-                                'mode': ref_mode,
-                                'frequency': getattr(ref_tpl, 'frequency', None),
-                                'template': str(getattr(ref_tpl, 'name', '')),
-                                'label': str(getattr(ref_tpl, 'alias', None) or getattr(ref_tpl, 'name', '')),
-                            }
-                            if prefix:
-                                item['display'] = f"{prefix}/{item['display']}"
-                            merge_series.append(item)
+
+                        # 1) 模板引用：expr = "nonfin-trend-price_close"
+                        if ref_tpl is not None:
+                            if str(getattr(ref_tpl, 'name', '')) == str(getattr(tpl, 'name', '')):
+                                raise RuntimeError(f"merge 模式不能引用自己: {ref_spec}")
+                            ref_type = str(getattr(ref_tpl, 'type', '')).strip().lower()
+                            ref_mode = str(getattr(ref_tpl, 'mode', '') or '').strip().lower().replace('compare', 'structure')
+                            if ref_type not in {'bar', 'line'} or ref_mode not in {'trend', 'price'}:
+                                raise RuntimeError(f"merge 仅支持引用 trend/price 的 bar/line 模板: {ref_spec}")
+                            ref_blocks = _flatten_template_series(getattr(ref_tpl, 'series', None))
+                            if not ref_blocks:
+                                raise RuntimeError(f"merge 引用模板缺少 [[series]]: {getattr(ref_tpl, 'name', '<unknown>')}")
+                            prefix = str(ref.get('name') or '').strip()
+                            only_one = len(ref_blocks) == 1
+                            for blk in ref_blocks:
+                                display = str(blk['name']) if only_one else f"{str(getattr(ref_tpl, 'alias', None) or getattr(ref_tpl, 'name', ''))}/{str(blk['name'])}"
+                                item = {
+                                    'name': str(blk['name']),
+                                    'display': display,
+                                    'expr': str(blk['expr']),
+                                    'statement': str(blk.get('statement') or _guess_statement_from_expr(str(blk['expr']))),
+                                    'color': blk.get('color'),
+                                    'kind': ref_type,
+                                    'mode': ref_mode,
+                                    'frequency': getattr(ref_tpl, 'frequency', None),
+                                    'template': str(getattr(ref_tpl, 'name', '')),
+                                    'label': str(getattr(ref_tpl, 'alias', None) or getattr(ref_tpl, 'name', '')),
+                                }
+                                if prefix:
+                                    item['display'] = f"{prefix}/{item['display']}"
+                                merge_series.append(item)
+                            continue
+
+                        # 2) 直接表达式：expr = "idx.sh000001.close" / "commodity.黄金.close"
+                        expr0 = ref_spec
+                        display0 = str(ref.get('name') or '').strip() or expr0.split('.')[-1]
+                        item = {
+                            'name': display0,
+                            'display': display0,
+                            'expr': expr0,
+                            'statement': str(ref.get('statement') or _guess_statement_from_expr(expr0)),
+                            'color': ref.get('color'),
+                            'kind': 'line',
+                            'mode': 'price',
+                            'frequency': str(ref.get('frequency') or 'daily'),
+                            'template': '',
+                            'label': display0,
+                        }
+                        merge_series.append(item)
                 else:
                     # legacy compatibility: bar_item + line
                     bar_item = getattr(tpl, 'bar_item', None) or 'is.revenue_total'
