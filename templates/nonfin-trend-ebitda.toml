@@ -1,4 +1,9 @@
 # 非金融 / 趋势分析 / EBITDA 趋势
+# 采用显式公式口径：
+# EBITDA = EBIT + Depreciation + Amortization
+# 近似实现：
+#   EBIT = 利润总额 + 利息费用 + 所得税费用
+#   D&A = 固定资产折旧 + 无形资产摊销 + 长期待摊费用摊销
 
 name = "nonfin-trend-ebitda"
 alias = "EBITDA趋势"
@@ -13,4 +18,4 @@ y_label = "金额"
 
 [[series]]
 name = "EBITDA"
-expr = "metrics.ebitda"
+expr = "(is.total_profit + is.interest_expense + is.income_tax) + (cf.depreciation + cf.amortization_intangibles + cf.amortization_long_term_deferred_expenses)"

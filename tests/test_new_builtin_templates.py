@@ -9,8 +9,11 @@ def test_new_builtin_templates_exist_and_keep_expected_exprs():
     pe = (root / 'nonfin-trend-pe.toml').read_text(encoding='utf-8')
 
     assert 'type = "bar"' in ebitda and 'mode = "trend"' in ebitda
-    assert 'metrics.ebitda' in ebitda
+    assert 'is.total_profit' in ebitda
+    assert 'is.interest_expense' in ebitda
+    assert 'cf.depreciation' in ebitda
 
     assert 'type = "line"' in pe and 'mode = "price"' in pe
-    assert 'metrics.basic_eps' in pe
+    assert 'metrics.per_share.basic_eps' in pe
     assert 'px.close' in pe
+    assert 'abs(' in pe

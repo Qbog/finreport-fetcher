@@ -794,7 +794,8 @@ class ExpressionEvaluator:
         if re.search(r"[\+\-\*/\(\)]", expr_s):
             try:
                 toks = tokenize(expr_s)
-                ids = [t for t in toks if t not in {"+", "-", "*", "/", "(", ")"} and not re.fullmatch(r"\d+(?:\.\d+)?", t)]
+                from .utils.expr import FUNCTIONS
+                ids = [t for t in toks if t not in {"+", "-", "*", "/", "(", ")", ","} and t not in FUNCTIONS and not re.fullmatch(r"\d+(?:\.\d+)?", t)]
                 vals: dict[str, float] = {}
                 for ident in ids:
                     v = self._resolve_ident_value(
@@ -844,8 +845,9 @@ def _build_price_expr_daily_df(
     fin_ids: set[str] = set()
     global_ids: dict[str, tuple[str, str, str]] = {}
     extra_freqs: set[str] = set()
+    from .utils.expr import FUNCTIONS
     for t in tokenize(expr):
-        if t in {"+", "-", "*", "/", "(", ")"}:
+        if t in {"+", "-", "*", "/", "(", ")", ","} or t in FUNCTIONS:
             continue
         if re.fullmatch(r"\d+(?:\.\d+)?", t):
             continue
@@ -1431,14 +1433,15 @@ def run(
 
                     # 2) detect financial identifiers in expressions (is./bs./cf.)
                     fin_ids: set[str] = set()
+                    from .utils.expr import FUNCTIONS
                     for b in bars_flat:
                         expr0 = str(b["expr"])
                         for t in tokenize(expr0):
-                            if t in {"+", "-", "*", "/", "(", ")"}:
+                            if t in {"+", "-", "*", "/", "(", ")", ","} or t in FUNCTIONS:
                                 continue
                             if re.fullmatch(r"\d+(?:\.\d+)?", t):
                                 continue
-                            if t.startswith("is.") or t.startswith("bs.") or t.startswith("cf."):
+                            if t.startswith(("is.", "bs.", "cf.", "metrics.", "metric.", "mt.")):
                                 fin_ids.add(t)
 
                     # 2b) detect extra price frequencies referenced in expr: px_5d.* / price_10d.* ...
@@ -1446,6 +1449,8 @@ def run(
                     for b in bars_flat:
                         expr0 = str(b["expr"])
                         for t in tokenize(expr0):
+                            if t in FUNCTIONS:
+                                continue
                             m = re.match(r"^(?:px|price)_(?P<f>[A-Za-z0-9_]+)\.", t)
                             if m:
                                 f0 = m.group("f").strip().lower()

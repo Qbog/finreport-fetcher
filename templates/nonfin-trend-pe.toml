@@ -1,8 +1,8 @@
 # 非金融 / 趋势分析 / PE 趋势
-# 这里按更可计算、也更标准的口径实现：
-#   PE = 股价 / 每股收益TTM
-# 其中：
-#   每股收益TTM = 当期累计EPS + 上年年报EPS - 上年同期EPS
+# 用户口径：当 EPS_TTM 为负时自动转正显示。
+# 这里实现为：PE = abs(股价 / EPS_TTM)
+# 其中：EPS_TTM = 当期累计EPS + 上年年报EPS - 上年同期EPS
+# 使用稳定 key：metrics.per_share.basic_eps
 
 name = "nonfin-trend-pe"
 alias = "PE趋势"
@@ -17,4 +17,4 @@ y_label = "PE"
 
 [[series]]
 name = "PE"
-expr = "px.close / (metrics.basic_eps + metrics.basic_eps.prev_year.q4 - metrics.basic_eps.prev_year)"
+expr = "abs(px.close / (metrics.per_share.basic_eps + metrics.per_share.basic_eps.prev_year.q4 - metrics.per_share.basic_eps.prev_year))"

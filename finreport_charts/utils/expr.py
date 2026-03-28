@@ -13,7 +13,7 @@ class ExprError(Exception):
 
 
 _TOKEN_RE = re.compile(
-    r"\s*(?:(?P<num>(?:\d+\.\d+)|(?:\d+))|(?P<id>[A-Za-z_\u4e00-\u9fff][A-Za-z0-9_\.\u4e00-\u9fff]*)|(?P<op>[\+\-\*/\(\)]))"
+    r"\s*(?:(?P<num>(?:\d+\.\d+)|(?:\d+))|(?P<id>[A-Za-z_\u4e00-\u9fff][A-Za-z0-9_\.\u4e00-\u9fff]*)|(?P<op>[\+\-\*/\(\),]))"
 )
 
 
@@ -40,6 +40,7 @@ def tokenize(expr: str) -> list[str]:
 
 
 _PRECEDENCE = {"+": 1, "-": 1, "*": 2, "/": 2}
+FUNCTIONS = {"abs"}
 
 
 def to_rpn(tokens: list[str]) -> list[str]:
@@ -52,8 +53,16 @@ def to_rpn(tokens: list[str]) -> list[str]:
     def is_op(t: str) -> bool:
         return t in {"+", "-", "*", "/"}
 
-    for t in tokens:
-        if t == "(":
+    for i, t in enumerate(tokens):
+        nxt = tokens[i + 1] if i + 1 < len(tokens) else None
+        if t in FUNCTIONS and nxt == "(":
+            stack.append(t)
+        elif t == ",":
+            while stack and stack[-1] != "(":
+                out.append(stack.pop())
+            if not stack:
+                raise ExprError("函数参数分隔符位置错误")
+        elif t == "(":
             stack.append(t)
         elif t == ")":
             while stack and stack[-1] != "(":
@@ -61,9 +70,11 @@ def to_rpn(tokens: list[str]) -> list[str]:
             if not stack or stack[-1] != "(":
                 raise ExprError("括号不匹配")
             stack.pop()
+            if stack and stack[-1] in FUNCTIONS:
+                out.append(stack.pop())
         elif is_op(t):
             # unary
-            if prev is None or prev in {"(", "+", "-", "*", "/"}:
+            if prev is None or prev in {"(", ",", "+", "-", "*", "/"}:
                 out.append("0")
 
             while stack and stack[-1] in _PRECEDENCE and _PRECEDENCE[stack[-1]] >= _PRECEDENCE[t]:
@@ -103,6 +114,15 @@ def eval_rpn(rpn: list[str], values: dict[str, float]) -> float:
             else:
                 st.append(a / b)
             continue
+
+        if t in FUNCTIONS:
+            if not st:
+                raise ExprError("函数参数不完整")
+            a = st.pop()
+            if t == "abs":
+                st.append(abs(a))
+                continue
+            raise ExprError(f"不支持的函数: {t}")
 
         # number
         if re.fullmatch(r"\d+(?:\.\d+)?", t):
