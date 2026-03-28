@@ -10,13 +10,12 @@ title = "现金流趋势（单季）"
 x_label = "报告期"
 y_label = "金额"
 
-
 [[series]]
 name = "总现金流"
-expr = "cf.net_increase_in_cash - cf.net_increase_in_cash.prev_in_year"
+expr = "cf.net_increase_in_cash - cf.net_increase_in_cash.prev_year + cf.net_increase_in_cash.prev_year.q4"
 color = "#4E79A7"
 
 [[series]]
 name = "经营现金流"
-expr = "cf.net_cash_from_ops - cf.net_cash_from_ops.prev_in_year"
+expr = "cf.net_cash_from_ops - cf.net_cash_from_ops.prev_year + cf.net_cash_from_ops.prev_year.q4"
 color = "#59A14F"
