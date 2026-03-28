@@ -2,11 +2,30 @@
 
 本项目推荐工作流：
 
-1. 用 `finreport_fetcher` 抓取财报 Excel（作为“单一事实来源”）
-2. （可选）用 `finprice` 抓取股价（给 combo 图用）
-3. 用 `finreport_charts run` 基于模板批量产出 PNG + Excel 图表
+1. 用 `finfetch`（或 `python3 -m finreport_fetcher`）抓取财报 Excel（作为“单一事实来源”）
+2. （可选）用 `finprice`（或 `python3 -m finprice_fetcher`）抓取股价（给 combo 图用）
+3. 用 `finchart run`（或 `python3 -m finreport_charts run`）基于模板批量产出 PNG + Excel 图表
 
 ---
+
+## 3.0 短命令 vs 长命令
+
+如果你已经执行过：
+
+```bash
+python3 -m pip install -e .
+```
+
+推荐优先使用短命令：
+
+- `finfetch` = `python3 -m finreport_fetcher`
+- `finchart` = `python3 -m finreport_charts`
+- `finprice` = `python3 -m finprice_fetcher`
+- `finindex` = `python3 -m finindex_fetcher`
+- `finmerge` = `python3 -m finchart_merge`
+- `finweb` = `python3 -m finreport_web`
+
+下面文档里的命令，你都可以在短命令和长命令之间自由切换。
 
 ## 3.1 抓取财报（finreport_fetcher）
 

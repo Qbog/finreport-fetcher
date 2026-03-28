@@ -105,8 +105,9 @@ def render_merge_png(
     # line axes on right side (support multi-line / multi-axis)
     line_palette = [
         "#F59E0B",
-        "#22C55E",
+        "#EAB308",
         "#38BDF8",
+        "#22C55E",
         "#A78BFA",
         "#F472B6",
         "#FB7185",
@@ -132,9 +133,12 @@ def render_merge_png(
                 line_us = choose_unit_scale(vmax)
         except Exception:
             line_us = None
-        (handle,) = axis.plot(x_line, y_line, color=color0, linewidth=1.55, marker=None, label=label_name or col_name, zorder=3 + idx)
+        line_width = 1.85 if idx == 0 else 1.35
+        line_alpha = 0.98 if idx == 0 else 0.90
+        (handle,) = axis.plot(x_line, y_line, color=color0, linewidth=line_width, alpha=line_alpha, marker=None, label=label_name or col_name, zorder=3 + idx)
         axis.set_ylabel(label_name or col_name, color=color0)
         axis.tick_params(axis="y", colors=color0)
+        axis.spines["right"].set_edgecolor(color0)
         if line_us is not None:
             axis.yaxis.set_major_formatter(FuncFormatter(lambda v, _pos, us=line_us: fmt_tick(v, us)))
         line_handles.append(handle)
@@ -152,12 +156,23 @@ def render_merge_png(
             else:
                 ax1.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
     else:
-        # long-range daily merge charts: still readable, but a bit denser than before
-        locator = mdates.AutoDateLocator(minticks=7, maxticks=11)
+        # long-range daily merge charts: readable but reasonably information-dense
+        locator = mdates.AutoDateLocator(minticks=8, maxticks=12)
         ax1.xaxis.set_major_locator(locator)
         ax1.xaxis.set_major_formatter(mdates.ConciseDateFormatter(locator))
 
-    fig.autofmt_xdate(rotation=30)
+    fig.autofmt_xdate(rotation=26)
+
+    # subtle year separators help long-range reading without clutter
+    try:
+        x_min = pd.to_datetime(df_line[x_col], errors="coerce").min()
+        x_max = pd.to_datetime(df_line[x_col], errors="coerce").max()
+        if pd.notna(x_min) and pd.notna(x_max):
+            years = range(int(x_min.year) + 1, int(x_max.year) + 1)
+            for yy in years:
+                ax1.axvline(pd.Timestamp(year=yy, month=1, day=1), color="#64748B", linestyle=":", linewidth=0.7, alpha=0.28, zorder=1)
+    except Exception:
+        pass
 
     if by_numeric is not None and us is not None and bar_cont is not None:
         finite_vals = by_numeric.dropna()
@@ -192,13 +207,20 @@ def render_merge_png(
     ax1.margins(x=0.01)
     ax1.set_title(title, pad=14)
 
-    # merged legend
+    # merged legend (bottom, horizontal, cleaner for dense charts)
     h1, l1 = ax1.get_legend_handles_labels()
     if h1 or line_handles:
-        ax1.legend(h1 + line_handles, l1 + line_labels, loc="upper left")
+        ax1.legend(
+            h1 + line_handles,
+            l1 + line_labels,
+            loc="upper center",
+            bbox_to_anchor=(0.5, -0.12),
+            ncol=max(2, min(4, len(h1 + line_handles))),
+            frameon=True,
+        )
 
     right_margin = max(0.62, 0.92 - 0.08 * extra_right)
-    fig.subplots_adjust(left=0.06, right=right_margin, bottom=0.14, top=0.90)
+    fig.subplots_adjust(left=0.06, right=right_margin, bottom=0.22, top=0.90)
     out_png.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_png, dpi=220)
     plt.close(fig)

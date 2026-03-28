@@ -1,0 +1,16 @@
+# 非金融 / 趋势分析 / EBITDA 趋势
+
+name = "nonfin-trend-ebitda"
+alias = "EBITDA趋势"
+
+names = ["ebitda_trend", "ebitda_trend#EBITDA趋势", "nonfin-trend-ebitda"]
+type = "bar"
+mode = "trend"
+
+title = "EBITDA趋势"
+x_label = "报告期"
+y_label = "金额"
+
+[[series]]
+name = "EBITDA"
+expr = "metrics.ebitda"
