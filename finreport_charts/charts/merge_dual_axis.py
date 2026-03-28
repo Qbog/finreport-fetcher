@@ -152,10 +152,10 @@ def render_merge_png(
             else:
                 ax1.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
     else:
-        # fallback: monthly ticks
-        locator = mdates.MonthLocator(interval=max(int(month_interval), 1))
+        # long-range daily merge charts need sparse, readable ticks
+        locator = mdates.AutoDateLocator(minticks=5, maxticks=8)
         ax1.xaxis.set_major_locator(locator)
-        ax1.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
+        ax1.xaxis.set_major_formatter(mdates.ConciseDateFormatter(locator))
 
     fig.autofmt_xdate(rotation=30)
 
@@ -167,7 +167,18 @@ def render_merge_png(
             span = max(abs(ymax - ymin), abs(ymax), 1.0)
             cur_lo, cur_hi = ax1.get_ylim()
             ax1.set_ylim(min(cur_lo, ymin - 0.08 * span), max(cur_hi, ymax + 0.20 * span))
-        for patch in bar_cont.patches:
+
+        patches = list(bar_cont.patches)
+        label_step = 1
+        n_bars = len(patches)
+        if n_bars > 24:
+            label_step = 4
+        elif n_bars > 12:
+            label_step = 2
+
+        for idx, patch in enumerate(patches):
+            if idx % label_step != 0 and idx != n_bars - 1:
+                continue
             h = patch.get_height()
             if h is None or (isinstance(h, float) and not math.isfinite(h)):
                 continue

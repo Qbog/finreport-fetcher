@@ -1291,16 +1291,18 @@ def run(
             def _flatten_template_series(blocks, *, prefix: str | None = None):
                 out = []
                 for b in blocks or []:
-                    b_name = str(getattr(b, 'name', None) or '').strip() or 'value'
+                    raw_name = getattr(b, 'name', None)
+                    b_name = str(raw_name or '').strip()
                     b_expr = getattr(b, 'expr', None)
                     b_stmt = getattr(b, 'statement', None)
                     b_color = getattr(b, 'color', None)
-                    name_full = f"{prefix}/{b_name}" if prefix else b_name
+                    name_full = f"{prefix}/{b_name}" if (prefix and b_name) else (b_name or prefix or '')
                     if b_expr:
                         out.append({"name": name_full, "expr": str(b_expr).strip(), "statement": b_stmt, "color": b_color})
                     kids = getattr(b, 'children', None)
                     if kids:
-                        out.extend(_flatten_template_series(kids, prefix=name_full))
+                        child_prefix = name_full or prefix
+                        out.extend(_flatten_template_series(kids, prefix=child_prefix))
                 return out
 
             # ---- bar / line ----
@@ -2128,11 +2130,18 @@ def run(
                             if not ref_blocks:
                                 raise RuntimeError(f"merge 引用模板缺少 [[series]]: {getattr(ref_tpl, 'name', '<unknown>')}")
                             prefix = str(ref.get('name') or '').strip()
+                            if prefix == 'value' or prefix == ref_spec:
+                                prefix = ''
                             only_one = len(ref_blocks) == 1
+                            ref_label = str(getattr(ref_tpl, 'alias', None) or getattr(ref_tpl, 'title', None) or getattr(ref_tpl, 'name', ''))
                             for blk in ref_blocks:
-                                display = str(blk['name']) if only_one else f"{str(getattr(ref_tpl, 'alias', None) or getattr(ref_tpl, 'name', ''))}/{str(blk['name'])}"
+                                blk_name = str(blk['name'] or '').strip()
+                                if only_one:
+                                    display = blk_name or ref_label
+                                else:
+                                    display = f"{ref_label}/{blk_name or 'value'}"
                                 item = {
-                                    'name': str(blk['name']),
+                                    'name': blk_name,
                                     'display': display,
                                     'expr': str(blk['expr']),
                                     'statement': str(blk.get('statement') or _guess_statement_from_expr(str(blk['expr']))),
@@ -2141,10 +2150,10 @@ def run(
                                     'mode': ref_mode,
                                     'frequency': getattr(ref_tpl, 'frequency', None),
                                     'template': str(getattr(ref_tpl, 'name', '')),
-                                    'label': str(getattr(ref_tpl, 'alias', None) or getattr(ref_tpl, 'name', '')),
+                                    'label': ref_label,
                                 }
                                 if prefix:
-                                    item['display'] = f"{prefix}/{item['display']}"
+                                    item['display'] = prefix
                                 merge_series.append(item)
                             continue
 
