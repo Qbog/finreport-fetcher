@@ -133,7 +133,7 @@ def render_merge_png(
         except Exception:
             line_us = None
         (handle,) = axis.plot(x_line, y_line, color=color0, linewidth=1.55, marker=None, label=label_name or col_name, zorder=3 + idx)
-        axis.set_ylabel(f"{label_name}（{line_us.unit}）" if line_us and line_us.unit else (label_name or col_name), color=color0)
+        axis.set_ylabel(label_name or col_name, color=color0)
         axis.tick_params(axis="y", colors=color0)
         if line_us is not None:
             axis.yaxis.set_major_formatter(FuncFormatter(lambda v, _pos, us=line_us: fmt_tick(v, us)))
@@ -152,8 +152,8 @@ def render_merge_png(
             else:
                 ax1.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
     else:
-        # long-range daily merge charts need sparse, readable ticks
-        locator = mdates.AutoDateLocator(minticks=5, maxticks=8)
+        # long-range daily merge charts: still readable, but a bit denser than before
+        locator = mdates.AutoDateLocator(minticks=7, maxticks=11)
         ax1.xaxis.set_major_locator(locator)
         ax1.xaxis.set_major_formatter(mdates.ConciseDateFormatter(locator))
 
@@ -169,16 +169,9 @@ def render_merge_png(
             ax1.set_ylim(min(cur_lo, ymin - 0.08 * span), max(cur_hi, ymax + 0.20 * span))
 
         patches = list(bar_cont.patches)
-        label_step = 1
         n_bars = len(patches)
-        if n_bars > 24:
-            label_step = 4
-        elif n_bars > 12:
-            label_step = 2
 
         for idx, patch in enumerate(patches):
-            if idx % label_step != 0 and idx != n_bars - 1:
-                continue
             h = patch.get_height()
             if h is None or (isinstance(h, float) and not math.isfinite(h)):
                 continue

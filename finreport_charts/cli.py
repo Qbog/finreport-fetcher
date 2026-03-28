@@ -665,19 +665,49 @@ class ExpressionEvaluator:
         key = (kind, symbol)
         if key not in self._global_series_cache:
             path = resolve_global_series_csv(self.opts.data_dir, kind, symbol)
-            if path is None or not path.exists():
+
+            def _refresh_global_series() -> Path | None:
                 try:
                     if kind == 'commodity':
                         name_map = {'gold': '黄金', 'silver': '白银', 'oil': '石油'}
-                        cmd = [sys.executable, '-m', 'finprice_fetcher', 'commodity', '--name', name_map.get(symbol, symbol), '--start', self.opts.start.strftime('%Y-%m-%d'), '--end', min(self.opts.end, date.today()).strftime('%Y-%m-%d'), '--out', str(self.opts.data_dir)]
+                        cmd = [
+                            sys.executable, '-m', 'finprice_fetcher', 'commodity',
+                            '--name', name_map.get(symbol, symbol),
+                            '--start', self.opts.start.strftime('%Y-%m-%d'),
+                            '--end', min(self.opts.end, date.today()).strftime('%Y-%m-%d'),
+                            '--out', str(self.opts.data_dir),
+                        ]
                         subprocess.run(cmd, cwd=str(Path(__file__).resolve().parents[1]), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
                     elif kind == 'index':
                         name_map = {'sh000001': '上证', 'sz399001': '深证', 'sz399006': '创业板', 'bj899050': '北证'}
-                        cmd = [sys.executable, '-m', 'finindex_fetcher', 'fetch', '--index', name_map.get(symbol, symbol), '--start', self.opts.start.strftime('%Y-%m-%d'), '--end', min(self.opts.end, date.today()).strftime('%Y-%m-%d'), '--out', str(self.opts.data_dir)]
+                        cmd = [
+                            sys.executable, '-m', 'finindex_fetcher', 'fetch',
+                            '--index', name_map.get(symbol, symbol),
+                            '--start', self.opts.start.strftime('%Y-%m-%d'),
+                            '--end', min(self.opts.end, date.today()).strftime('%Y-%m-%d'),
+                            '--out', str(self.opts.data_dir),
+                        ]
                         subprocess.run(cmd, cwd=str(Path(__file__).resolve().parents[1]), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
                 except Exception:
                     pass
-                path = resolve_global_series_csv(self.opts.data_dir, kind, symbol)
+                return resolve_global_series_csv(self.opts.data_dir, kind, symbol)
+
+            need_refresh = path is None or not path.exists()
+            if (not need_refresh) and path is not None and path.exists():
+                try:
+                    df0 = load_global_series_csv(path)
+                    if df0.empty:
+                        need_refresh = True
+                    else:
+                        max_d = df0['date'].max()
+                        if max_d is None or max_d < min(self.opts.end, date.today()):
+                            need_refresh = True
+                except Exception:
+                    need_refresh = True
+
+            if need_refresh:
+                path = _refresh_global_series()
+
             if path is None or not path.exists():
                 self._global_series_cache[key] = pd.DataFrame(columns=["date"])
             else:
