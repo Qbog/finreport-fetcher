@@ -3,10 +3,10 @@ alias = "黄金价格"
 
 names = ["gold_price_trend", "gold_price_trend#黄金价格", "nonfin-trend-gold_price"]
 type = "line"
-mode = "trend"
+mode = "price"
 
-title = "黄金价格"
-x_label = "报告期"
+title = "黄金价格走势"
+x_label = "日期"
 y_label = "价格"
 
 [[series]]

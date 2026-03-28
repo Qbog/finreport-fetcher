@@ -14,11 +14,15 @@
 
 5) 模板规范与最佳实践 → [TEMPLATE_GUIDE.md](TEMPLATE_GUIDE.md)
 
-6) Web 报表分析台 → [WEB_UI.md](WEB_UI.md)
+6) Price 折线 / 外部时间序列 → [price_line.md](price_line.md)
 
-7) Raw 数据生命周期 → [RAW_LIFECYCLE.md](RAW_LIFECYCLE.md)
+7) 图表合并（merge）→ [merge.md](merge.md)
 
-8) 测试与 CI → [TESTING.md](TESTING.md)
+8) Web 报表分析台 → [WEB_UI.md](WEB_UI.md)
+
+9) Raw 数据生命周期 → [RAW_LIFECYCLE.md](RAW_LIFECYCLE.md)
+
+10) 测试与 CI → [TESTING.md](TESTING.md)
 
 ---
 

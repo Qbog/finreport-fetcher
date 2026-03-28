@@ -13,7 +13,7 @@
   - `title`：标题（图表上方显示）
   - `x_label`、`y_label`：坐标轴名称（bar/line/combo 使用）
 - `type = "bar"` / `type = "line"` 时还必须有：
-  - `mode`：`trend`（趋势分析）、`structure`（结构分析，旧 compare）、或 `peer`（同业分析）
+  - `mode`：`trend`（趋势分析）、`price`（完整日期折线）、`structure`（结构分析，旧 compare）、或 `peer`（同业分析）
   - 当 `mode = "peer"`：同业公司列表只在命令行里指定：`--peer 600519 --peer 601318 ...`（可重复；支持代码或简称）
   - peer 模式横轴默认显示公司简称（若无法解析简称，则回退显示 6 位代码）
 - 每个序列都用一个配置块表示：`[[series]]`（旧的 `[[bars]]` 仅兼容，不再推荐）

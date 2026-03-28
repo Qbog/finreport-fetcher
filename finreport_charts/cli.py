@@ -618,7 +618,23 @@ class ExpressionEvaluator:
             return {}
         key = (xlsx, statement)
         if key not in self._map_cache:
-            self._map_cache[key] = _value_map_for_statement(xlsx, statement)
+            try:
+                self._map_cache[key] = _value_map_for_statement(xlsx, statement)
+            except RuntimeError as ex:
+                msg = str(ex)
+                if "财报文件已损坏" not in msg:
+                    raise
+                log_warn(f"检测到损坏财报，尝试重抓：{xlsx}")
+                try:
+                    xlsx.unlink(missing_ok=True)
+                except Exception:
+                    pass
+                self._map_cache.pop(key, None)
+                self._fetch_tried.discard(pe)
+                xlsx = self._xlsx_for_period(pe)
+                if not xlsx.exists():
+                    return {}
+                self._map_cache[key] = _value_map_for_statement(xlsx, statement)
         return self._map_cache[key]
 
     def _load_stock_price_df(self) -> pd.DataFrame:
@@ -925,6 +941,49 @@ def _build_price_expr_daily_df(
         return pd.DataFrame(columns=["date", "value"])
     out["value"] = pd.to_numeric(out["value"], errors="coerce")
     return out.reset_index(drop=True)
+
+
+def _build_merge_price_mode_lines_df(
+    c: CommonOpts,
+    main_eval: ExpressionEvaluator,
+    *,
+    line_items: list[dict[str, object]],
+) -> tuple[pd.DataFrame, list[dict[str, object]]]:
+    frames: list[pd.DataFrame] = []
+    active_items: list[dict[str, object]] = []
+
+    for item in line_items:
+        col = str(item.get("display") or item.get("name") or "line")
+        df_one = _build_price_expr_daily_df(
+            c,
+            main_eval,
+            expr=str(item.get("expr") or ""),
+            default_statement=str(item.get("statement") or _guess_statement_from_expr(str(item.get("expr") or ""))),
+            base_frequency=str(item.get("frequency") or "daily"),
+        )
+        if df_one.empty:
+            log_warn(f"提示：merge 折线数据为空，已跳过：{col}")
+            continue
+        df_one = df_one.rename(columns={"value": col}).copy()
+        df_one[col] = pd.to_numeric(df_one[col], errors="coerce")
+        if not df_one[col].notna().any():
+            log_warn(f"提示：merge 折线没有可用数值，已跳过：{col}")
+            continue
+        frames.append(df_one[["date", col]])
+        active_items.append(item)
+
+    if not frames:
+        return pd.DataFrame(columns=["date"]), []
+
+    merged = frames[0]
+    for fr in frames[1:]:
+        merged = merged.merge(fr, on="date", how="outer")
+
+    value_cols = [c0 for c0 in merged.columns if c0 != "date"]
+    merged = merged.sort_values("date")
+    if value_cols:
+        merged = merged.dropna(subset=value_cols, how="all")
+    return merged.reset_index(drop=True), active_items
 
 
 @app.callback()
@@ -2112,9 +2171,8 @@ def run(
                 special_bar_defs = [x for x in merge_series if str(x.get('kind')) == 'bar']
                 special_line_defs = [x for x in merge_series if str(x.get('kind')) == 'line']
                 special_price_lines = [x for x in special_line_defs if str(x.get('mode') or '').strip().lower() == 'price']
-                if len(special_bar_defs) == 1 and len(special_line_defs) == 1 and len(special_price_lines) == 1:
+                if len(special_bar_defs) == 1 and special_line_defs and len(special_price_lines) == len(special_line_defs):
                     bar_item = special_bar_defs[0]
-                    line_item = special_price_lines[0]
 
                     bar_rows: list[dict[str, object]] = []
                     for pe in periods:
@@ -2137,17 +2195,21 @@ def run(
                         if not pad_x:
                             df_bar = df_bar.dropna(subset=[str(bar_item['display'])])
 
-                    df_line = _build_price_expr_daily_df(
+                    df_line, active_line_items = _build_merge_price_mode_lines_df(
                         c,
                         main_eval,
-                        expr=str(line_item['expr']),
-                        default_statement=str(line_item.get('statement') or _guess_statement_from_expr(str(line_item['expr']))),
-                        base_frequency=str(line_item.get('frequency') or 'daily'),
+                        line_items=special_price_lines,
                     )
 
-                    if df_bar.empty or df_line.empty:
+                    if df_bar.empty or df_line.empty or not active_line_items:
                         if not collect_only:
                             log_warn(f"提示：{k} 在该区间内没有可用数据。")
+                        continue
+
+                    line_cols = [str(item['display']) for item in active_line_items if str(item['display']) in df_line.columns]
+                    if not line_cols:
+                        if not collect_only:
+                            log_warn(f"提示：{k} 在该区间内没有可用折线数据。")
                         continue
 
                     actual_s = pd.to_datetime(df_line['date'], errors='coerce').min()
@@ -2159,7 +2221,7 @@ def run(
 
                     if collect_only and stats_map is not None:
                         stats = stats_map.setdefault(k, AxisStatsCollector())
-                        _collect_axis_stats(stats, df_line, value_cols=['value'], point_col='date')
+                        _collect_axis_stats(stats, df_line, value_cols=line_cols, point_col='date')
                         _collect_axis_stats(stats, df_bar.rename(columns={str(bar_item['display']): 'bar_value'}), value_cols=['bar_value'], point_col='period_end')
                         continue
 
@@ -2171,31 +2233,29 @@ def run(
                         q = (pe.month - 1) // 3 + 1
                         return f"{pe.year}Q{q}"
 
-                    xtick_dates = [str(x) for x in df_bar['period_end'].tolist()]
-                    xtick_labels = [_q_label(parse_date(str(x))) for x in df_bar['period_end'].tolist()]
+                    line_render_defs = [
+                        (str(item['display']), str(item['display']), str(item.get('color') or ''))
+                        for item in active_line_items
+                        if str(item['display']) in df_line.columns
+                    ]
 
                     render_merge_png(
                         df_line=df_line,
                         x_col='date',
-                        line_col='value',
+                        line_series=line_render_defs,
                         df_bar=df_bar,
                         bar_x_col='date',
                         bar_col=str(bar_item['display']),
                         out_png=out_png,
                         title=title,
-                        x_label=x_label or '日期',
+                        x_label='日期',
                         bar_label=str(bar_item['display']),
-                        line_label=str(line_item['display']),
                         bar_color=str(bar_item.get('color') or '#4E79A7'),
-                        line_color=str(line_item.get('color') or '#F28E2B'),
                         bar_width_days=42,
-                        xtick_dates=xtick_dates,
-                        xtick_labels=xtick_labels,
                     )
 
                     df_line_export = df_line.copy()
                     df_line_export['date'] = pd.to_datetime(df_line_export['date'], errors='coerce').dt.strftime('%Y-%m-%d')
-                    df_line_export = df_line_export.rename(columns={'value': str(line_item['display'])})
                     df_bar_export = df_bar.copy()
                     df_bar_export['date'] = pd.to_datetime(df_bar_export['date'], errors='coerce').dt.strftime('%Y-%m-%d')
                     df_merged = df_line_export.merge(
@@ -2304,7 +2364,7 @@ def run(
                             ax.text(x0, h, txt, ha='center', va='bottom' if h >= 0 else 'top', fontsize=8, color=color0 or None)
                         hnds, lbs = ax.get_legend_handles_labels()
                     else:
-                        (line_obj,) = ax.plot(x_pos, yvals, marker='o', label=label0, color=color0, linewidth=2.1)
+                        (line_obj,) = ax.plot(x_pos, yvals, marker=None, label=label0, color=color0, linewidth=2.0)
                         hnds, lbs = [line_obj], [label0]
                     ax.set_ylabel(f"{label0}（{us.unit}）" if us.unit else label0, color=color0 or None)
                     ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _pos, us=us: fmt_tick(v, us)))

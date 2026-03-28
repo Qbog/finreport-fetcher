@@ -6,6 +6,11 @@
   - 默认不画 marker 点（避免太乱）
   - 纵轴默认每家公司独立范围（更饱满）；需要统一尺度再开启 `--share-axis`
 - 支持按频率拉取/补齐股价：daily/weekly/monthly 以及自定义 Nd（例如 5d/7d/10d）
+- 支持把**外部时间序列**也按日频方式绘制在 line / merge 中：
+  - 商品：如黄金 / 白银 / 原油
+  - 指数：如上证 / 深证 / 创业板 / 北证
+
+> 经验规则：凡是你希望在 merge 里画“完整日期折线”的模板，都应该优先做成 `type="line" + mode="price"`，而不是 `mode="trend"`。
 
 ## 模板字段（templates/*.toml）
 
@@ -26,6 +31,22 @@ y_label = "价格"
 [[series]]
 name = "close"
 expr = "px.close"
+```
+
+商品 / 指数这类“非公司股价”的外部序列，如果也想走完整日频折线，同样建议写成：
+
+```toml
+name = "nonfin-trend-gold_price"
+type = "line"
+mode = "price"
+
+title = "黄金价格走势"
+x_label = "日期"
+y_label = "价格"
+
+[[series]]
+name = "黄金价格"
+expr = "commodity.黄金.close"
 ```
 
 ## expr 可用变量

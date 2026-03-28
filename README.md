@@ -20,7 +20,7 @@
 - Web 报表分析台：[`docs/WEB_UI.md`](docs/WEB_UI.md)
 - Raw 数据生命周期：[`docs/RAW_LIFECYCLE.md`](docs/RAW_LIFECYCLE.md)
 - Price 折线图（mode=price）：[`docs/price_line.md`](docs/price_line.md)
-- 图表合并（merge，双轴 PNG）：[`docs/merge.md`](docs/merge.md)
+- 图表合并（merge，多轴 / 多折线也支持）：[`docs/merge.md`](docs/merge.md)
 - 回归测试：[`docs/TESTING.md`](docs/TESTING.md)
 - 股价抓取：见下文 `finprice`（输出 `output/{公司名}_{code6}/price/{code6}.csv` + 同名 `.xlsx` 供 combo 图使用/人工查看）
 
@@ -220,9 +220,9 @@ output/
 - 若 `--data-dir` 缺少所需报告期财报，程序会自动调用 `finreport_fetcher` 补齐（增量写入，不清空目录）
 - 支持：
   - 柱状图趋势（bar）：按模板 `expr` 逐期取值/计算（不再使用 transform 口径配置）
-  - 折线图趋势（line）：与 bar 共用 `[[bars]]` 配置，输出折线图
+  - 折线图趋势（line）：支持 `mode=trend`（按报告期）与 `mode=price`（按完整日期）
   - 同型分析饼图（pie）：范围内每期一张，支持 `section` 或 `items`，支持 TopN+其他
-  - 合并双轴图（combo）：财务柱 + 股价折线，股价来自 CSV（列 `date,close`；同时会生成同名 `.xlsx` 便于人工查看）
+  - 合并图（combo / merge）：支持财务柱 + 多条完整日期折线（股价 / 商品 / 指数），并输出 `.png` + `.xlsx`
 - **模板驱动（推荐）**：每个模板一个 TOML 文件（`templates/*.toml`），通过 `finreport_charts run` 执行（支持跑全部模板或指定单个/多个模板）
 - **新增**：支持使用 `key`（如 `is.revenue_total` / `bs.cash`）替代中文科目名，实现跨公司标准化引用
 

@@ -6,6 +6,7 @@ import sys
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
+from zipfile import BadZipFile
 
 import pandas as pd
 
@@ -230,10 +231,25 @@ def read_statement_df(xlsx_path: Path, sheet_name: str) -> pd.DataFrame:
     - 新格式：列包含 key / 科目(中英展示) / 数值
 
     返回 df 至少包含列: 科目, 数值；若存在也会保留 key。
+
+    容错：若历史 xlsx 已损坏（常见为 BadZipFile），抛出更明确的 RuntimeError，
+    交由上层走“重抓该报告期”逻辑，而不是直接把整次 run 打崩并暴露底层 openpyxl traceback。
     """
 
-    # 我们的 xlsx：第1行标题、第2行注释、第3行表头
-    df = pd.read_excel(xlsx_path, sheet_name=sheet_name, header=2)
+    try:
+        # 我们的 xlsx：第1行标题、第2行注释、第3行表头
+        df = pd.read_excel(xlsx_path, sheet_name=sheet_name, header=2)
+    except BadZipFile as ex:
+        raise RuntimeError(f"财报文件已损坏，无法读取：{xlsx_path}") from ex
+    except Exception as ex:
+        msg = str(ex)
+        if (
+            "Bad magic number for file header" in msg
+            or "File is not a zip file" in msg
+            or "Excel file format cannot be determined" in msg
+        ):
+            raise RuntimeError(f"财报文件已损坏，无法读取：{xlsx_path}") from ex
+        raise
 
     subj_raw = "科目_CN" if "科目_CN" in df.columns else "科目"
 

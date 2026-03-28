@@ -1,0 +1,27 @@
+name = "nonfin-merge-revenue_vs_price_close_vs_gold_vs_sh_index"
+alias = "收入趋势+股价-收盘+黄金价格+上证指数"
+
+names = [
+  "revenue_vs_price_close_vs_gold_vs_sh_index",
+  "revenue_vs_price_close_vs_gold_vs_sh_index#收入趋势+股价-收盘+黄金价格+上证指数",
+  "nonfin-merge-revenue_vs_price_close_vs_gold_vs_sh_index"
+]
+type = "combo"
+mode = "merge"
+
+title = "收入趋势 + 股价-收盘 + 黄金价格 + 上证指数"
+x_label = "日期"
+y_label = "数值"
+
+[[series]]
+expr = "nonfin-trend-income"
+
+[[series]]
+expr = "nonfin-trend-price_close"
+
+[[series]]
+expr = "nonfin-trend-gold_price"
+
+[[series]]
+name = "上证指数"
+expr = "idx.sh000001.close"
