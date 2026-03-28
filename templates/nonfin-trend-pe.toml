@@ -2,7 +2,8 @@
 # 用户口径：当 EPS_TTM 为负时自动转正显示。
 # 这里实现为：PE = abs(股价 / EPS_TTM)
 # 其中：EPS_TTM = 当期累计EPS + 上年年报EPS - 上年同期EPS
-# 使用稳定 key：metrics.per_share.basic_eps
+# 使用利润表稳定 key：is.eps_basic
+# 这样即使旧版 Excel 缺少“财报指标”sheet，也能正常计算。
 
 name = "nonfin-trend-pe"
 alias = "PE趋势"
@@ -17,4 +18,4 @@ y_label = "PE"
 
 [[series]]
 name = "PE"
-expr = "abs(px.close / (metrics.per_share.basic_eps + metrics.per_share.basic_eps.prev_year.q4 - metrics.per_share.basic_eps.prev_year))"
+expr = "abs(px.close / (is.eps_basic + is.eps_basic.prev_year.q4 - is.eps_basic.prev_year))"

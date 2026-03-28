@@ -14,6 +14,6 @@ def test_new_builtin_templates_exist_and_keep_expected_exprs():
     assert 'cf.depreciation' in ebitda
 
     assert 'type = "line"' in pe and 'mode = "price"' in pe
-    assert 'metrics.per_share.basic_eps' in pe
+    assert 'is.eps_basic' in pe
     assert 'px.close' in pe
     assert 'abs(' in pe
