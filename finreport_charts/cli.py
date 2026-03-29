@@ -444,7 +444,7 @@ def _maybe_fetch_missing(c: CommonOpts, fetch_start: date | None = None) -> list
 
     fs = fetch_start or c.start
     log_info(
-        f"发现缺失财报 {len(missing)} 期（其中 {len(to_try)} 期本次将尝试补齐），调用 finreport_fetcher 输出到: {c.data_dir}"
+        f"[{c.rs.code6}] 发现缺失财报 {len(missing)} 期（其中 {len(to_try)} 期本次将尝试补齐）"
     )
 
     # 标记为已尝试：即使补数过程中进程被打断，也不会在后续模板里重复重试刷屏。
@@ -871,7 +871,7 @@ class ExpressionEvaluator:
                     raise ExprError(f"缺少变量: {', '.join(missing[:4])}")
                 return float(eval_expr(expr_s, vals))
             except ExprError as ex:
-                log_warn(f"表达式计算失败: {expr_s} ({ex})", once_key=f"exprfail::{expr_s}::{ex}")
+                log_warn(f"表达式计算失败: {expr_s} ({ex})", once_key=f"exprfail::{self.opts.rs.code6}::{expr_s}::{ex}")
                 return None
 
         if '.' in expr_s:
