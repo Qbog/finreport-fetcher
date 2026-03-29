@@ -97,6 +97,7 @@ def ensure_finreports(
     company_name: str | None = None,
     tushare_token: str | None = None,
     only_periods: list[date] | None = None,
+    error_collector: list[str] | None = None,
 ) -> list[date]:
     """确保 data_dir 里存在 start~end 的所有报告期末日财报 xlsx。
 
@@ -187,10 +188,9 @@ def ensure_finreports(
                 else:
                     tail = lines[-1]
 
-            print(
-                f"提示：补数失败 {code6} {pe.strftime('%Y-%m-%d')} (rc={res.returncode}): {tail}",
-                file=sys.stderr,
-            )
+            msg = f"补数失败 {code6} {pe.strftime('%Y-%m-%d')} (rc={res.returncode}): {tail}"
+            if error_collector is not None:
+                error_collector.append(msg)
 
     still_missing = [
         pe

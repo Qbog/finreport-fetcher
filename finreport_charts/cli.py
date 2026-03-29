@@ -451,6 +451,7 @@ def _maybe_fetch_missing(c: CommonOpts, fetch_start: date | None = None) -> list
     for pe in to_try:
         attempted.add(pe)
 
+    fetch_errors: list[str] = []
     still = ensure_finreports(
         code_or_name_args=["--code", c.rs.code6],
         code6=c.rs.code6,
@@ -463,9 +464,21 @@ def _maybe_fetch_missing(c: CommonOpts, fetch_start: date | None = None) -> list
         company_name=c.rs.name,
         tushare_token=c.tushare_token,
         only_periods=to_try,
+        error_collector=fetch_errors,
     )
+    if fetch_errors:
+        sample = fetch_errors[0]
+        log_warn(
+            f"提示：财报补数失败 {len(fetch_errors)} 次；示例：{sample}",
+            once_key=f"fetch-errors::{c.rs.code6}::{hash(tuple(fetch_errors))}",
+        )
     if still:
-        log_warn(f"提示：补齐后仍缺失 {len(still)} 期财报，将跳过缺失期继续绘图：{still}")
+        preview = ", ".join(pe.strftime('%Y-%m-%d') for pe in still[:3])
+        more = " ..." if len(still) > 3 else ""
+        log_warn(
+            f"提示：补齐后仍缺失 {len(still)} 期财报，将跳过缺失期继续绘图：{preview}{more}",
+            once_key=f"missing-after-fetch::{c.rs.code6}::{','.join(x.strftime('%Y%m%d') for x in still)}",
+        )
 
     return still
 
@@ -1373,7 +1386,7 @@ def run(
                 axis_xlsx_extra = {"y_range": axis_plan.y_range}
 
             if not collect_only:
-                log_info(f"\n[bold]运行模板[/bold]: {k} → {fname_base}")
+                log_info(f"[{c.rs.code6}] 运行模板: {k} → {fname_base}")
 
             def _flatten_template_series(blocks, *, prefix: str | None = None):
                 out = []
@@ -1686,8 +1699,7 @@ def run(
                         **axis_xlsx_extra,
                     )
 
-                    console.print(f"已生成: {out_png}")
-                    console.print(f"已生成: {out_xlsx}")
+                    log_info(f"[{c.rs.code6}] 已生成: {out_png.name} | {out_xlsx.name}")
                     continue
 
                 # ---- trend ----
@@ -1803,8 +1815,7 @@ def run(
                     )
 
                     if not collect_only:
-                        log_info(f"已生成: {out_png}")
-                        log_info(f"已生成: {out_xlsx}")
+                        log_info(f"[{c.rs.code6}] 已生成: {out_png.name} | {out_xlsx.name}")
                     continue
 
                 if mode == "peer":
@@ -1937,8 +1948,7 @@ def run(
                     )
 
                     if not collect_only:
-                        log_info(f"已生成: {out_png}")
-                        log_info(f"已生成: {out_xlsx}")
+                        log_info(f"[{c.rs.code6}] 已生成: {out_png.name} | {out_xlsx.name}")
                         if skipped:
                             log_warn(
                                 f"提示：{k} peer 模式以下公司在 {pe_target.strftime('%Y-%m-%d')} 缺失数据，将跳过: {', '.join(skipped)}"
@@ -2065,8 +2075,7 @@ def run(
                     )
 
                     if not collect_only:
-                        log_info(f"已生成: {out_png}")
-                        log_info(f"已生成: {out_xlsx}")
+                        log_info(f"[{c.rs.code6}] 已生成: {out_png.name} | {out_xlsx.name}")
                     continue
 
                 # ---- per-period structure (range) ----
@@ -2139,8 +2148,7 @@ def run(
                     )
 
                     if not collect_only:
-                        log_info(f"已生成: {out_png}")
-                        log_info(f"已生成: {out_xlsx}")
+                        log_info(f"[{c.rs.code6}] 已生成: {out_png.name} | {out_xlsx.name}")
 
                 if not collect_only and not any_ok:
                     log_warn(f"提示：{k} 在该区间内没有可用数据（可能缺失/未披露）。")
@@ -2395,8 +2403,7 @@ def run(
                         df_bar_export.to_excel(writer, index=False, sheet_name='bar_data')
 
                     if not collect_only:
-                        log_info(f"已生成: {out_png}")
-                        log_info(f"已生成: {out_xlsx}")
+                        log_info(f"[{c.rs.code6}] 已生成: {out_png.name} | {out_xlsx.name}")
                     continue
 
                 rows = []
@@ -2513,14 +2520,13 @@ def run(
                     df.to_excel(writer, index=False, sheet_name='data')
 
                 if not collect_only:
-                    log_info(f"已生成: {out_png}")
-                    log_info(f"已生成: {out_xlsx}")
+                    log_info(f"[{c.rs.code6}] 已生成: {out_png.name} | {out_xlsx.name}")
                 continue
 
             raise RuntimeError(f"暂不支持的模板 type: {t_type} ({k})")
 
         if not collect_only:
-            log_info(f"\n全部完成。输出目录: {c.out_dir}")
+            log_info(f"[{c.rs.code6}] 完成。输出目录: {c.out_dir}")
 
     # 纵轴规划分两层：
     # 1) 默认：对“单个公司的一次 run”先做一次收集，再统一该公司本次产出的纵轴。
@@ -2870,7 +2876,7 @@ def merge(
             xtick_labels=xtick_labels,
         )
 
-        log_info(f"已生成: {out_png}")
+        log_info(f"已生成: {out_png.name}")
 
 
 
