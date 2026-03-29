@@ -98,7 +98,14 @@ def log_info(msg: str):
     log_print(LogLevel.INFO, msg)
 
 
-def log_warn(msg: str):
+_WARN_ONCE: set[str] = set()
+
+
+def log_warn(msg: str, *, once_key: str | None = None):
+    if once_key:
+        if once_key in _WARN_ONCE:
+            return
+        _WARN_ONCE.add(once_key)
     log_print(LogLevel.WARNING, f"[yellow]{msg}[/yellow]")
 
 
@@ -791,22 +798,67 @@ class ExpressionEvaluator:
         if not expr_s:
             return None
 
+        # helper sugar: ttm(x) => x + x.prev_year.q4 - x.prev_year
+        def _expand_ttm(s: str) -> str:
+            out = str(s)
+            key_pat = re.compile(r"ttm\(((?:[A-Za-z_\u4e00-\u9fff][A-Za-z0-9_\.\u4e00-\u9fff]*))\)")
+            nz_pat = re.compile(r"ttm\(nz\(((?:[A-Za-z_\u4e00-\u9fff][A-Za-z0-9_\.\u4e00-\u9fff]*))\s*,\s*([\-]?(?:\d+(?:\.\d+)?))\)\)")
+            changed = True
+            while changed:
+                changed = False
+                m = nz_pat.search(out)
+                if m:
+                    inner = m.group(1).strip()
+                    fb = m.group(2).strip()
+                    repl = f"(nz({inner}, {fb}) + nz({inner}.prev_year.q4, {fb}) - nz({inner}.prev_year, {fb}))"
+                    out = out[:m.start()] + repl + out[m.end():]
+                    changed = True
+                    continue
+                m = key_pat.search(out)
+                if m:
+                    inner = m.group(1).strip()
+                    repl = f"({inner} + {inner}.prev_year.q4 - {inner}.prev_year)"
+                    out = out[:m.start()] + repl + out[m.end():]
+                    changed = True
+            return out
+
+        def _eval_with_nz(s: str):
+            txt = str(s).strip()
+            m = re.fullmatch(r"nz\((.+),\s*([\-]?(?:\d+(?:\.\d+)?))\)", txt)
+            if not m:
+                return None
+            inner = m.group(1).strip()
+            fallback = float(m.group(2))
+            v0 = self.eval(inner, current_pe=current_pe, default_statement=default_statement)
+            return fallback if v0 is None else v0
+
+        expr_s = _expand_ttm(expr_s)
+
+        # direct sugar: nz(expr, 0)
+        nz_v = _eval_with_nz(expr_s)
+        if nz_v is not None:
+            return float(nz_v)
+
         if re.search(r"[\+\-\*/\(\)]", expr_s):
             try:
                 toks = tokenize(expr_s)
                 from .utils.expr import FUNCTIONS
                 ids = [t for t in toks if t not in {"+", "-", "*", "/", "(", ")", ","} and t not in FUNCTIONS and not re.fullmatch(r"\d+(?:\.\d+)?", t)]
                 vals: dict[str, float] = {}
+                missing: list[str] = []
                 for ident in ids:
                     v = self._resolve_ident_value(
                         ident, current_pe=current_pe, default_statement=default_statement
                     )
                     if v is None:
-                        raise ExprError(f"缺少变量: {ident}")
+                        missing.append(ident)
+                        continue
                     vals[ident] = float(v)
+                if missing:
+                    raise ExprError(f"缺少变量: {', '.join(missing[:4])}")
                 return float(eval_expr(expr_s, vals))
             except ExprError as ex:
-                log_warn(f"表达式计算失败: {expr_s} ({ex})")
+                log_warn(f"表达式计算失败: {expr_s} ({ex})", once_key=f"exprfail::{expr_s}::{ex}")
                 return None
 
         if '.' in expr_s:

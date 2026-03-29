@@ -40,7 +40,7 @@ def tokenize(expr: str) -> list[str]:
 
 
 _PRECEDENCE = {"+": 1, "-": 1, "*": 2, "/": 2}
-FUNCTIONS = {"abs", "max", "min", "clip_pos"}
+FUNCTIONS = {"abs", "max", "min", "clip_pos", "ttm", "nz"}
 
 
 def to_rpn(tokens: list[str]) -> list[str]:
@@ -126,9 +126,14 @@ def eval_rpn(rpn: list[str], values: dict[str, float]) -> float:
                 if t == "clip_pos":
                     st.append(a if a > 0 else 0.0)
                     continue
-            elif t in {"max", "min"}:
+            elif t in {"max", "min", "nz"}:
                 a, b = pop2()
-                st.append(max(a, b) if t == "max" else min(a, b))
+                if t == "max":
+                    st.append(max(a, b))
+                elif t == "min":
+                    st.append(min(a, b))
+                else:
+                    st.append(a if a != 0 else b)
                 continue
             raise ExprError(f"不支持的函数: {t}")
 
